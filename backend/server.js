@@ -8,6 +8,7 @@ import { exec } from "node:child_process";
 import { loadStore, saveStore, nextId, dateToPhotoFolder } from "./lib/store.js";
 import { aggregate, knownEquipment, knownCategories, severityFromDuration } from "./lib/aggregate.js";
 import { writeSnapshotXlsx } from "./lib/xlsx.js";
+import { deleteUnreferencedPhoto, movePhotosForDateChange } from "./lib/photos.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -126,8 +127,13 @@ app.put("/api/records/:id", async (req, res) => {
   const errors = validateRecordInput(merged);
   if (errors.length) return res.status(400).json({ errors });
 
+  const oldDate = record.date;
+  const oldPhotos = record.photos || [];
+  const newPhotos = Array.isArray(merged.photos) ? merged.photos : record.photos;
+  const newDate = merged.date;
+
   Object.assign(record, {
-    date: merged.date,
+    date: newDate,
     shift: merged.shift,
     time: merged.time,
     duration: Number(merged.duration),
@@ -138,10 +144,24 @@ app.put("/api/records/:id", async (req, res) => {
     action: String(merged.action || "").trim(),
     rootCause: merged.rootCause ? String(merged.rootCause).trim() : null,
     status: merged.status,
-    photos: Array.isArray(merged.photos) ? merged.photos : record.photos,
+    photos: newPhotos,
     updatedAt: new Date().toISOString(),
   });
   await saveStore(DATA_DIR, store);
+
+  // 日期改了但照片檔名沒變：把還留著的舊照片實體檔案搬到新日期的資料夾，
+  // 不然畫面上的連結會指向一個不存在的路徑。
+  const carriedOver = newPhotos.filter((fn) => oldPhotos.includes(fn));
+  if (oldDate !== newDate && carriedOver.length) {
+    await movePhotosForDateChange(PHOTOS_DIR, oldDate, newDate, carriedOver);
+  }
+  // 這次編輯拿掉的照片：如果沒有任何紀錄還參照它，就真的從硬碟刪掉，
+  // 不然孤兒檔案會一直留著，下次上傳同名照片還會被誤判成「檔名衝突」而改名。
+  const removed = oldPhotos.filter((fn) => !newPhotos.includes(fn));
+  for (const fn of removed) {
+    await deleteUnreferencedPhoto(PHOTOS_DIR, store.records, oldDate, fn);
+  }
+
   res.json({ record });
 });
 
@@ -177,6 +197,11 @@ app.delete("/api/records/:id", async (req, res) => {
   }
   store.records = store.records.filter((r) => r.id !== id);
   await saveStore(DATA_DIR, store);
+
+  for (const fn of record.photos || []) {
+    await deleteUnreferencedPhoto(PHOTOS_DIR, store.records, record.date, fn);
+  }
+
   res.status(204).end();
 });
 

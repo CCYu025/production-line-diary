@@ -161,3 +161,96 @@ test("POST /api/export-xlsx 會在 DATA_DIR 產生工作日誌.xlsx", async () =
   const body = await res.json();
   assert.ok(body.path.endsWith("工作日誌.xlsx"));
 });
+
+// 重現使用者實際回報的 bug：編輯紀錄時移除一張照片、重新上傳「同一張」，
+// 結果硬碟上多出一份 xxx-1.jpg、原始檔案變成沒人參照的孤兒。
+//
+// 前端實際的操作順序是「先上傳新檔案，才送出移除舊檔案的 PUT」（見
+// frontend/index.html 的 saveEdit），所以第二次上傳當下舊檔名還在被參照、
+// 一定會被改名成 S__same-1.jpg——這點修不掉也不必修。真正該修的是:
+// PUT 完成、確認舊檔名沒有任何紀錄再參照之後，那個孤兒檔案要被清掉，
+// 不能留著佔位置、誤導使用者以為多了一張重複照片。
+test("編輯時移除照片並重新上傳同名檔案：舊的孤兒檔案要被清掉", async () => {
+  const createRes = await fetch(`${base}/api/records`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      date: "2026-09-23",
+      shift: "早",
+      time: "09:00",
+      duration: 10,
+      equipment: "F3",
+      category: "沾模",
+      problem: "半製品表面髒污",
+    }),
+  });
+  const { record } = await createRes.json();
+
+  const uploadOnce = async () => {
+    const form = new FormData();
+    form.append("date", "2026-09-23");
+    form.append("photo", new Blob([new Uint8Array([9, 9, 9])], { type: "image/jpeg" }), "S__same.jpg");
+    const res = await fetch(`${base}/api/photos`, { method: "POST", body: form });
+    return (await res.json()).filename;
+  };
+
+  const firstFilename = await uploadOnce();
+  assert.equal(firstFilename, "S__same.jpg");
+  await fetch(`${base}/api/records/${record.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ photos: [firstFilename] }),
+  });
+
+  // 使用者在編輯畫面移除這張照片、重新選了同一個檔案再上傳一次
+  const secondFilename = await uploadOnce();
+  assert.equal(secondFilename, "S__same-1.jpg", "第二次上傳當下舊檔名還被參照，預期會被改名");
+
+  const updateRes = await fetch(`${base}/api/records/${record.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ photos: [secondFilename] }),
+  });
+  assert.equal(updateRes.status, 200);
+
+  const orphanRes = await fetch(`${base}/photos/20260923/S__same.jpg`);
+  assert.equal(orphanRes.status, 404, "第一次上傳的孤兒檔案應該已被刪除，不該還能存取到");
+
+  const newRes = await fetch(`${base}/photos/20260923/${secondFilename}`);
+  assert.equal(newRes.status, 200, "紀錄實際參照的那張照片必須還能正常存取");
+});
+
+test("永久刪除紀錄時，該紀錄專屬的照片檔案也要一併清掉", async () => {
+  const createRes = await fetch(`${base}/api/records`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      date: "2026-09-24",
+      shift: "早",
+      time: "09:00",
+      duration: 10,
+      equipment: "F4",
+      category: "尺寸異常",
+      problem: "厚度下限",
+    }),
+  });
+  const { record } = await createRes.json();
+
+  const form = new FormData();
+  form.append("date", "2026-09-24");
+  form.append("photo", new Blob([new Uint8Array([1, 2])], { type: "image/jpeg" }), "purge-test.jpg");
+  const uploadRes = await fetch(`${base}/api/photos`, { method: "POST", body: form });
+  const filename = (await uploadRes.json()).filename;
+
+  await fetch(`${base}/api/records/${record.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ photos: [filename] }),
+  });
+
+  await fetch(`${base}/api/records/${record.id}/delete`, { method: "POST" });
+  await fetch(`${base}/api/records/${record.id}`, { method: "DELETE" });
+
+  const res = await fetch(`${base}/photos/20260924/${filename}`);
+  assert.equal(res.status, 404, "紀錄被永久刪除後，它專屬的照片檔案不該再留在硬碟上");
+});
