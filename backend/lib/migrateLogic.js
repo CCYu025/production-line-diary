@@ -53,7 +53,10 @@ export function buildRecords(legacyRows) {
       action: row.action,
       rootCause: null,
       status: isRecurring ? "追蹤中" : "已解決",
-      photos: row.photoPath ? [path.basename(row.photoPath)] : [],
+      // 舊版 Excel 裡的照片路徑一律是 Windows 反斜線路徑（這台電腦存下來的），
+      // 跟這支腳本實際在哪個作業系統上執行無關——所以固定用 path.win32，
+      // 不要用平台相依的 path.basename()（在 Linux CI 上不會切反斜線，會整條路徑當檔名）。
+      photos: row.photoPath ? [path.win32.basename(row.photoPath)] : [],
       updatedAt: null,
       deleted: false,
       deletedAt: null,
