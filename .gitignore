@@ -1,0 +1,21 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# 環境設定（含你電腦上實際的資料夾路徑，不對外公開）
+.env
+
+# 真實營運資料 — 絕對不 commit
+# data.json 是唯一的事實來源，內容是真實產線異常紀錄，只留在你自己的電腦上
+backend/data/data.json
+backend/data/photos/
+backend/data/*.xlsx
+
+# 編輯器 / 系統
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# 測試/覆蓋率輸出
+coverage/
