@@ -71,3 +71,9 @@ test("buildRecords：沒有照片欄位時 photos 是空陣列", () => {
   const records = buildRecords([legacyRow({ photoPath: null })]);
   assert.deepEqual(records[0].photos, []);
 });
+
+test("buildRecords：productCode / materialCategory 一律是 null——舊版 Excel 從來沒記錄過，不能用猜的", () => {
+  const records = buildRecords([legacyRow()]);
+  assert.equal(records[0].productCode, null);
+  assert.equal(records[0].materialCategory, null);
+});

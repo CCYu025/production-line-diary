@@ -68,13 +68,15 @@
 | `action` | 字串 | 選填 | 空字串代表未填寫 | 現場處理方式 |
 | `rootCause` | 字串 或 `null` | 選填 | `null` = 尚未填寫 | 根本原因（5W1H 裡的 Why） |
 | `status` | 字串 | 是 | `待處理` / `追蹤中` / `已解決`（固定），預設 `待處理` | 處理狀態 |
+| `productCode` | 字串 或 `null` | 選填 | `null` = 未知/未填，自由文字，**不是固定清單** | 品號。刻意跟 `equipment` 分開存——同一台設備會換線、調撥去做不同品號，兩者不是可以互推的固定對應關係，所以品號要自己記，不能靠「哪台設備」反推 |
+| `materialCategory` | 字串 或 `null` | 選填 | `null` = 未知/未填，自由文字，**不是固定清單** | 原料類別。只有在跟材料相關的問題（取料異常/材料損傷/缺料等）才需要填，用來檢查問題是不是跟特定一批/一類原料有關 |
 | `photos` | 字串陣列 | 是（可為空陣列 `[]`） | 陣列裡每個字串是照片檔名 | 對應到 `照片/<date 去掉"-">/<檔名>` 這個實際檔案路徑，本身不存放照片內容，只存檔名 |
 | `updatedAt` | 字串（ISO 8601 時間戳）或 `null` | 選填 | `null` = 從未編輯過 | 最後一次編輯的時間 |
 | `deleted` | 布林值 | 是 | `true` / `false` | 是否已軟刪除（移到回收桶，資料仍保留在檔案裡） |
 | `deletedAt` | 字串（ISO 8601）或 `null` | 選填 | `null` = 未刪除 | 刪除時間 |
 
-**為什麼 `equipment` / `category` 是開放式，`severity` / `status` 卻是固定的？**
-因為前兩者描述的是「現場實際發生了什麼」，種類會隨產線狀況持續變多；後兩者是「App 自己定義的管理維度」（嚴重度分級、處理進度），這是設計上刻意固定的分類邏輯，不該因為某天多了一種設備就跟著變動。
+**為什麼 `equipment` / `category` / `productCode` / `materialCategory` 是開放式，`severity` / `status` 卻是固定的？**
+因為前四者描述的是「現場實際發生了什麼」，種類會隨產線狀況持續變多、變動（設備會冒出新代號，品號會換線調撥）；後兩者是「App 自己定義的管理維度」（嚴重度分級、處理進度），這是設計上刻意固定的分類邏輯，不該因為某天多了一種設備就跟著變動。
 
 ---
 
@@ -90,4 +92,5 @@
 2. `date` 欄位是連結照片資料夾的唯一依據，改資料夾命名規則前要先確認有沒有東西依賴它。
 3. `severity` 是「當時決定的值」不是公式即時算出來的，改規則不會動到舊資料。
 4. `deleted:true` 的紀錄不要真的刪掉——那是回收桶機制的一部分，除非使用者在 App 裡按「永久刪除」。
-5. `equipment` / `category` 不要在程式碼裡改回寫死的 enum——用 `knownEquipment()` / `knownCategories()`（見 `backend/lib/aggregate.js`）從現有資料動態算出建議清單。
+5. `equipment` / `category` / `productCode` / `materialCategory` 不要在程式碼裡改回寫死的 enum——用 `knownEquipment()` / `knownCategories()` / `knownProductCodes()` / `knownMaterialCategories()`（見 `backend/lib/aggregate.js`）從現有資料動態算出建議清單。
+6. `productCode` / `materialCategory` 是 2026-09-23 之後才加的欄位（schemaVersion 1.1）；在這之前建立的紀錄這兩欄一律是 `null`，這是誠實的「不知道」，不是漏填，不要事後用猜的補上去。

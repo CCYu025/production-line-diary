@@ -7,7 +7,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-export const SCHEMA_VERSION = "1.0";
+export const SCHEMA_VERSION = "1.2";
 
 function dataFilePath(dataDir) {
   return path.join(dataDir, "data.json");
@@ -17,6 +17,7 @@ export function emptyStore() {
   return {
     meta: { schemaVersion: SCHEMA_VERSION, app: "產線日誌" },
     records: [],
+    equipmentMap: [],
   };
 }
 
@@ -28,6 +29,7 @@ export async function loadStore(dataDir) {
   return {
     meta: { schemaVersion: SCHEMA_VERSION, app: "產線日誌", ...parsed._meta },
     records: Array.isArray(parsed.records) ? parsed.records : [],
+    equipmentMap: Array.isArray(parsed.equipmentMap) ? parsed.equipmentMap : [],
   };
 }
 
@@ -42,6 +44,7 @@ export async function saveStore(dataDir, store) {
       exportedAt: new Date().toISOString(),
     },
     records: store.records,
+    equipmentMap: store.equipmentMap || [],
   };
   await writeFile(tmp, JSON.stringify(payload, null, 2), "utf8");
   await rename(tmp, file);

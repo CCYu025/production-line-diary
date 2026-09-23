@@ -6,7 +6,14 @@ import { existsSync, mkdirSync } from "node:fs";
 import { exec } from "node:child_process";
 
 import { loadStore, saveStore, nextId, dateToPhotoFolder } from "./lib/store.js";
-import { aggregate, knownEquipment, knownCategories, severityFromDuration } from "./lib/aggregate.js";
+import {
+  aggregate,
+  knownEquipment,
+  knownCategories,
+  knownProductCodes,
+  knownMaterialCategories,
+  severityFromDuration,
+} from "./lib/aggregate.js";
 import { writeSnapshotXlsx } from "./lib/xlsx.js";
 import { deleteUnreferencedPhoto, movePhotosForDateChange } from "./lib/photos.js";
 
@@ -80,6 +87,9 @@ app.get("/api/meta", async (req, res) => {
     schemaVersion: store.meta.schemaVersion,
     equipment: knownEquipment(store.records),
     categories: knownCategories(store.records),
+    productCodes: knownProductCodes(store.records),
+    materialCategories: knownMaterialCategories(store.records),
+    equipmentMap: store.equipmentMap,
   });
 });
 
@@ -107,6 +117,8 @@ app.post("/api/records", async (req, res) => {
     action: String(req.body.action || "").trim(),
     rootCause: req.body.rootCause ? String(req.body.rootCause).trim() : null,
     status: req.body.status || "待處理",
+    productCode: req.body.productCode ? String(req.body.productCode).trim() : null,
+    materialCategory: req.body.materialCategory ? String(req.body.materialCategory).trim() : null,
     photos: Array.isArray(req.body.photos) ? req.body.photos : [],
     updatedAt: null,
     deleted: false,
@@ -144,6 +156,8 @@ app.put("/api/records/:id", async (req, res) => {
     action: String(merged.action || "").trim(),
     rootCause: merged.rootCause ? String(merged.rootCause).trim() : null,
     status: merged.status,
+    productCode: merged.productCode ? String(merged.productCode).trim() : null,
+    materialCategory: merged.materialCategory ? String(merged.materialCategory).trim() : null,
     photos: newPhotos,
     updatedAt: new Date().toISOString(),
   });
@@ -203,6 +217,29 @@ app.delete("/api/records/:id", async (req, res) => {
   }
 
   res.status(204).end();
+});
+
+// 設備 -> 品號／原料類別的「目前對照表」，不是每筆紀錄都要填一次。
+// 換線頻率低（你說大概 2-3 個月才變一次），所以設計成獨立的一張小表，
+// 平常新增紀錄時前端會拿這張表自動帶入，只有真的換線了才需要回來改這裡；
+// 已經寫進紀錄裡的 productCode/materialCategory 是「當時的事實」，不會因為
+// 這張表之後被改掉而跟著變動。
+app.put("/api/equipment-map", async (req, res) => {
+  if (!Array.isArray(req.body)) return res.status(400).json({ errors: ["body 必須是陣列"] });
+  const cleaned = [];
+  for (const entry of req.body) {
+    const equipment = String(entry.equipment || "").trim();
+    if (!equipment) continue;
+    cleaned.push({
+      equipment,
+      productCode: entry.productCode ? String(entry.productCode).trim() : null,
+      materialCategory: entry.materialCategory ? String(entry.materialCategory).trim() : null,
+    });
+  }
+  const store = await loadStore(DATA_DIR);
+  store.equipmentMap = cleaned;
+  await saveStore(DATA_DIR, store);
+  res.json({ equipmentMap: cleaned });
 });
 
 app.get("/api/aggregate", async (req, res) => {

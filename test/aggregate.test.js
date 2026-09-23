@@ -6,6 +6,8 @@ import {
   aggregate,
   knownEquipment,
   knownCategories,
+  knownProductCodes,
+  knownMaterialCategories,
 } from "../backend/lib/aggregate.js";
 
 test("severityFromDuration 依耗時分級", () => {
@@ -101,4 +103,14 @@ test("knownEquipment / knownCategories 回傳去重後排序的清單", () => {
   ];
   assert.deepEqual(knownEquipment(records), ["F4", "F7"]);
   assert.deepEqual(knownCategories(records), ["尺寸異常", "沾模"]);
+});
+
+test("knownProductCodes / knownMaterialCategories 忽略 null，回傳去重排序的清單", () => {
+  const records = [
+    rec({ productCode: "PC-002", materialCategory: null }),
+    rec({ productCode: "PC-001", materialCategory: "膠料A" }),
+    rec({ productCode: null, materialCategory: null }),
+  ];
+  assert.deepEqual(knownProductCodes(records), ["PC-001", "PC-002"]);
+  assert.deepEqual(knownMaterialCategories(records), ["膠料A"]);
 });

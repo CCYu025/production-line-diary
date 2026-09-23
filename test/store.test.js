@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, existsSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { loadStore, saveStore, nextId, dateToPhotoFolder, emptyStore } from "../backend/lib/store.js";
+import { loadStore, saveStore, nextId, dateToPhotoFolder, emptyStore, SCHEMA_VERSION } from "../backend/lib/store.js";
 
 function tmpDir() {
   return mkdtempSync(path.join(os.tmpdir(), "pld-store-test-"));
@@ -15,7 +15,7 @@ test("loadStore 在檔案不存在時回傳空資料，不丟例外", async () =
   try {
     const store = await loadStore(dir);
     assert.deepEqual(store.records, []);
-    assert.equal(store.meta.schemaVersion, "1.0");
+    assert.equal(store.meta.schemaVersion, SCHEMA_VERSION);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -32,7 +32,32 @@ test("saveStore 寫入後 loadStore 讀回同樣的內容", async () => {
     const reloaded = await loadStore(dir);
     assert.equal(reloaded.records.length, 1);
     assert.equal(reloaded.records[0].problem, "測試");
-    assert.equal(reloaded.meta.schemaVersion, "1.0");
+    assert.equal(reloaded.meta.schemaVersion, SCHEMA_VERSION);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("equipmentMap 也是 saveStore/loadStore 會一起讀寫的資料，不會被漏掉", async () => {
+  const dir = tmpDir();
+  try {
+    const store = emptyStore();
+    store.equipmentMap = [{ equipment: "F3", productCode: "PC-001", materialCategory: "膠料A" }];
+    await saveStore(dir, store);
+
+    const reloaded = await loadStore(dir);
+    assert.deepEqual(reloaded.equipmentMap, [{ equipment: "F3", productCode: "PC-001", materialCategory: "膠料A" }]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("emptyStore / loadStore（檔案不存在）都內建 equipmentMap: []，不是 undefined", async () => {
+  assert.deepEqual(emptyStore().equipmentMap, []);
+  const dir = tmpDir();
+  try {
+    const store = await loadStore(dir);
+    assert.deepEqual(store.equipmentMap, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

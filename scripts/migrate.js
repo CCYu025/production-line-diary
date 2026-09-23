@@ -46,7 +46,9 @@ async function run() {
   }
 
   const records = buildRecords(legacyRows);
-  await saveStore(DATA_DIR, { meta: existing.meta, records });
+  // --force 重跑時，保留既有的設備對照表——那是使用者自己維護的設定，
+  // 跟「用舊 Excel 重建事件紀錄」是兩件不相干的事，不該被一起蓋掉。
+  await saveStore(DATA_DIR, { meta: existing.meta, records, equipmentMap: existing.equipmentMap });
   console.log(`已寫入 ${records.length} 筆紀錄至 ${path.join(DATA_DIR, "data.json")}`);
 
   const categoryTally = new Map();

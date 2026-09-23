@@ -13,6 +13,14 @@ export function knownEquipment(records) {
 export function knownCategories(records) {
   return distinctSorted(records.map((r) => r.category));
 }
+// 設備跟品號是獨立的兩件事：同一台設備會換線、調撥去做別的品號，
+// 不能靠「知道是哪台設備」反推品號——所以品號也需要自己的動態建議清單。
+export function knownProductCodes(records) {
+  return distinctSorted(records.map((r) => r.productCode));
+}
+export function knownMaterialCategories(records) {
+  return distinctSorted(records.map((r) => r.materialCategory));
+}
 
 function distinctSorted(values) {
   return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-Hant"));

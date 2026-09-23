@@ -332,3 +332,77 @@ test("同一個已上傳的照片檔名被兩筆不同紀錄參照時，兩筆�
   const goneNow = await fetch(`${base}/photos/20260925/${filename}`);
   assert.equal(goneNow.status, 404, "兩筆都刪掉之後，這張照片才該真的消失");
 });
+
+test("POST/PUT /api/records 會正確存取 productCode 與 materialCategory，未填時是 null", async () => {
+  const createRes = await fetch(`${base}/api/records`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      date: "2026-09-26", shift: "早", time: "09:00", duration: 10,
+      equipment: "F3", category: "沾模", problem: "測試品號欄位",
+      productCode: "PC-001", materialCategory: "膠料A",
+    }),
+  });
+  const created = (await createRes.json()).record;
+  assert.equal(created.productCode, "PC-001");
+  assert.equal(created.materialCategory, "膠料A");
+
+  const createRes2 = await fetch(`${base}/api/records`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      date: "2026-09-26", shift: "早", time: "09:05", duration: 10,
+      equipment: "F4", category: "缺料", problem: "沒有填品號",
+    }),
+  });
+  const created2 = (await createRes2.json()).record;
+  assert.equal(created2.productCode, null);
+  assert.equal(created2.materialCategory, null);
+
+  const updateRes = await fetch(`${base}/api/records/${created2.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ productCode: "PC-002" }),
+  });
+  const updated = (await updateRes.json()).record;
+  assert.equal(updated.productCode, "PC-002");
+});
+
+test("GET /api/meta 會回傳 productCodes / materialCategories / equipmentMap", async () => {
+  const res = await fetch(`${base}/api/meta`);
+  const body = await res.json();
+  assert.ok(body.productCodes.includes("PC-001"));
+  assert.ok(body.materialCategories.includes("膠料A"));
+  assert.ok(Array.isArray(body.equipmentMap));
+});
+
+test("PUT /api/equipment-map 儲存設備對照表，GET /api/meta 讀得到，且空設備代號會被過濾掉", async () => {
+  const putRes = await fetch(`${base}/api/equipment-map`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify([
+      { equipment: "F3", productCode: "PC-001", materialCategory: "膠料A" },
+      { equipment: "  ", productCode: "應該被丟掉", materialCategory: null },
+      { equipment: "F4", productCode: "PC-002", materialCategory: null },
+    ]),
+  });
+  assert.equal(putRes.status, 200);
+  const putBody = await putRes.json();
+  assert.equal(putBody.equipmentMap.length, 2);
+
+  const metaRes = await fetch(`${base}/api/meta`);
+  const metaBody = await metaRes.json();
+  assert.deepEqual(metaBody.equipmentMap, [
+    { equipment: "F3", productCode: "PC-001", materialCategory: "膠料A" },
+    { equipment: "F4", productCode: "PC-002", materialCategory: null },
+  ]);
+});
+
+test("PUT /api/equipment-map body 不是陣列時回傳 400", async () => {
+  const res = await fetch(`${base}/api/equipment-map`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notAnArray: true }),
+  });
+  assert.equal(res.status, 400);
+});
