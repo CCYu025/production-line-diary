@@ -738,6 +738,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
   var dashboardRange = "all";
   var editState = null;
   var pendingPhotos = [];
+  var addInFlight = false;
 
   function $(sel, root){ return (root||document).querySelector(sel); }
   function $all(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
@@ -789,20 +790,16 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       if(!res.ok) throw new Error((body.errors||["照片上傳失敗"]).join("、"));
       return body.filename;
     },
+    async deletePhoto(dateStr, filename){
+      try{ await fetch("/api/photos/"+encodeURIComponent(dateStr)+"/"+encodeURIComponent(filename), { method:"DELETE" }); }
+      catch(err){ /* 最多留下一個沒人用的孤兒檔案，不影響功能，不值得因此擋住使用者 */ }
+    },
     async exportXlsx(){
       var res = await fetch("/api/export-xlsx", { method:"POST" });
       if(!res.ok) throw new Error("匯出失敗");
       return res.json();
     }
   };
-
-  async function uploadPending(dateStr, pending){
-    var filenames = [];
-    for(var i=0;i<pending.length;i++){
-      filenames.push(await api.uploadPhoto(dateStr, pending[i].file));
-    }
-    return filenames;
-  }
 
   function fmtDate(iso){
     var p = iso.split("-");
@@ -1217,13 +1214,33 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       '</div>';
 
     renderEditPhotoPreview(r.date);
-    $("#e-photo").onchange = function(e){
+    $("#e-photo").onchange = async function(e){
       var files = Array.prototype.slice.call(e.target.files||[]);
-      files.forEach(function(f){ try{ editState.pending.push({file:f, url:URL.createObjectURL(f)}); }catch(err){} });
-      renderEditPhotoPreview(r.date);
       e.target.value = "";
+      var date = $("#e-date").value || r.date;
+      // 跟新增紀錄一樣：選到檔案就立刻上傳，不要等按下「儲存變更」才上傳，
+      // 避免儲存失敗後使用者重試一次，把同一張照片重新上傳一次而多出一份。
+      for(var i=0;i<files.length;i++){
+        var f = files[i];
+        var entry = { file:f, url:"", date:date, filename:null, uploading:true, error:false };
+        try{ entry.url = URL.createObjectURL(f); }catch(err){}
+        editState.pending.push(entry);
+        renderEditPhotoPreview(date);
+        try{
+          entry.filename = await api.uploadPhoto(date, f);
+        }catch(err){
+          entry.error = true;
+          showToast("照片上傳失敗："+(err.message||""));
+        }
+        entry.uploading = false;
+        renderEditPhotoPreview(date);
+      }
     };
-    $("#edit-cancel").onclick = function(){ detailMode="view"; renderSoBody(idx); };
+    $("#edit-cancel").onclick = function(){
+      // 取消編輯：已經上傳但還沒存進紀錄的照片要清掉，不然也會變孤兒檔案
+      editState.pending.forEach(function(p){ if(p.filename) api.deletePhoto(p.date, p.filename); });
+      detailMode="view"; renderSoBody(idx);
+    };
     $("#edit-save").onclick = function(){ saveEdit(idx); };
   }
 
@@ -1233,14 +1250,22 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
         return '<div class="dz-thumb-wrap"><img class="dz-thumb" src="'+photoUrl(dateStr, fn)+'"><button type="button" class="thumb-remove" data-rm-existing="'+i+'">'+ICONS.x+'</button></div>';
       }).join("")+
       editState.pending.map(function(p,i){
-        return '<div class="dz-thumb-wrap"><img class="dz-thumb" src="'+p.url+'"><button type="button" class="thumb-remove" data-rm-pending-edit="'+i+'">'+ICONS.x+'</button></div>';
+        var badge = p.uploading ? '<div class="dz-thumb placeholder-thumb">'+ICONS.camera+'</div>' :
+          '<img class="dz-thumb" src="'+p.url+'" style="'+(p.error?'opacity:.4':'')+'">';
+        return '<div class="dz-thumb-wrap">'+badge+'<button type="button" class="thumb-remove" data-rm-pending-edit="'+i+'">'+ICONS.x+'</button></div>';
       }).join("");
     $("#e-photo-preview").innerHTML = html;
     $all("[data-rm-existing]").forEach(function(b){
       b.onclick = function(){ editState.keepPhotos.splice(Number(b.getAttribute("data-rm-existing")),1); renderEditPhotoPreview(dateStr); };
     });
     $all("[data-rm-pending-edit]").forEach(function(b){
-      b.onclick = function(){ editState.pending.splice(Number(b.getAttribute("data-rm-pending-edit")),1); renderEditPhotoPreview(dateStr); };
+      b.onclick = function(){
+        var i = Number(b.getAttribute("data-rm-pending-edit"));
+        var p = editState.pending[i];
+        editState.pending.splice(i,1);
+        renderEditPhotoPreview(dateStr);
+        if(p && p.filename){ api.deletePhoto(p.date, p.filename); }
+      };
     });
   }
 
@@ -1248,10 +1273,11 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
     var r = detailSequence[idx];
     var id = r.id;
     var date = $("#e-date").value || r.date;
+    if(editState.pending.some(function(p){ return p.uploading; })){ showToast("照片還在上傳中，請稍候"); return; }
     var saveBtn = $("#edit-save");
     saveBtn.disabled = true;
     try{
-      var uploaded = await uploadPending(date, editState.pending);
+      var uploaded = editState.pending.filter(function(p){ return p.filename; }).map(function(p){ return p.filename; });
       var updated = await api.update(id, {
         date: date,
         shift: $("#e-shift").value,
@@ -1439,10 +1465,18 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
 
   function renderAddPhotoPreview(){
     $("#dz-preview").innerHTML = pendingPhotos.map(function(p,i){
-      return '<div class="dz-thumb-wrap"><img class="dz-thumb" src="'+p.url+'"><button type="button" class="thumb-remove" data-rm-pending="'+i+'">'+ICONS.x+'</button></div>';
+      var badge = p.uploading ? '<div class="dz-thumb placeholder-thumb">'+ICONS.camera+'</div>' :
+        '<img class="dz-thumb" src="'+p.url+'" style="'+(p.error?'opacity:.4':'')+'">';
+      return '<div class="dz-thumb-wrap">'+badge+'<button type="button" class="thumb-remove" data-rm-pending="'+i+'">'+ICONS.x+'</button></div>';
     }).join("");
     $all("[data-rm-pending]").forEach(function(b){
-      b.onclick = function(){ pendingPhotos.splice(Number(b.getAttribute("data-rm-pending")),1); renderAddPhotoPreview(); };
+      b.onclick = function(){
+        var i = Number(b.getAttribute("data-rm-pending"));
+        var p = pendingPhotos[i];
+        pendingPhotos.splice(i,1);
+        renderAddPhotoPreview();
+        if(p && p.filename){ api.deletePhoto(p.date, p.filename); }
+      };
     });
   }
 
@@ -1491,26 +1525,45 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       if(v>0) $("#f-severity").value = severityFromDuration(v);
     };
 
-    $("#f-photo").onchange = function(e){
+    $("#f-photo").onchange = async function(e){
       var files = Array.prototype.slice.call(e.target.files||[]);
-      files.forEach(function(f){
-        try{ pendingPhotos.push({ file:f, url:URL.createObjectURL(f) }); }catch(err){}
-      });
-      renderAddPhotoPreview();
       e.target.value = "";
+      var date = $("#f-date").value;
+      if(!date){ showToast("請先選擇日期，再新增照片"); return; }
+      // 選到檔案就立刻上傳，不要等送出表單才上傳——這樣「送出」永遠只是
+      // 拿已經上傳好的檔名去建立紀錄，就算使用者手滑點兩次送出、或按 Enter
+      // 重複觸發，也不會因為重跑上傳而多出一份一樣的照片。
+      for(var i=0;i<files.length;i++){
+        var f = files[i];
+        var entry = { file:f, url:"", date:date, filename:null, uploading:true, error:false };
+        try{ entry.url = URL.createObjectURL(f); }catch(err){}
+        pendingPhotos.push(entry);
+        renderAddPhotoPreview();
+        try{
+          entry.filename = await api.uploadPhoto(date, f);
+        }catch(err){
+          entry.error = true;
+          showToast("照片上傳失敗："+(err.message||""));
+        }
+        entry.uploading = false;
+        renderAddPhotoPreview();
+      }
     };
 
     $("#add-form").onsubmit = async function(e){
       e.preventDefault();
+      if(addInFlight) return;
       var date = $("#f-date").value;
       var equipment = $("#f-equipment").value.trim();
       var problem = $("#f-problem").value.trim();
       if(!date || !equipment || !problem){ showToast("請至少填寫日期、設備與問題"); return; }
+      if(pendingPhotos.some(function(p){ return p.uploading; })){ showToast("照片還在上傳中，請稍候"); return; }
       var duration = Number($("#f-duration").value) || 5;
       var submitBtn = $("#add-form button[type=submit]");
+      addInFlight = true;
       submitBtn.disabled = true;
       try{
-        var photoNames = await uploadPending(date, pendingPhotos);
+        var photoNames = pendingPhotos.filter(function(p){ return p.filename; }).map(function(p){ return p.filename; });
         var rec = await api.create({
           date: date,
           shift: $("#f-shift").value,
@@ -1538,6 +1591,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       }catch(err){
         showToast(err.message || "新增失敗，請再試一次");
       }finally{
+        addInFlight = false;
         submitBtn.disabled = false;
       }
     };

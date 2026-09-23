@@ -226,6 +226,14 @@ app.post("/api/photos", (req, res) => {
   });
 });
 
+// 前端在新增/編輯畫面選到檔案就立刻上傳；使用者在送出表單前把某張照片移除時，
+// 呼叫這支把還沒被任何紀錄參照的檔案清掉，不要留下孤兒檔案。
+app.delete("/api/photos/:date/:filename", async (req, res) => {
+  const store = await loadStore(DATA_DIR);
+  const deleted = await deleteUnreferencedPhoto(PHOTOS_DIR, store.records, req.params.date, req.params.filename);
+  res.json({ deleted });
+});
+
 // 只有直接執行這支檔案時才啟動監聽；被測試檔 import 當模組用時不要自動開伺服器/開瀏覽器。
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {

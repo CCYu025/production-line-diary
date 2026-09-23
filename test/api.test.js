@@ -254,3 +254,81 @@ test("永久刪除紀錄時，該紀錄專屬的照片檔案也要一併清掉",
   const res = await fetch(`${base}/photos/20260924/${filename}`);
   assert.equal(res.status, 404, "紀錄被永久刪除後，它專屬的照片檔案不該再留在硬碟上");
 });
+
+test("DELETE /api/photos/:date/:filename：沒有紀錄參照時，把還沒送出表單就被移除的照片清掉", async () => {
+  const form = new FormData();
+  form.append("date", "2026-09-25");
+  form.append("photo", new Blob([new Uint8Array([5, 5])], { type: "image/jpeg" }), "not-yet-attached.jpg");
+  const uploadRes = await fetch(`${base}/api/photos`, { method: "POST", body: form });
+  const filename = (await uploadRes.json()).filename;
+
+  // 還沒有任何紀錄的 PUT 把這個檔名寫進 photos[]，模擬使用者在送出表單前就把它移除
+  const delRes = await fetch(`${base}/api/photos/2026-09-25/${filename}`, { method: "DELETE" });
+  assert.equal(delRes.status, 200);
+  assert.deepEqual(await delRes.json(), { deleted: true });
+
+  const checkRes = await fetch(`${base}/photos/20260925/${filename}`);
+  assert.equal(checkRes.status, 404);
+});
+
+test("DELETE /api/photos/:date/:filename：如果已經有紀錄參照了，不會誤刪", async () => {
+  const form = new FormData();
+  form.append("date", "2026-09-25");
+  form.append("photo", new Blob([new Uint8Array([6, 6])], { type: "image/jpeg" }), "still-in-use.jpg");
+  const uploadRes = await fetch(`${base}/api/photos`, { method: "POST", body: form });
+  const filename = (await uploadRes.json()).filename;
+
+  const createRes = await fetch(`${base}/api/records`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      date: "2026-09-25", shift: "早", time: "09:00", duration: 10,
+      equipment: "F3", category: "沾模", problem: "測試", photos: [filename],
+    }),
+  });
+  const { record } = await createRes.json();
+
+  await fetch(`${base}/api/photos/2026-09-25/${filename}`, { method: "DELETE" });
+  const checkRes = await fetch(`${base}/photos/20260925/${filename}`);
+  assert.equal(checkRes.status, 200, "紀錄還在用這張照片，不該被刪掉");
+
+  // 清理
+  await fetch(`${base}/api/records/${record.id}/delete`, { method: "POST" });
+  await fetch(`${base}/api/records/${record.id}`, { method: "DELETE" });
+});
+
+// 這次修復的核心：新增紀錄改成「選到檔案就立刻上傳」而不是「送出表單時才上傳」，
+// 所以就算 POST /api/records 的建立步驟被呼叫兩次（例如使用者手滑點了兩次），
+// 照片本身只會被上傳一次，不會因為重跑上傳流程而多出 -1 的重複檔案。
+test("同一個已上傳的照片檔名被兩筆不同紀錄參照時，兩筆都讀得到、且互不影響彼此的刪除", async () => {
+  const form = new FormData();
+  form.append("date", "2026-09-25");
+  form.append("photo", new Blob([new Uint8Array([7, 7])], { type: "image/jpeg" }), "shared-across-records.jpg");
+  const uploadRes = await fetch(`${base}/api/photos`, { method: "POST", body: form });
+  const filename = (await uploadRes.json()).filename;
+
+  const createOne = async () => {
+    const res = await fetch(`${base}/api/records`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: "2026-09-25", shift: "早", time: "09:00", duration: 10,
+        equipment: "F3", category: "沾模", problem: "共用照片測試", photos: [filename],
+      }),
+    });
+    return (await res.json()).record;
+  };
+  const recA = await createOne();
+  const recB = await createOne();
+
+  await fetch(`${base}/api/records/${recA.id}/delete`, { method: "POST" });
+  await fetch(`${base}/api/records/${recA.id}`, { method: "DELETE" });
+
+  const stillThere = await fetch(`${base}/photos/20260925/${filename}`);
+  assert.equal(stillThere.status, 200, "recB 還在參照這張照片，recA 被刪掉不該連累它");
+
+  await fetch(`${base}/api/records/${recB.id}/delete`, { method: "POST" });
+  await fetch(`${base}/api/records/${recB.id}`, { method: "DELETE" });
+  const goneNow = await fetch(`${base}/photos/20260925/${filename}`);
+  assert.equal(goneNow.status, 404, "兩筆都刪掉之後，這張照片才該真的消失");
+});
