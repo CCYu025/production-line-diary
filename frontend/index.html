@@ -168,27 +168,14 @@
   .kpi-row{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
   .kpi-card{
     background:var(--surface-raised); border:1px solid var(--line); border-radius:14px;
-    padding:14px 16px;
+    padding:14px 16px; transition:border-color .12s;
   }
+  #kpi-tracking:hover{ border-color:var(--serious); }
   .kpi-label{ font-size:11.5px; color:var(--ink-muted); font-weight:500; }
   .kpi-value{ font-size:26px; font-weight:900; margin-top:6px; line-height:1; }
   .kpi-value .unit{ font-size:13px; font-weight:600; color:var(--ink-2); margin-left:3px; }
   .kpi-sub{ font-size:11.5px; color:var(--ink-muted); margin-top:6px; }
 
-  /* ---------- Alert callout ---------- */
-  .alert{
-    display:flex; gap:12px; align-items:flex-start;
-    background:var(--serious-wash); border:1px solid color-mix(in srgb, var(--serious) 35%, transparent);
-    border-radius:14px; padding:14px 16px;
-  }
-  .alert .icon-wrap{
-    width:30px; height:30px; border-radius:9px; flex:none;
-    background:var(--serious); color:#fff; display:flex; align-items:center; justify-content:center;
-  }
-  .alert .icon-wrap .icon{ width:16px; height:16px; }
-  .alert-title{ font-weight:800; font-size:13.5px; color:var(--ink-1); display:flex; align-items:center; gap:8px; }
-  .alert-body{ font-size:12.8px; color:var(--ink-2); margin-top:4px; line-height:1.6; }
-  .alert-actions{ margin-top:9px; display:flex; gap:8px; }
   .chip-btn{
     border:1px solid var(--line-strong); background:var(--surface-raised); color:var(--ink-1);
     font-size:11.5px; font-weight:600; padding:5px 10px; border-radius:100px; cursor:pointer;
@@ -488,8 +475,6 @@
       </div>
 
       <div class="kpi-row" id="kpi-row"></div>
-
-      <div class="alert" id="alert-card"></div>
 
       <div class="chart-grid">
         <div class="card">
@@ -811,44 +796,18 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       kpiCard("累計事件數", agg.totalEvents, "筆", "所有已記錄之異常事件"),
       kpiCard("累計停機時間", agg.totalMinutes, "分", "約 " + hours.toFixed(1) + " 小時"),
       kpiCard("平均處理耗時", agg.avg.toFixed(1), "分/件", "單次事件平均停機時間"),
-      kpiCard("追蹤中事件", agg.trackingRows.length, "筆", "佔停機時間 "+trackingPct+"% · "+agg.rootCauseMissing+" 筆待補根本原因"),
+      kpiCard("追蹤中事件", agg.trackingRows.length, "筆", "佔停機時間 "+trackingPct+"% · "+agg.rootCauseMissing+" 筆待補根本原因", "kpi-tracking"),
       kpiCard("照片建檔率", photoPct, "%", agg.withPhoto + " / " + agg.totalEvents + " 筆附有照片")
     ].join("");
-  }
-  function kpiCard(label, value, unit, sub){
-    return '<div class="kpi-card"><div class="kpi-label">'+esc(label)+'</div><div class="kpi-value mono">'+esc(value)+'<span class="unit">'+esc(unit)+'</span></div><div class="kpi-sub">'+esc(sub)+'</div></div>';
-  }
-
-  function renderAlert(agg){
-    var top = agg.problemRanked[0];
-    var el = $("#alert-card");
-    if(!top || top.count < 3){ el.style.display = "none"; return; }
-    el.style.display = "flex";
-    var pctOfTotal = Math.round(top.minutes/agg.totalMinutes*100);
-    var byEq = {};
-    var missingRootCause = 0;
-    activeData().filter(function(r){ return r.problem === top.label; }).forEach(function(r){
-      byEq[r.equipment] = (byEq[r.equipment]||0)+1;
-      if(r.status!=="已解決" && !r.rootCause) missingRootCause++;
-    });
-    var eqStr = Object.keys(byEq).sort(function(a,b){return byEq[b]-byEq[a];}).map(function(k){ return k+"×"+byEq[k]; }).join("、");
-    el.innerHTML =
-      '<div class="icon-wrap">'+ICONS.warn+'</div>'+
-      '<div style="flex:1">'+
-        '<div class="alert-title">重複發生警示：「'+esc(top.label)+'」</div>'+
-        '<div class="alert-body">累計發生 <b class="mono">'+top.count+'</b> 次、共 <b class="mono">'+top.minutes+'</b> 分鐘，佔目前累計停機時間 <b class="mono">'+pctOfTotal+'%</b>，集中於 '+esc(eqStr)+'。其中 <b class="mono">'+missingRootCause+'</b> 筆尚未填寫根本原因，建議列為優先改善追蹤項目。</div>'+
-        '<div class="alert-actions"><button class="chip-btn" id="alert-filter-btn">查看這 '+top.count+' 筆紀錄</button>'+
-        (missingRootCause ? '<button class="chip-btn" id="alert-rootcause-btn">前往補填根本原因</button>' : '')+
-        '</div>'+
-      '</div>';
-    $("#alert-filter-btn").onclick = function(){ clearFilters(); filterState.problem = top.label; goto("list"); };
-    var rcBtn = $("#alert-rootcause-btn");
-    if(rcBtn){
-      rcBtn.onclick = function(){
-        var rec = activeData().find(function(r){ return r.problem===top.label && r.status!=="已解決" && !r.rootCause; });
-        if(rec) openDetailById(rec.id);
-      };
+    var trackingCard = $("#kpi-tracking");
+    if(trackingCard && agg.trackingRows.length){
+      trackingCard.style.cursor = "pointer";
+      trackingCard.title = "點一下查看追蹤中的紀錄";
+      trackingCard.onclick = function(){ clearFilters(); filterState.status = "追蹤中"; goto("list"); };
     }
+  }
+  function kpiCard(label, value, unit, sub, id){
+    return '<div class="kpi-card"'+(id?' id="'+id+'"':'')+'><div class="kpi-label">'+esc(label)+'</div><div class="kpi-value mono">'+esc(value)+'<span class="unit">'+esc(unit)+'</span></div><div class="kpi-sub">'+esc(sub)+'</div></div>';
   }
 
   function renderHBarChart(container, rows, opts){
@@ -1435,7 +1394,6 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
     var rangeLabel = {all:"全部", month:"本月", week:"本週"}[dashboardRange] || "全部";
     $("#dashboard-range-desc").innerHTML = "檢視範圍："+rangeLabel+"　共 <span class=\"mono\" id=\"kpi-total-mini\">"+agg.totalEvents+"</span> 筆紀錄";
     renderKPI(agg);
-    renderAlert(agg);
     renderHBarChart($("#chart-equipment"), agg.equipmentRanked, { valueKey:"minutes", filterKey:"equipment" });
     renderHBarChart($("#chart-problem"), agg.categoryRanked, { valueKey:"count", filterKey:"category" });
     renderSeverityChart($("#chart-severity"), agg);
