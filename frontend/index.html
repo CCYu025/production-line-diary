@@ -652,7 +652,7 @@
       <div class="topbar">
         <div>
           <h1>設備對照設定</h1>
-          <div class="desc">設定每台設備目前對應的品號與原料類別，之後新增紀錄選了設備會自動帶入，換線時才需要回來改這裡</div>
+          <div class="desc">設定生產機台（F3/F4/G5/G6/F7/F8）目前對應的品號與原料類別，之後新增紀錄選了設備會自動帶入，換線時才需要回來改這裡。原材區、RB2 這類機構/區塊沒有自己的品號，不需要設定</div>
         </div>
       </div>
       <div class="form-card" style="max-width:720px">
@@ -722,6 +722,10 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
   // 不是寫死的允許清單。
   var DEFAULT_EQUIPMENT = ["原材區1","原材區2","F3","F4","F7"];
   var DEFAULT_CATEGORIES = ["取料異常","缺料","尺寸異常","沾模","材料損傷","設備異常","其他"];
+  // 只有實際生產、對應特定品號/原料的機台才需要設備對照表——原材區、RB2 這類
+  // 自動化設備裡的個別運作機構/區塊沒有自己的品號，不該出現在對照表預設列表裡。
+  // 這份清單只是「設備對照設定」畫面的起始建議，使用者仍可以在畫面上手動增減。
+  var PRODUCTION_EQUIPMENT = ["F3","F4","G5","G6","F7","F8"];
   // 品號／原料類別沒有合理的預設清單可以猜——現場實際用什麼代號完全因廠而異，
   // 一開始就是空的，等第一次有人填了才會出現在建議清單裡。
   var META = { equipment: DEFAULT_EQUIPMENT.slice(), categories: DEFAULT_CATEGORIES.slice(), productCodes: [], materialCategories: [], equipmentMap: [] };
@@ -1363,15 +1367,16 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
   /* ---------------- 設備對照設定 ---------------- */
   var equipmentMapDraft = [];
   function renderEquipmentMapSettings(){
-    // 第一次打開這個畫面：用「目前已知的設備」+「已經存過的對照表」拼出草稿，
-    // 讓使用者不用自己把每台設備的代號再打一次。
+    // 第一次打開這個畫面：用「實際會生產、對應品號的機台」+「已經存過的對照表」
+    // 拼出草稿——原材區、RB2 這類自動化設備裡的個別機構/區塊沒有自己的品號，
+    // 不會被自動列進來，需要的話使用者仍可以按「+ 新增一列」手動加。
     if(equipmentMapDraft.length===0){
       var seen = {};
       equipmentMapDraft = META.equipmentMap.map(function(m){
         seen[m.equipment] = true;
         return { equipment:m.equipment, productCode:m.productCode||"", materialCategory:m.materialCategory||"" };
       });
-      META.equipment.forEach(function(eq){
+      PRODUCTION_EQUIPMENT.forEach(function(eq){
         if(!seen[eq]) equipmentMapDraft.push({ equipment:eq, productCode:"", materialCategory:"" });
       });
       if(!equipmentMapDraft.length) equipmentMapDraft.push({ equipment:"", productCode:"", materialCategory:"" });
