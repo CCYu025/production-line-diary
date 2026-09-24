@@ -450,11 +450,13 @@
   }
   .report-record .rr-head{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
   .report-record .rr-title{ font-weight:800; font-size:14px; }
-  .report-record .rr-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px 16px; font-size:12px; margin-bottom:10px; }
+  .report-record .rr-body{ display:grid; grid-template-columns:1.4fr 1fr; gap:20px; align-items:start; }
+  .report-record .rr-data{ min-width:0; }
+  .report-record .rr-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px 16px; font-size:12px; margin-bottom:10px; }
   .report-record .rr-grid .k, .report-record .rr-block .k{ color:var(--ink-muted); font-size:10.5px; font-weight:700; margin-bottom:2px; }
   .report-record .rr-grid .v{ font-weight:600; }
   .report-record .rr-block{ margin-bottom:8px; font-size:12.5px; }
-  .report-photos{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:6px; }
+  .report-photos{ display:flex; flex-direction:column; gap:8px; }
   .report-photos img{ width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:8px; border:1px solid var(--line); }
   .report-empty{ color:var(--ink-muted); font-size:13px; padding:24px 0; }
 
@@ -1551,15 +1553,19 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
         '<div class="rr-title">'+esc(r.date)+' '+esc(r.time)+'　'+esc(r.equipment)+'（'+esc(r.category)+'）</div>'+
         pill(r.severity, SEVERITY_HUE[r.severity])+
       '</div>'+
-      '<div class="rr-grid">'+
-        rrField("班別", r.shift)+rrField("耗時", r.duration+" 分")+
-        rrField("品號", r.productCode)+rrField("原料類別", r.materialCategory)+
-        rrField("處理狀態", r.status)+
+      '<div class="rr-body">'+
+        '<div class="rr-data">'+
+          '<div class="rr-grid">'+
+            rrField("班別", r.shift)+rrField("耗時", r.duration+" 分")+
+            rrField("品號", r.productCode)+rrField("原料類別", r.materialCategory)+
+            rrField("處理狀態", r.status)+
+          '</div>'+
+          rrBlock("問題", r.problem)+
+          rrBlock("處理", r.action||"（未填寫）")+
+          rrBlock("根本原因", r.rootCause||"（未填寫）")+
+        '</div>'+
+        photosHtml+
       '</div>'+
-      rrBlock("問題", r.problem)+
-      rrBlock("處理", r.action||"（未填寫）")+
-      rrBlock("根本原因", r.rootCause||"（未填寫）")+
-      photosHtml+
     '</div>';
   }
 
