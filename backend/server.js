@@ -15,7 +15,7 @@ import {
   severityFromDuration,
 } from "./lib/aggregate.js";
 import { writeSnapshotXlsx } from "./lib/xlsx.js";
-import { deleteUnreferencedPhoto, movePhotosForDateChange } from "./lib/photos.js";
+import { deleteUnreferencedPhoto, movePhotosForDateChange, sweepOrphanedPhotos } from "./lib/photos.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -271,6 +271,21 @@ app.delete("/api/photos/:date/:filename", async (req, res) => {
   res.json({ deleted });
 });
 
+// client 端放棄新增/編輯時會主動清掉還沒送出的照片，但關分頁、手機按返回鍵、
+// 系統把分頁凍結在背景這些情況，client 完全沒機會執行清理——這支是最後一道
+// 防線，不管 client 端發生什麼事，伺服器自己會定期把硬碟上「沒有任何紀錄
+// 參照、且放了超過安全時間」的照片清掉。啟動時跑一次、之後每小時跑一次，
+// 涵蓋「伺服器長時間開著不重啟」的實際使用情境（單機工具，不會天天重啟）。
+async function runPhotoSweep() {
+  try {
+    const store = await loadStore(DATA_DIR);
+    const removed = await sweepOrphanedPhotos(PHOTOS_DIR, store.records);
+    if (removed > 0) console.log(`照片孤兒檔清理：刪除 ${removed} 個檔案`);
+  } catch (err) {
+    console.error("照片孤兒檔清理失敗：", err.message);
+  }
+}
+
 // 只有直接執行這支檔案時才啟動監聽；被測試檔 import 當模組用時不要自動開伺服器/開瀏覽器。
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
@@ -281,6 +296,8 @@ if (isMain) {
       exec(`start "" "http://localhost:${PORT}"`);
     }
   });
+  runPhotoSweep();
+  setInterval(runPhotoSweep, 60 * 60 * 1000);
 }
 
 export default app;

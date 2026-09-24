@@ -10,7 +10,7 @@
 
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { rm, mkdir, rename } from "node:fs/promises";
+import { rm, mkdir, rename, readdir, stat } from "node:fs/promises";
 import { dateToPhotoFolder } from "./store.js";
 
 export function isPhotoReferenced(records, date, filename) {
@@ -47,4 +47,41 @@ export async function movePhotosForDateChange(photosDir, oldDate, newDate, filen
       await rename(from, to);
     }
   }
+}
+
+// 前端在放棄新增/編輯時會主動呼叫 DELETE /api/photos 清掉還沒送出的照片，
+// 但那是「盡力而為」——關分頁、手機按返回鍵、系統把分頁凍結在背景，都會讓
+// 那段清理程式碼完全沒有機會執行。這支函式是最後一道防線：跟 client 端的
+// 清理邏輯無關，只看硬碟上實際的檔案跟 records 裡實際參照的照片，兩邊對不上
+// 又放了夠久的，才視為孤兒清掉。
+//
+// 「放了夠久」是關鍵安全邊界，不能看到沒被參照就刪：新增紀錄的過程中，
+// 照片可能剛上傳完、表單還沒送出，這個當下檔案本來就還沒被任何紀錄參照，
+// 是正常的中間狀態，不是孤兒；太快清掉會刪到使用者正在用的照片。
+const SWEEP_SAFE_AGE_MS = 60 * 60 * 1000; // 1 小時內上傳的檔案不動，避免刪到還在使用中的
+
+export async function sweepOrphanedPhotos(photosDir, records) {
+  const referenced = new Set();
+  for (const r of records) {
+    const folder = dateToPhotoFolder(r.date);
+    for (const filename of r.photos || []) referenced.add(folder + "/" + filename);
+  }
+
+  if (!existsSync(photosDir)) return 0;
+  let removed = 0;
+  const dateDirs = await readdir(photosDir, { withFileTypes: true });
+  for (const dirent of dateDirs) {
+    if (!dirent.isDirectory()) continue;
+    const dirPath = path.join(photosDir, dirent.name);
+    const files = await readdir(dirPath);
+    for (const filename of files) {
+      if (referenced.has(dirent.name + "/" + filename)) continue;
+      const filePath = path.join(dirPath, filename);
+      const st = await stat(filePath);
+      if (Date.now() - st.mtimeMs < SWEEP_SAFE_AGE_MS) continue;
+      await rm(filePath, { force: true });
+      removed++;
+    }
+  }
+  return removed;
 }

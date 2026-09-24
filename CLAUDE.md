@@ -79,13 +79,37 @@ npm start               # 或雙擊 start.bat
   產生 `-1` 結尾的重複檔案、原始檔案變孤兒。**不要為了「簡化程式碼」改回送出時才上傳的模式**。
 - **移除照片參照時必須呼叫 `deleteUnreferencedPhoto`**（`PUT`/`DELETE /api/records` 都已經接好），
   確認沒有其他紀錄還參照同一個 `(date, filename)` 才刪除實體檔案。
-- **新增紀錄途中放棄（按「清除」，或切到別的畫面）時，必須清掉已經上傳但還沒送出的照片**
-  （`cleanupAbandonedAddPhotos()`，掛在 `#add-form` 的 `reset` 事件和 `goto()` 離開新增畫面時）。
+- **新增／編輯紀錄途中放棄時，必須清掉已經上傳但還沒送出的照片**——這條規則覆蓋兩個畫面：
+  新增（`cleanupAbandonedAddPhotos()`，掛在 `#add-form` 的 `reset` 事件和 `goto()` 離開新增畫面時）
+  跟編輯（`cleanupAbandonedEditPhotos()`，掛在「取消」、`closeDetail()`、切上一筆/下一筆時）。
   這是實測抓到的真實 bug：使用者中途放棄一次新增（例如填錯日期重來），已經上傳的照片沒被清掉，
   變成硬碟上的孤兒檔；下次選到同一個檔名的照片，multer 的防覆蓋機制會把新上傳的檔案改成
   `-1` 結尾，兩份內容一樣的照片就一起留在資料夾裡，看起來像「同一張照片重複出現」。
-  **不要只在「送出成功」時清 `pendingPhotos`**，中途放棄的路徑也要清，而且是刪實體檔案，
-  不是只清記憶體陣列。
+  **不要只在「送出成功」時清 `pendingPhotos`/`editState.pending`**，中途放棄的路徑也要清，
+  而且是刪實體檔案，不是只清記憶體陣列。
+  **關鍵的 race condition，第一版修復漏掉、造成 bug 回歸過一次**：`cleanupAbandonedAddPhotos`/
+  `cleanupAbandonedEditPhotos` 只能刪「已經拿到檔名」的照片——如果放棄的當下上傳還在網路
+  請求中（`entry.filename` 還是 `null`），這兩個函式看不到最終檔名，沒辦法刪。**必須把該
+  entry 標記 `entry.abandoned = true`**，讓 `#f-photo`/`#e-photo` 的 `onchange` 裡那段
+  `await api.uploadPhoto(...)` 完成之後自己檢查這個旗標、自己補刪——不能假設「清掉陣列」
+  就等於「清掉了這次放棄的所有東西」，那個 entry 物件在 await 期間仍然活著，上傳一旦真的
+  完成就會把 filename 寫回去，沒人接手就變孤兒。**用自動化測試驗證這類 bug 時，一定要真的
+  讓放棄動作發生在上傳「還沒回應」的當下**（例如在同一個 tick 裡先 dispatch change、緊接著
+  不等待就觸發放棄），不能等上傳的 promise resolve 之後才放棄——本地測試伺服器回應太快，
+  照著「先上傳完再放棄」的順序測，測不出這個 race window，這正是第一版修復被判定「已修好」
+  卻在真實手機網路延遲下復發的原因。
+- **`sweepOrphanedPhotos()`（`backend/lib/photos.js`）是孤兒照片的最後一道防線，跟上面兩個
+  client 端 `cleanupAbandoned*` 函式是兩層完全獨立的防護**。client 端的清理再怎麼補，都只能
+  是「盡力而為」——關分頁、手機按返回鍵、系統把分頁凍結在背景，這些情況 JS 完全沒機會執行
+  任何清理。`sweepOrphanedPhotos` 不依賴 client 端發生了什麼，只看伺服器啟動時（之後每小時
+  重跑一次，見 `server.js` 的 `runPhotoSweep`）硬碟上實際的檔案跟 `records` 實際參照的照片
+  兩邊對不上、且放了超過 `SWEEP_SAFE_AGE_MS`（1 小時）的部分才清掉。
+  **這個安全時間邊界不能拿掉或縮短**：新增紀錄的過程中，照片可能剛上傳完、表單還沒送出，
+  這個當下檔案本來就還沒被任何紀錄參照，是正常的中間狀態，不是孤兒；沒有這個緩衝，掃描
+  可能會刪到使用者正在填的表單裡已經上傳好、等著送出的照片。
+  **判斷「有沒有參照」要看全部 `records`，包含 `deleted:true` 的軟刪除紀錄**——回收桶復原前，
+  軟刪除紀錄的照片仍然算「有參照」，不能被掃描當成孤兒清掉，這點跟 `isPhotoReferenced` 的
+  邏輯一致，見上面「軟刪除」那條核心不變量。
 - **exceljs 讀 Excel 日期/時間格子要用 `getUTCHours()` 等 UTC getter，絕對不要用本地
   `getHours()`**。這個 bug 在 UTC+8 的機器上會把時間多讀 8 小時，而且**在跑 UTC 時區的
   GitHub Actions runner 上測不出來**（本地/UTC 剛好相等）——`test/xlsx.test.js` 裡特地把
