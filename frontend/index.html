@@ -1479,6 +1479,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
 
   /* ---------------- Navigation ---------------- */
   function goto(view){
+    if(view!=="add" && !$("#view-add").hidden) cleanupAbandonedAddPhotos();
     $all(".view").forEach(function(v){ v.hidden = true; });
     $("#view-"+view).hidden = false;
     $all(".nav-btn").forEach(function(b){ b.classList.toggle("active", b.getAttribute("data-view")===view); });
@@ -1532,6 +1533,17 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
         if(p && p.filename){ api.deletePhoto(p.date, p.filename); }
       };
     });
+  }
+
+  // 中途放棄新增（按「清除」或切換到別的畫面）時，已經上傳但還沒送出的照片
+  // 必須清掉實體檔案，不然下次選到同一個檔名的照片，會在硬碟上留下一份孤兒、
+  // 新上傳的檔案被迫改成 -1 結尾，看起來就像「同一張照片出現兩次」。
+  function cleanupAbandonedAddPhotos(){
+    if(!pendingPhotos.length) return;
+    pendingPhotos.forEach(function(p){ if(p.filename) api.deletePhoto(p.date, p.filename); });
+    pendingPhotos = [];
+    renderAddPhotoPreview();
+    $("#f-mapping-preview").hidden = true;
   }
 
   function showToast(msg){
@@ -1652,11 +1664,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       }
     };
     $("#add-form").addEventListener("reset", function(){
-      setTimeout(function(){
-        pendingPhotos = [];
-        renderAddPhotoPreview();
-        $("#f-mapping-preview").hidden = true;
-      }, 0);
+      setTimeout(cleanupAbandonedAddPhotos, 0);
     });
 
     $("#cal-prev").onclick = function(){ calendarCursor.setMonth(calendarCursor.getMonth()-1); renderCalendar(); };

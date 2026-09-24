@@ -79,6 +79,13 @@ npm start               # 或雙擊 start.bat
   產生 `-1` 結尾的重複檔案、原始檔案變孤兒。**不要為了「簡化程式碼」改回送出時才上傳的模式**。
 - **移除照片參照時必須呼叫 `deleteUnreferencedPhoto`**（`PUT`/`DELETE /api/records` 都已經接好），
   確認沒有其他紀錄還參照同一個 `(date, filename)` 才刪除實體檔案。
+- **新增紀錄途中放棄（按「清除」，或切到別的畫面）時，必須清掉已經上傳但還沒送出的照片**
+  （`cleanupAbandonedAddPhotos()`，掛在 `#add-form` 的 `reset` 事件和 `goto()` 離開新增畫面時）。
+  這是實測抓到的真實 bug：使用者中途放棄一次新增（例如填錯日期重來），已經上傳的照片沒被清掉，
+  變成硬碟上的孤兒檔；下次選到同一個檔名的照片，multer 的防覆蓋機制會把新上傳的檔案改成
+  `-1` 結尾，兩份內容一樣的照片就一起留在資料夾裡，看起來像「同一張照片重複出現」。
+  **不要只在「送出成功」時清 `pendingPhotos`**，中途放棄的路徑也要清，而且是刪實體檔案，
+  不是只清記憶體陣列。
 - **exceljs 讀 Excel 日期/時間格子要用 `getUTCHours()` 等 UTC getter，絕對不要用本地
   `getHours()`**。這個 bug 在 UTC+8 的機器上會把時間多讀 8 小時，而且**在跑 UTC 時區的
   GitHub Actions runner 上測不出來**（本地/UTC 剛好相等）——`test/xlsx.test.js` 裡特地把
