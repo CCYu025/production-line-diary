@@ -1056,6 +1056,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
     openDetailByIndex(idx);
   }
   function openDetailByIndex(idx){
+    if(detailMode==="edit") cleanupAbandonedEditPhotos();
     currentDetailIndex = idx;
     detailMode = "view";
     deleteConfirmPending = false;
@@ -1226,7 +1227,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       // 避免儲存失敗後使用者重試一次，把同一張照片重新上傳一次而多出一份。
       for(var i=0;i<files.length;i++){
         var f = files[i];
-        var entry = { file:f, url:"", date:date, filename:null, uploading:true, error:false };
+        var entry = { file:f, url:"", date:date, filename:null, uploading:true, error:false, abandoned:false };
         try{ entry.url = URL.createObjectURL(f); }catch(err){}
         editState.pending.push(entry);
         renderEditPhotoPreview(date);
@@ -1237,12 +1238,18 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
           showToast("照片上傳失敗："+(err.message||""));
         }
         entry.uploading = false;
-        renderEditPhotoPreview(date);
+        // 跟新增畫面一樣的 race condition：上傳還在跑的時候使用者按了取消／
+        // 切走／切到上一筆下一筆，cleanupAbandonedEditPhotos 當時補不到
+        // filename，只能標記 abandoned，交給這裡收尾補刪。
+        if(entry.abandoned){
+          if(entry.filename) api.deletePhoto(entry.date, entry.filename);
+        } else {
+          renderEditPhotoPreview(date);
+        }
       }
     };
     $("#edit-cancel").onclick = function(){
-      // 取消編輯：已經上傳但還沒存進紀錄的照片要清掉，不然也會變孤兒檔案
-      editState.pending.forEach(function(p){ if(p.filename) api.deletePhoto(p.date, p.filename); });
+      cleanupAbandonedEditPhotos();
       detailMode="view"; renderSoBody(idx);
     };
     $("#edit-save").onclick = function(){ saveEdit(idx); };
@@ -1473,6 +1480,8 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
     return '<div class="so-field"><div class="k">'+esc(k)+'</div><div class="v'+(mono?' mono':'')+'">'+esc(v)+'</div></div>';
   }
   function closeDetail(){
+    if(detailMode==="edit") cleanupAbandonedEditPhotos();
+    detailMode = "view";
     $("#slideover").classList.remove("open");
     $("#scrim").classList.remove("open");
   }
@@ -1538,12 +1547,32 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
   // 中途放棄新增（按「清除」或切換到別的畫面）時，已經上傳但還沒送出的照片
   // 必須清掉實體檔案，不然下次選到同一個檔名的照片，會在硬碟上留下一份孤兒、
   // 新上傳的檔案被迫改成 -1 結尾，看起來就像「同一張照片出現兩次」。
+  //
+  // 上傳還在網路請求中途（entry.filename 還是 null）時放棄，這裡沒辦法刪──
+  // 根本不知道伺服器最後存成什麼檔名。所以標記 entry.abandoned=true，交給
+  // #f-photo onchange 裡那個 await 上傳完成之後自己檢查這個旗標、自己補刪，
+  // 不能只清掉 pendingPhotos 陣列就當作處理完了（那個 entry 物件還活著，
+  // 只是不再被陣列參照，await 還是會繼續把它的 filename 填上去）。
   function cleanupAbandonedAddPhotos(){
     if(!pendingPhotos.length) return;
-    pendingPhotos.forEach(function(p){ if(p.filename) api.deletePhoto(p.date, p.filename); });
+    pendingPhotos.forEach(function(p){
+      if(p.filename){ api.deletePhoto(p.date, p.filename); }
+      else { p.abandoned = true; }
+    });
     pendingPhotos = [];
     renderAddPhotoPreview();
     $("#f-mapping-preview").hidden = true;
+  }
+
+  // 跟 cleanupAbandonedAddPhotos 同樣的放棄／race condition 邏輯，用在「編輯」
+  // 畫面（取消編輯、切換到上/下一筆、關閉詳細面板）。
+  function cleanupAbandonedEditPhotos(){
+    if(!editState || !editState.pending.length) return;
+    editState.pending.forEach(function(p){
+      if(p.filename){ api.deletePhoto(p.date, p.filename); }
+      else { p.abandoned = true; }
+    });
+    editState.pending = [];
   }
 
   function showToast(msg){
@@ -1601,7 +1630,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       // 重複觸發，也不會因為重跑上傳而多出一份一樣的照片。
       for(var i=0;i<files.length;i++){
         var f = files[i];
-        var entry = { file:f, url:"", date:date, filename:null, uploading:true, error:false };
+        var entry = { file:f, url:"", date:date, filename:null, uploading:true, error:false, abandoned:false };
         try{ entry.url = URL.createObjectURL(f); }catch(err){}
         pendingPhotos.push(entry);
         renderAddPhotoPreview();
@@ -1612,7 +1641,15 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
           showToast("照片上傳失敗："+(err.message||""));
         }
         entry.uploading = false;
-        renderAddPhotoPreview();
+        // 上傳這段 await 期間，使用者可能已經按「清除」或切走畫面放棄了這次新增
+        // （cleanupAbandonedAddPhotos 當時看不到還沒回來的 filename，只能標記
+        // entry.abandoned，交給這裡收尾）——上傳一旦真的完成，要嘛立刻補刪，
+        // 不能照舊塞進畫面，不然孤兒檔案又跑回來一次。
+        if(entry.abandoned){
+          if(entry.filename) api.deletePhoto(entry.date, entry.filename);
+        } else {
+          renderAddPhotoPreview();
+        }
       }
     };
 
