@@ -608,13 +608,11 @@
             <input type="text" id="f-equipment" list="equipment-options-add" placeholder="選擇或輸入設備代號…" required>
             <datalist id="equipment-options-add"></datalist>
           </div>
-          <div class="field"><label for="f-productcode">品號 <span class="hint">依設備自動帶入，可覆蓋</span></label>
-            <input type="text" id="f-productcode" list="productcode-options" placeholder="選填…">
-            <datalist id="productcode-options"></datalist>
-          </div>
-          <div class="field"><label for="f-material">原料類別 <span class="hint">依設備自動帶入，可覆蓋</span></label>
-            <input type="text" id="f-material" list="material-options" placeholder="選填…">
-            <datalist id="material-options"></datalist>
+          <datalist id="productcode-options"></datalist>
+          <datalist id="material-options"></datalist>
+          <div class="field full" id="f-mapping-preview" hidden>
+            <label>品號 / 原料類別 <span class="hint">依「設備對照設定」自動帶入，例外情形請於送出後至編輯畫面調整</span></label>
+            <div class="eq-tag" id="f-mapping-preview-text" style="width:fit-content"></div>
           </div>
           <div class="field full">
             <label for="f-problem">問題</label>
@@ -1632,8 +1630,8 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
           action: $("#f-action").value.trim(),
           rootCause: $("#f-rootcause").value.trim() || null,
           status: $("#f-status").value || "待處理",
-          productCode: $("#f-productcode").value.trim() || null,
-          materialCategory: $("#f-material").value.trim() || null,
+          productCode: (findEquipmentMap(equipment)||{}).productCode || null,
+          materialCategory: (findEquipmentMap(equipment)||{}).materialCategory || null,
           photos: photoNames
         });
         DATA.push(rec);
@@ -1657,6 +1655,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       setTimeout(function(){
         pendingPhotos = [];
         renderAddPhotoPreview();
+        $("#f-mapping-preview").hidden = true;
       }, 0);
     });
 
@@ -1698,14 +1697,17 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       }
     };
 
-    // 新增紀錄時，選了設備就依對照表自動帶入品號／原料類別（不覆蓋使用者已經手動填的內容）
+    // 新增紀錄時，選了設備就依對照表顯示對應的品號／原料類別——唯讀預覽，不能在這裡覆蓋，
+    // 例外情形送出後去編輯畫面調整那一筆，或去「設備對照設定」改對照表本身（見 CLAUDE.md）
     $("#f-equipment").addEventListener("input", function(){
       var m = findEquipmentMap(this.value.trim());
-      if(!m) return;
-      var pcField = $("#f-productcode");
-      var matField = $("#f-material");
-      if(!pcField.value.trim() && m.productCode) pcField.value = m.productCode;
-      if(!matField.value.trim() && m.materialCategory) matField.value = m.materialCategory;
+      var preview = $("#f-mapping-preview");
+      if(!m || (!m.productCode && !m.materialCategory)){ preview.hidden = true; return; }
+      var parts = [];
+      if(m.productCode) parts.push("品號 "+m.productCode);
+      if(m.materialCategory) parts.push("原料 "+m.materialCategory);
+      $("#f-mapping-preview-text").textContent = parts.join("　");
+      preview.hidden = false;
     });
   }
 
