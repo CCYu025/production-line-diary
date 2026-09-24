@@ -175,6 +175,32 @@ CI（`.github/workflows/ci.yml`）在每次 push/PR 到 `main` 時自動跑這�
 | `backend/data/data.json` | 真實產線資料，只留在 `DATA_DIR`，從不進這個 repo |
 | `backend/data/example/` | **例外**：這是刻意保留的範例/示範資料，本來就該 commit |
 
+## Git 工作流程
+
+這個 repo 是**公開**的（考慮過作品集/履歷用途後決定公開，commit 歷史查過一輪，
+確認真實資料/`.env`/照片從來沒進過版控才改的）。`main` 分支有開 branch protection：
+不能直接 push，只能透過 PR 合併，而且 CI（`test` job）要綠燈才能合併
+（`required_approving_review_count: 0`——因為只有一個人維護，不需要真的有人 approve，
+但仍然強制走 PR + CI 檢查這個流程，連 repo 管理者自己也繞不過去，`enforce_admins: true`）。
+
+**每次改動的標準流程：**
+
+```bash
+git checkout -b <類型>/<簡短描述>   # 例如 fix/photo-orphan-cleanup
+# ...改動、commit...
+git push -u origin <分支名>
+gh pr create --title "..." --body "..."
+gh pr checks --watch   # 等 CI 跑完
+gh pr merge --squash --delete-branch
+```
+
+- **Squash merge**：合併後 `main` 上只留一個乾淨的 commit，開發過程中的中間 commit
+  不會留在 `main` 的歷史裡。`delete-branch` 讓合併後自動清掉分支，不用手動清。
+- 不需要等待任何人 review——`required_approving_review_count` 是 0，PR 開了、CI 過了
+  就能合併，PR 的作用是留下「這次改動的完整說明」，不是卡審核流程。
+- 真的需要緊急直接改 `main`（理論上不會發生，因為 `enforce_admins` 也擋住了）：
+  沒有繞過的後門，一律走 PR。
+
 ## AI 協作原則
 
 使用者確認實作方向後，直接執行，不需要每一步都詢問「是否繼續」。探索性問題
