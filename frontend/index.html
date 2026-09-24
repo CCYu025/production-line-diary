@@ -437,6 +437,39 @@
     main{ padding:16px 14px 50px; }
     .kpi-row{ grid-template-columns:repeat(2,1fr); }
   }
+
+  /* ---------- Report ---------- */
+  .report-header{ margin-bottom:6px; }
+  .report-header h2{ font-size:20px; font-weight:900; }
+  .report-header .meta{ font-size:12px; color:var(--ink-muted); margin-top:3px; }
+  .report-summary{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin:14px 0; }
+  .report-charts{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:8px; }
+  .report-record{
+    border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:12px;
+    break-inside:avoid; page-break-inside:avoid;
+  }
+  .report-record .rr-head{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .report-record .rr-title{ font-weight:800; font-size:14px; }
+  .report-record .rr-body{ display:grid; grid-template-columns:1.4fr 1fr; gap:20px; align-items:start; }
+  .report-record .rr-data{ min-width:0; }
+  .report-record .rr-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px 16px; font-size:12px; margin-bottom:10px; }
+  .report-record .rr-grid .k, .report-record .rr-block .k{ color:var(--ink-muted); font-size:10.5px; font-weight:700; margin-bottom:2px; }
+  .report-record .rr-grid .v{ font-weight:600; }
+  .report-record .rr-block{ margin-bottom:8px; font-size:12.5px; }
+  .report-photos{ display:flex; flex-direction:column; gap:8px; }
+  .report-photos img{ width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:8px; border:1px solid var(--line); }
+  .report-empty{ color:var(--ink-muted); font-size:13px; padding:24px 0; }
+
+  @media print{
+    .no-print{ display:none !important; }
+    .sidebar{ display:none !important; }
+    .app{ display:block; }
+    main{ padding:0; }
+    body{ background:#fff; }
+    .report-record{ break-inside:avoid; page-break-inside:avoid; }
+    .card{ box-shadow:none; border:1px solid var(--line); }
+    @page{ size:A4; margin:14mm; }
+  }
 </style>
 </head>
 <body>
@@ -460,6 +493,7 @@
       <button class="nav-btn" data-view="trash"><svg class="icon" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m-9 0 1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg> 回收桶 <span class="nav-badge" id="trash-badge" hidden></span></button>
       <div style="height:1px;background:var(--line);margin:6px 4px"></div>
       <button class="nav-btn" data-view="settings"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> 設備對照設定</button>
+      <button class="nav-btn" data-view="report"><svg class="icon" viewBox="0 0 24 24"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg> 列印報表</button>
       <button class="nav-btn" id="export-xlsx-btn"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> 匯出為 Excel</button>
     </div>
     <div class="sidebar-foot">
@@ -678,6 +712,25 @@
           </table>
         </div>
       </div>
+    </section>
+
+    <!-- REPORT -->
+    <section class="view" id="view-report" hidden>
+      <div class="topbar no-print">
+        <div>
+          <h1>列印報表</h1>
+          <div class="desc">選擇日期範圍後按「產生報表」，內容包含根本原因、品號／原料類別與照片；產生後按「列印／另存 PDF」，在瀏覽器的列印對話框選擇「另存為 PDF」即可</div>
+        </div>
+      </div>
+      <div class="form-card no-print" style="max-width:640px">
+        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
+          <div class="field"><label for="report-start">起始日期</label><input type="date" id="report-start"></div>
+          <div class="field"><label for="report-end">結束日期</label><input type="date" id="report-end"></div>
+          <button type="button" class="btn btn-primary" id="report-generate">產生報表</button>
+          <button type="button" class="btn" id="report-print" disabled>列印／另存 PDF</button>
+        </div>
+      </div>
+      <div id="report-output"></div>
     </section>
   </main>
 </div>
@@ -1476,6 +1529,91 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
     });
   }
 
+  /* ---------------- Report（列印/PDF） ---------------- */
+  function initReportView(){
+    if(!$("#report-start").value){
+      var today = new Date().toISOString().slice(0,10);
+      $("#report-start").value = today;
+      $("#report-end").value = today;
+    }
+  }
+
+  function rrField(k,v){
+    return '<div><div class="k">'+esc(k)+'</div><div class="v">'+esc(v||"—")+'</div></div>';
+  }
+  function rrBlock(k,v){
+    return '<div class="rr-block"><div class="k">'+esc(k)+'</div><div>'+esc(v)+'</div></div>';
+  }
+  function reportRecordHtml(r){
+    var items = photoItems(r);
+    var photosHtml = items.length ?
+      '<div class="report-photos">'+items.map(function(it){ return '<img src="'+it.src+'">'; }).join("")+'</div>' : "";
+    return '<div class="report-record">'+
+      '<div class="rr-head">'+
+        '<div class="rr-title">'+esc(r.date)+' '+esc(r.time)+'　'+esc(r.equipment)+'（'+esc(r.category)+'）</div>'+
+        pill(r.severity, SEVERITY_HUE[r.severity])+
+      '</div>'+
+      '<div class="rr-body">'+
+        '<div class="rr-data">'+
+          '<div class="rr-grid">'+
+            rrField("班別", r.shift)+rrField("耗時", r.duration+" 分")+
+            rrField("品號", r.productCode)+rrField("原料類別", r.materialCategory)+
+            rrField("處理狀態", r.status)+
+          '</div>'+
+          rrBlock("問題", r.problem)+
+          rrBlock("處理", r.action||"（未填寫）")+
+          rrBlock("根本原因", r.rootCause||"（未填寫）")+
+        '</div>'+
+        photosHtml+
+      '</div>'+
+    '</div>';
+  }
+
+  function renderReport(){
+    var start = $("#report-start").value;
+    var end = $("#report-end").value;
+    if(!start || !end){ showToast("請選擇起訖日期"); return; }
+    if(start > end){ showToast("起始日期不能晚於結束日期"); return; }
+
+    var records = chronological(activeData().filter(function(r){ return r.date>=start && r.date<=end; }));
+    var agg = aggregate(records, "all");
+    var rangeLabel = start===end ? start : (start+" ～ "+end);
+    var generatedAt = fmtDateTime(new Date().toISOString());
+
+    var out = $("#report-output");
+    if(!records.length){
+      out.innerHTML =
+        '<div class="report-header"><h2>產線設備異常紀錄報表</h2>'+
+        '<div class="meta">日期範圍：'+esc(rangeLabel)+'　產出時間：'+esc(generatedAt)+'</div></div>'+
+        '<div class="report-empty">這段日期範圍內沒有紀錄</div>';
+      $("#report-print").disabled = true;
+      return;
+    }
+
+    out.innerHTML =
+      '<div class="report-header">'+
+        '<h2>產線設備異常紀錄報表</h2>'+
+        '<div class="meta">日期範圍：'+esc(rangeLabel)+'　共 '+records.length+' 筆　產出時間：'+esc(generatedAt)+'</div>'+
+      '</div>'+
+      '<div class="report-summary">'+
+        kpiCard("事件數", agg.totalEvents, "筆")+
+        kpiCard("累計停機時間", agg.totalMinutes, "分")+
+        kpiCard("平均耗時", agg.avg.toFixed(1), "分/件")+
+        kpiCard("追蹤中", agg.trackingRows.length, "筆")+
+      '</div>'+
+      '<div class="report-charts">'+
+        '<div class="card"><div class="card-head"><span class="card-title">設備停機時間排行</span></div><div id="report-chart-equipment"></div></div>'+
+        '<div class="card"><div class="card-head"><span class="card-title">設備發生次數</span></div><div id="report-chart-equipment-count"></div></div>'+
+      '</div>'+
+      '<div id="report-records"></div>';
+
+    var equipmentByCount = agg.equipmentRanked.slice().sort(function(a,b){ return b.count-a.count; });
+    renderHBarChart($("#report-chart-equipment"), agg.equipmentRanked, { valueKey:"minutes" });
+    renderHBarChart($("#report-chart-equipment-count"), equipmentByCount, { valueKey:"count", filterKey:"equipment" });
+    $("#report-records").innerHTML = records.map(reportRecordHtml).join("");
+    $("#report-print").disabled = false;
+  }
+
   function soField(k,v,mono){
     return '<div class="so-field"><div class="k">'+esc(k)+'</div><div class="v'+(mono?' mono':'')+'">'+esc(v)+'</div></div>';
   }
@@ -1497,6 +1635,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
     if(view==="dashboard") renderDashboard();
     if(view==="trash") renderTrash();
     if(view==="settings") renderEquipmentMapSettings();
+    if(view==="report") initReportView();
   }
 
   function renderDashboard(){
@@ -1720,6 +1859,9 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
         btn.disabled = false;
       }
     };
+
+    $("#report-generate").onclick = renderReport;
+    $("#report-print").onclick = function(){ window.print(); };
 
     $("#equipment-map-add-row").onclick = function(){
       equipmentMapDraft.push({ equipment:"", productCode:"", materialCategory:"" });
