@@ -454,8 +454,8 @@
   .report-record .rr-grid .k, .report-record .rr-block .k{ color:var(--ink-muted); font-size:10.5px; font-weight:700; margin-bottom:2px; }
   .report-record .rr-grid .v{ font-weight:600; }
   .report-record .rr-block{ margin-bottom:8px; font-size:12.5px; }
-  .report-photos{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
-  .report-photos img{ width:76px; height:76px; object-fit:cover; border-radius:6px; border:1px solid var(--line); }
+  .report-photos{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:6px; }
+  .report-photos img{ width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:8px; border:1px solid var(--line); }
   .report-empty{ color:var(--ink-muted); font-size:13px; padding:24px 0; }
 
   @media print{
