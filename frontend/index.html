@@ -393,6 +393,14 @@
   .legend-item{ display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-2); cursor:pointer; }
   .legend-dot{ width:9px; height:9px; border-radius:50%; flex:none; }
 
+  /* ---------- Pie/donut chart ---------- */
+  .pie-wrap{ display:flex; align-items:center; gap:22px; flex-wrap:wrap; }
+  .pie-svg{ width:112px; height:112px; flex:none; }
+  .pie-seg{ cursor:pointer; transition:opacity .15s; }
+  .pie-seg:hover{ opacity:.82; }
+  .pie-center-val{ font-size:22px; font-weight:900; fill:var(--ink-1); font-family:"IBM Plex Mono",monospace; }
+  .pie-wrap .legend-row{ margin-top:0; flex-direction:column; gap:8px; }
+
   /* ---------- Root cause editor ---------- */
   .rootcause-empty{ display:flex; flex-direction:column; gap:8px; }
   .rootcause-empty .rc-note{ font-size:11.5px; color:var(--ink-muted); line-height:1.5; }
@@ -970,9 +978,36 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
   }
 
   function renderSeverityChart(container, agg){
-    renderHBarChart(container, agg.severityCounts, {
-      valueKey:"count", filterKey:"severity",
-      colorFn: function(r){ return SEVERITY_HUE[r.label]; }
+    var total = agg.severityCounts.reduce(function(s,r){ return s+r.count; }, 0) || 1;
+    var cx=60, cy=60, r=42, sw=22, circ=2*Math.PI*r, offset=0;
+    var arcs = agg.severityCounts.filter(function(s){ return s.count>0; }).map(function(s){
+      var len = s.count/total*circ;
+      var seg = '<circle class="pie-seg" data-severity="'+esc(s.label)+'" cx="'+cx+'" cy="'+cy+'" r="'+r+'" '+
+        'fill="none" style="stroke:'+SEVERITY_HUE[s.label]+'" stroke-width="'+sw+'" '+
+        'stroke-dasharray="'+len+' '+(circ-len)+'" stroke-dashoffset="'+(-offset)+'">'+
+        '<title>'+esc(s.label)+' '+s.count+' 次</title></circle>';
+      offset += len;
+      return seg;
+    }).join("");
+    container.innerHTML =
+      '<div class="pie-wrap">'+
+        '<svg class="pie-svg" viewBox="0 0 120 120">'+
+          '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" style="stroke:var(--surface)" stroke-width="'+sw+'"></circle>'+
+          '<g transform="rotate(-90 '+cx+' '+cy+')">'+arcs+'</g>'+
+          '<text x="'+cx+'" y="'+cy+'" class="pie-center-val" text-anchor="middle" dominant-baseline="central">'+total+'</text>'+
+        '</svg>'+
+        '<div class="legend-row">'+
+          agg.severityCounts.map(function(s){
+            return '<div class="legend-item" data-severity="'+esc(s.label)+'"><span class="legend-dot" style="background:'+SEVERITY_HUE[s.label]+'"></span>'+esc(s.label)+' <b class="mono">'+s.count+'</b> 次</div>';
+          }).join("")+
+        '</div>'+
+      '</div>';
+    $all("[data-severity]", container).forEach(function(el){
+      el.onclick = function(){
+        clearFilters();
+        filterState.severity = el.getAttribute("data-severity");
+        goto("list");
+      };
     });
   }
 
