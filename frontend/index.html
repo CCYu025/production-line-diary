@@ -1557,7 +1557,8 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
         '<div class="rr-data">'+
           '<div class="rr-grid">'+
             rrField("班別", r.shift)+rrField("耗時", r.duration+" 分")+
-            rrField("品號", r.productCode)+rrField("原料類別", r.materialCategory)+
+            (r.productCode ? rrField("品號", r.productCode) : "")+
+            (r.materialCategory ? rrField("原料類別", r.materialCategory) : "")+
             rrField("處理狀態", r.status)+
           '</div>'+
           rrBlock("問題", r.problem)+
