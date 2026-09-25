@@ -577,7 +577,7 @@
       </div>
 
       <div class="card">
-        <div class="card-head"><span class="card-title">每日停機時間趨勢</span><span class="card-note">資料持續累積後將顯示完整走勢</span></div>
+        <div class="card-head"><span class="card-title">每日異常次數趨勢</span><span class="card-note">資料持續累積後將顯示完整走勢</span></div>
         <div class="trend-wrap" id="chart-trend"></div>
       </div>
     </section>
@@ -1000,11 +1000,11 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
 
   function renderTrend(agg){
     var el = $("#chart-trend");
-    var max = Math.max.apply(null, agg.trend.map(function(t){ return t.minutes; })) || 1;
+    var max = Math.max.apply(null, agg.trend.map(function(t){ return t.count; })) || 1;
     el.innerHTML = agg.trend.map(function(t){
-      var h = Math.max(10, Math.round(t.minutes/max*88));
+      var h = Math.max(10, Math.round(t.count/max*88));
       return '<div class="trend-col" data-date="'+t.date+'">'+
-        '<div class="trend-val mono">'+t.minutes+'</div>'+
+        '<div class="trend-val mono">'+t.count+'</div>'+
         '<div class="trend-bar" style="height:'+h+'px"></div>'+
         '<div class="trend-date mono">'+fmtDate(t.date)+'</div>'+
       '</div>';
