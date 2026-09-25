@@ -1603,13 +1603,13 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
         kpiCard("追蹤中", agg.trackingRows.length, "筆")+
       '</div>'+
       '<div class="report-charts">'+
-        '<div class="card"><div class="card-head"><span class="card-title">設備停機時間排行</span></div><div id="report-chart-equipment"></div></div>'+
+        '<div class="card"><div class="card-head"><span class="card-title">問題分類發生次數</span></div><div id="report-chart-category"></div></div>'+
         '<div class="card"><div class="card-head"><span class="card-title">設備發生次數</span></div><div id="report-chart-equipment-count"></div></div>'+
       '</div>'+
       '<div id="report-records"></div>';
 
     var equipmentByCount = agg.equipmentRanked.slice().sort(function(a,b){ return b.count-a.count; });
-    renderHBarChart($("#report-chart-equipment"), agg.equipmentRanked, { valueKey:"minutes" });
+    renderHBarChart($("#report-chart-category"), agg.categoryRanked, { valueKey:"count", filterKey:"category" });
     renderHBarChart($("#report-chart-equipment-count"), equipmentByCount, { valueKey:"count", filterKey:"equipment" });
     $("#report-records").innerHTML = records.map(reportRecordHtml).join("");
     $("#report-print").disabled = false;
