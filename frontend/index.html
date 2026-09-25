@@ -556,7 +556,7 @@
 
       <div class="chart-grid">
         <div class="card">
-          <div class="card-head"><span class="card-title">設備停機時間排行</span><span class="card-note">分鐘 · 點一下可篩選</span></div>
+          <div class="card-head"><span class="card-title">設備發生次數</span><span class="card-note">次 · 點一下可篩選</span></div>
           <div id="chart-equipment"></div>
         </div>
         <div class="card">
@@ -1680,7 +1680,8 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
     var rangeLabel = {all:"全部", month:"本月", week:"本週"}[dashboardRange] || "全部";
     $("#dashboard-range-desc").innerHTML = "檢視範圍："+rangeLabel+"　共 <span class=\"mono\" id=\"kpi-total-mini\">"+agg.totalEvents+"</span> 筆紀錄";
     renderKPI(agg);
-    renderHBarChart($("#chart-equipment"), agg.equipmentRanked, { valueKey:"minutes", filterKey:"equipment" });
+    var equipmentByCount = agg.equipmentRanked.slice().sort(function(a,b){ return b.count-a.count; });
+    renderHBarChart($("#chart-equipment"), equipmentByCount, { valueKey:"count", filterKey:"equipment" });
     renderHBarChart($("#chart-problem"), agg.categoryRanked, { valueKey:"count", filterKey:"category" });
     renderSeverityChart($("#chart-severity"), agg);
     renderStatusStack($("#chart-status"), agg);
