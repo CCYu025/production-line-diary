@@ -179,6 +179,14 @@ npm start               # 或雙擊 start.bat
   `.legend-row`/`.legend-item`/`.legend-dot`（原本給「處理狀態總覽」用的 class）。
   `renderHBarChart()` 仍然是設備/分類這幾張長條圖在用，沒有整個換掉，改圖表樣式前先確認
   是在改哪一種。
+- **報表的「開新視窗（方便截圖）」（`openReportWindow()`）用 `window.open("")` +
+  `document.write()` 把已經算好的 `#report-output` HTML 複製一份到新分頁，不要改成裝
+  html2canvas 之類的函式庫把報表轉成圖片**。理由跟拒絕 puppeteer/jsPDF 一樣：那類函式庫
+  轉中文字型、照片、CSS 細節常常跑版或模糊，維護成本遠高於這裡真正需要的東西。新分頁沒有
+  側邊選單，是刻意的——拿掉其他 UI 之後，瀏覽器或系統內建的整頁截圖工具才截得乾淨，不用
+  自己裁切。**寫進新分頁的 HTML 一定要帶 `<base href="{location.origin}/">`**，不然照片
+  的相對路徑 `/photos/...` 解析基準不確定，可能整份報表沒有圖。`window.open` 可能被瀏覽器
+  彈出視窗封鎖擋掉，`win` 會是 `null`——一定要檢查後 toast 提示使用者，不要靜默失敗。
 
 ## 測試方法
 

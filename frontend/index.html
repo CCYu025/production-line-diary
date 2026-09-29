@@ -772,6 +772,7 @@
           <div class="field"><label for="report-end">結束日期</label><input type="date" id="report-end"></div>
           <button type="button" class="btn btn-primary" id="report-generate">產生報表</button>
           <button type="button" class="btn" id="report-print" disabled>列印／另存 PDF</button>
+          <button type="button" class="btn" id="report-open-window" disabled>開新視窗（方便截圖）</button>
         </div>
       </div>
       <div id="report-output"></div>
@@ -1659,6 +1660,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
         '<div class="meta">日期範圍：'+esc(rangeLabel)+'　產出時間：'+esc(generatedAt)+'</div></div>'+
         '<div class="report-empty">這段日期範圍內沒有紀錄</div>';
       $("#report-print").disabled = true;
+      $("#report-open-window").disabled = true;
       return;
     }
 
@@ -1684,6 +1686,25 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
     renderHBarChart($("#report-chart-equipment-count"), equipmentByCount, { valueKey:"count", filterKey:"equipment" });
     $("#report-records").innerHTML = records.map(reportRecordHtml).join("");
     $("#report-print").disabled = false;
+    $("#report-open-window").disabled = false;
+  }
+
+  // 「開新視窗」用同一份已經算好的報表 HTML，另開一個沒有側邊選單、沒有其他畫面
+  // 干擾的分頁——方便直接用瀏覽器或系統內建的「整頁截圖」工具截圖，不用自己裁切
+  // 掉側邊選單跟其他 UI。不用 html2canvas 之類的函式庫轉成圖片：那類函式庫對中文
+  // 字型、照片、CSS 細節常常轉壞，維護成本遠高於這裡真正需要的東西。
+  function openReportWindow(){
+    var win = window.open("", "_blank");
+    if(!win){ showToast("瀏覽器擋住了新視窗，請允許彈出視窗後再試一次"); return; }
+    var styleHtml = $("style") ? $("style").outerHTML : "";
+    var fontLinks = $all('link[rel="stylesheet"]').map(function(l){ return l.outerHTML; }).join("");
+    win.document.write(
+      "<!doctype html><html lang=\"zh-Hant\"><head><meta charset=\"utf-8\">"+
+      "<base href=\""+location.origin+"/\">"+
+      "<title>產線設備異常紀錄報表</title>"+fontLinks+styleHtml+"</head>"+
+      "<body style=\"padding:24px\">"+$("#report-output").outerHTML+"</body></html>"
+    );
+    win.document.close();
   }
 
   function soField(k,v,mono){
@@ -1935,6 +1956,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
 
     $("#report-generate").onclick = renderReport;
     $("#report-print").onclick = function(){ window.print(); };
+    $("#report-open-window").onclick = openReportWindow;
 
     $("#equipment-map-add-row").onclick = function(){
       equipmentMapDraft.push({ equipment:"", productCode:"", materialCategory:"" });
