@@ -628,7 +628,7 @@
       <div class="topbar">
         <div>
           <h1>日曆檢視</h1>
-          <div class="desc">依日期彙整當日停機分鐘數，顏色越深代表當日停機時間越長</div>
+          <div class="desc">依日期彙整當日異常事件次數，顏色越深代表當日次數越多</div>
         </div>
       </div>
       <div class="cal-card">
@@ -642,10 +642,10 @@
         </div>
         <div class="cal-grid" id="cal-grid"></div>
         <div class="cal-legend">
-          <span>停機時間：</span>
+          <span>事件次數：</span>
           <span class="sw" style="background:var(--surface);border:1px solid var(--line)"></span><span>無紀錄</span>
-          <span class="sw" style="background:var(--seq-300)"></span><span>較短</span>
-          <span class="sw" style="background:var(--seq-600)"></span><span>較長</span>
+          <span class="sw" style="background:var(--seq-300)"></span><span>較少</span>
+          <span class="sw" style="background:var(--seq-600)"></span><span>較多</span>
         </div>
       </div>
     </section>
@@ -1140,7 +1140,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
     var agg = aggregate(DATA);
     var byDate = {};
     agg.trend.forEach(function(t){ byDate[t.date] = t; });
-    var maxMin = Math.max.apply(null, agg.trend.map(function(t){return t.minutes;})) || 1;
+    var maxCount = Math.max.apply(null, agg.trend.map(function(t){return t.count;})) || 1;
 
     var firstDow = new Date(year, month-1, 1).getDay();
     var daysInMonth = new Date(year, month, 0).getDate();
@@ -1151,12 +1151,12 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       var iso = year+"-"+String(month).padStart(2,"0")+"-"+String(day).padStart(2,"0");
       var info = byDate[iso];
       if(info){
-        var ratio = info.minutes/maxMin;
+        var ratio = info.count/maxCount;
         var step = ratio>0.7 ? "var(--seq-600)" : ratio>0.4 ? "var(--seq-450)" : "var(--seq-300)";
         var textColor = ratio>0.4 ? "#fff" : "var(--ink-1)";
         html += '<div class="cal-cell has-data" data-date="'+iso+'" style="background:'+step+';border-color:transparent">'+
           '<div class="cal-daynum" style="color:'+textColor+';opacity:.85">'+day+'</div>'+
-          '<div class="cal-count" style="color:'+textColor+'">'+info.minutes+'<span style="font-size:10px;font-weight:600"> 分</span></div>'+
+          '<div class="cal-count" style="color:'+textColor+'">'+info.count+'<span style="font-size:10px;font-weight:600"> 次</span></div>'+
         '</div>';
       } else {
         html += '<div class="cal-cell"><div class="cal-daynum">'+day+'</div></div>';
