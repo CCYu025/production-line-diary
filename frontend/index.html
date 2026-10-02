@@ -454,6 +454,10 @@
     --line:#1a1a17; --line-strong:#1a1a17; --accent:#1a1a17;
     background:var(--page); color:var(--ink-1); font-family:"Noto Serif TC",serif;
     padding:34px 40px; border:1px solid var(--line-strong);
+    /* 紙張寬度固定置中。960 = .app 的 max-width 1240 − 側邊欄 224 − main 左右 padding 56，
+       也就是 App 內報表本來就最寬的寬度；「開新視窗」沒有側邊欄，不鎖寬度的話會被拉滿
+       整個視窗，排版（尤其資料／照片兩欄的比例）就跟 App 內不一樣了 */
+    width:100%; max-width:960px; margin:0 auto;
   }
   #report-output .card{ border-radius:0; box-shadow:none; }
   #report-output .kpi-card{ border-radius:0; box-shadow:none; }
@@ -510,7 +514,7 @@
     .app{ display:block; }
     main{ padding:0; }
     body{ background:#fff; }
-    #report-output{ border:none; padding:0; }
+    #report-output{ border:none; padding:0; max-width:none; }
     .report-record{ break-inside:avoid; page-break-inside:avoid; }
     @page{ size:A4; margin:14mm; }
   }
@@ -1702,7 +1706,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       "<!doctype html><html lang=\"zh-Hant\"><head><meta charset=\"utf-8\">"+
       "<base href=\""+location.origin+"/\">"+
       "<title>產線設備異常紀錄報表</title>"+fontLinks+styleHtml+"</head>"+
-      "<body style=\"padding:24px\">"+$("#report-output").outerHTML+"</body></html>"
+      "<body style=\"padding:24px;background:#e9e7df\">"+$("#report-output").outerHTML+"</body></html>"
     );
     win.document.close();
   }
