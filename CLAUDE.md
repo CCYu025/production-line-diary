@@ -39,7 +39,7 @@ npm start               # 或雙擊 start.bat
 | 檔案 | 職責 |
 |---|---|
 | `backend/server.js` | Express app、REST API、multer 照片上傳 |
-| `backend/lib/aggregate.js` | 彙總邏輯（純函式）；**前端直接 import 這支檔案**（`/lib` 有 static mount），前後端共用同一套統計邏輯 |
+| `backend/lib/aggregate.js` | 彙總邏輯（純函式）；**前端直接 import 這支檔案**（`/lib` 有 static mount），前後端共用同一套統計邏輯。也放「複製既有紀錄」的 `pickCopyFields()`（複製欄位白名單）與 `commonProblems()`（常見問題歸併） |
 | `backend/lib/store.js` | `data.json` 讀寫，原子性寫入（先寫暫存檔再 rename） |
 | `backend/lib/photos.js` | 照片檔案生命週期（刪孤兒檔、換日期時搬檔） |
 | `backend/lib/xlsx.js` | 舊版 Excel 讀取／匯出快照寫入——**注意 UTC getter**，見下方核心不變量 |
