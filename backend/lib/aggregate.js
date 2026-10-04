@@ -135,3 +135,45 @@ export function aggregate(allRecords, range = "all", now = new Date()) {
     rootCauseMissing,
   };
 }
+
+/**
+ * 「複製既有紀錄」：複製過去的紀錄當新紀錄的起點。
+ *
+ * 白名單只列「同一類事件通常一樣」的欄位。刻意不複製的：
+ * - date / time / shift / equipment：每次事件都不同，由前端重設並標示「請確認」
+ * - status：新事件一律從「待處理」開始，不沿用舊事件的結案狀態
+ * - photos：每次事件要拍自己的現場；也避免兩筆紀錄共用同一個照片檔
+ * - productCode / materialCategory：是「建立當下依設備對照表取得的快照」，
+ *   由新紀錄選定的設備重新決定，不能照抄舊紀錄的值
+ */
+export const COPY_FIELDS = ["category", "severity", "duration", "problem", "action", "rootCause"];
+
+export function pickCopyFields(record) {
+  const out = {};
+  for (const key of COPY_FIELDS) out[key] = record[key] ?? null;
+  return out;
+}
+
+/**
+ * 依「分類＋問題」歸併，回傳同類事件的發生次數與「最近一筆」（當範本）。
+ * 次數多的排前面，次數相同則最近發生的排前面。軟刪除的紀錄不算。
+ */
+export function commonProblems(records) {
+  const groups = new Map();
+  for (const r of records) {
+    if (r.deleted) continue;
+    const key = `${r.category}\u0000${r.problem}`;
+    const g = groups.get(key);
+    if (!g) {
+      groups.set(key, { category: r.category, problem: r.problem, count: 1, record: r });
+    } else {
+      g.count += 1;
+      if (`${r.date} ${r.time}` > `${g.record.date} ${g.record.time}`) g.record = r;
+    }
+  }
+  return Array.from(groups.values()).sort(
+    (a, b) =>
+      b.count - a.count ||
+      `${b.record.date} ${b.record.time}`.localeCompare(`${a.record.date} ${a.record.time}`),
+  );
+}

@@ -8,6 +8,9 @@ import {
   knownCategories,
   knownProductCodes,
   knownMaterialCategories,
+  COPY_FIELDS,
+  pickCopyFields,
+  commonProblems,
 } from "../backend/lib/aggregate.js";
 
 test("severityFromDuration 依耗時分級", () => {
@@ -113,4 +116,46 @@ test("knownProductCodes / knownMaterialCategories 忽略 null，回傳去重排�
   ];
   assert.deepEqual(knownProductCodes(records), ["PC-001", "PC-002"]);
   assert.deepEqual(knownMaterialCategories(records), ["膠料A"]);
+});
+
+test("pickCopyFields 只帶同類事件會一樣的欄位，不帶日期/時間/設備/狀態/照片/品號", () => {
+  const src = {
+    id: 9, date: "2026-10-02", shift: "早", time: "14:20", duration: 15, equipment: "F7",
+    category: "檢測NG", problem: "半製品收料撕破", severity: "一般", action: "烘模", rootCause: "脫模不良",
+    status: "已解決", photos: ["a.jpg"], productCode: "ZA063S17A-5", materialCategory: "TV-501",
+  };
+  assert.deepEqual(pickCopyFields(src), {
+    category: "檢測NG", severity: "一般", duration: 15, problem: "半製品收料撕破", action: "烘模", rootCause: "脫模不良",
+  });
+  assert.deepEqual(Object.keys(pickCopyFields(src)), COPY_FIELDS);
+});
+
+test("pickCopyFields 遇到歷史資料的 null/缺值欄位一律給 null，不用猜", () => {
+  const out = pickCopyFields({ category: "其他", problem: "x", severity: "輕微", duration: 5, action: "" });
+  assert.equal(out.rootCause, null);
+  assert.equal(out.action, "");
+});
+
+test("commonProblems 依分類＋問題歸併，次數多的在前，取最近一筆當範本，不算軟刪除", () => {
+  const rec = (id, date, time, equipment, category, problem, extra = {}) =>
+    ({ id, date, time, equipment, category, problem, ...extra });
+  const list = [
+    rec(1, "2026-09-29", "13:15", "F8", "檢測NG", "撕破"),
+    rec(2, "2026-09-30", "09:50", "F4", "檢測NG", "撕破"),
+    rec(3, "2026-10-02", "14:20", "F7", "檢測NG", "撕破"),
+    rec(4, "2026-10-02", "10:05", "F4", "沾模", "附於上模"),
+    rec(5, "2026-10-03", "08:00", "F3", "沾模", "附於上模", { deleted: true }),
+    rec(6, "2026-10-01", "11:30", "F3", "模髒", "髒污"),
+    rec(7, "2026-10-01", "12:30", "F4", "模髒", "撕破"), // 同問題字樣、不同分類 → 不歸併
+  ];
+  const out = commonProblems(list);
+  assert.equal(out[0].problem, "撕破");
+  assert.equal(out[0].category, "檢測NG");
+  assert.equal(out[0].count, 3);
+  assert.equal(out[0].record.id, 3); // 最近一筆
+  const mud = out.find((g) => g.problem === "附於上模");
+  assert.equal(mud.count, 1); // 軟刪除那筆不算
+  assert.equal(mud.record.id, 4);
+  // 次數相同（1 次）時，最近發生的排前面：沾模 10-02 10:05 → 模髒/撕破 10-01 12:30 → 模髒/髒污 10-01 11:30
+  assert.deepEqual(out.slice(1).map((g) => g.record.id), [4, 7, 6]);
 });

@@ -314,6 +314,69 @@
   .btn{ border-radius:9px; padding:9px 18px; font-size:13px; font-weight:700; cursor:pointer; border:1px solid var(--line-strong); background:transparent; color:var(--ink-1); }
   .btn-primary{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
 
+  /* ---------- 複製既有紀錄 ---------- */
+  /* 複製後「必須確認」的欄位：琥珀框＋「請確認」小標，使用者動過該欄位就消失（不擋送出） */
+  .field.review input, .field.review select, .field.review textarea{
+    border-color:var(--warning); background:color-mix(in srgb, var(--warning) 12%, var(--surface));
+  }
+  .tag-review{
+    font-size:10.5px; font-weight:800; color:var(--ink-2); margin-left:6px; padding:0 7px;
+    border:1px solid var(--warning); border-radius:999px; background:color-mix(in srgb, var(--warning) 14%, var(--surface));
+  }
+  .field.flash input, .field.flash select, .field.flash textarea{ animation:field-flash 1.4s ease-out; }
+  @keyframes field-flash{ 0%{ background:var(--accent-wash); border-color:var(--accent); } 100%{ background:var(--surface); } }
+  .review-pending{ margin-right:auto; align-self:center; font-size:12px; font-weight:700; color:var(--ink-2); }
+  .copy-banner{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap; max-width:640px;
+    padding:9px 14px; border-radius:10px; font-size:12.5px; color:var(--accent);
+    background:var(--accent-wash); border:1px solid var(--accent);
+  }
+  .copy-banner .cb-sp{ flex:1; }
+  .copy-banner .cb-note{ flex-basis:100%; color:var(--ink-2); font-size:11.5px; }
+  .copy-banner button{ border:none; background:none; color:var(--accent); font-weight:700; font-size:12px; cursor:pointer; padding:2px 6px; }
+  .copy-picker{
+    position:relative; max-width:640px; padding:14px 16px;
+    background:var(--surface-raised); border:1px solid var(--line); border-radius:14px;
+  }
+  .cp-head{ font-size:12px; font-weight:800; color:var(--ink-2); margin-bottom:8px; }
+  .cp-head .hint{ font-weight:400; color:var(--ink-muted); margin-left:6px; }
+  .copy-picker input{
+    width:100%; border:1px solid var(--line-strong); background:var(--surface); color:var(--ink-1);
+    border-radius:9px; padding:9px 11px; font-size:13px; font-family:inherit; outline:none;
+  }
+  .copy-picker input:focus{ border-color:var(--accent); }
+  .cp-chip{
+    font-size:11px; border:1px dashed var(--line-strong); background:transparent; color:var(--ink-muted);
+    padding:3px 9px; border-radius:100px; cursor:pointer;
+  }
+  .cp-chip:hover{ border-color:var(--accent); color:var(--accent); }
+  .cp-chip .n{ margin-left:3px; font-weight:700; }
+  .cp-dd{
+    position:absolute; left:16px; right:16px; top:calc(100% - 8px); z-index:30; max-height:340px; overflow:auto;
+    background:var(--surface-raised); border:1px solid var(--line-strong); border-radius:12px;
+    box-shadow:0 10px 28px rgba(0,0,0,.16);
+  }
+  .cp-tabs{ display:flex; gap:4px; padding:6px 8px 0; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--surface-raised); }
+  .cp-tab{
+    border:none; background:none; padding:6px 10px; font-size:12px; font-weight:700; cursor:pointer;
+    color:var(--ink-muted); border-bottom:2px solid transparent;
+  }
+  .cp-tab.active{ color:var(--accent); border-bottom-color:var(--accent); }
+  .cp-item{ padding:9px 12px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .cp-item.hl, .cp-item:hover{ background:var(--accent-wash); }
+  .cp-item .t{ font-size:13px; font-weight:700; }
+  .cp-item .m{ font-size:11.5px; color:var(--ink-muted); }
+  .cp-item .p{ font-size:12px; color:var(--ink-2); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cp-empty{ padding:14px; text-align:center; font-size:12.5px; color:var(--ink-muted); }
+  .cp-foot{ padding:7px 12px; font-size:11.5px; color:var(--ink-muted); border-top:1px solid var(--line); position:sticky; bottom:0; background:var(--surface-raised); }
+  .row-copy{
+    display:inline-flex; align-items:center; gap:4px; opacity:0; padding:3px 9px; font-size:11.5px; font-weight:700;
+    border:1px solid var(--line-strong); border-radius:7px; background:var(--surface); color:var(--accent); cursor:pointer;
+  }
+  .row-copy .icon{ width:12px; height:12px; }
+  tbody tr:hover .row-copy, .row-copy:focus-visible{ opacity:1; }
+  @media (hover:none){ .row-copy{ opacity:1; } }
+
   /* ---------- Slide-over ---------- */
   .scrim{ position:fixed; inset:0; background:rgba(10,10,10,0.32); z-index:40; opacity:0; pointer-events:none; transition:opacity .18s; }
   .scrim.open{ opacity:1; pointer-events:auto; }
@@ -620,7 +683,7 @@
       <div class="table-card">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>日期</th><th>班別</th><th>時間</th><th>耗時</th><th>設備</th><th>分類</th><th>問題</th><th>狀態</th><th>照片</th></tr></thead>
+            <thead><tr><th>日期</th><th>班別</th><th>時間</th><th>耗時</th><th>設備</th><th>分類</th><th>問題</th><th>狀態</th><th>照片</th><th></th></tr></thead>
             <tbody id="table-body"></tbody>
           </table>
         </div>
@@ -662,18 +725,25 @@
           <div class="desc">欄位與原始 Excel 一致，並加入下拉選單與建議標籤減少手打誤差；送出後會即時反映在儀表板與列表</div>
         </div>
       </div>
+      <div class="copy-picker" id="copy-picker">
+        <div class="cp-head">從過去紀錄帶入 <span class="hint">選一筆，只需再改日期／時間／設備</span></div>
+        <input type="text" id="cp-q" role="combobox" aria-expanded="false" aria-controls="cp-dd" aria-label="搜尋過去紀錄" placeholder="搜尋過去紀錄：問題、設備、處理內容…" autocomplete="off">
+        <div class="suggest-row" id="cp-chips" style="margin-top:8px"></div>
+        <div class="cp-dd" id="cp-dd" role="listbox" hidden></div>
+      </div>
+      <div class="copy-banner" id="copy-banner" hidden></div>
       <form class="form-card" id="add-form">
         <div class="form-grid">
-          <div class="field"><label for="f-date">日期</label><input type="date" id="f-date" required></div>
-          <div class="field"><label for="f-shift">班別</label>
+          <div class="field" data-f="date"><label for="f-date">日期</label><input type="date" id="f-date" required></div>
+          <div class="field" data-f="shift"><label for="f-shift">班別</label>
             <select id="f-shift">
               <option value="早">早</option>
               <option value="中">中</option>
               <option value="晚">晚</option>
             </select>
           </div>
-          <div class="field"><label for="f-time">時間</label><input type="time" id="f-time" required></div>
-          <div class="field"><label for="f-duration">耗時 <span class="hint">分鐘</span></label><input type="number" id="f-duration" min="5" step="5" placeholder="例：10" required></div>
+          <div class="field" data-f="time"><label for="f-time">時間</label><input type="time" id="f-time" required></div>
+          <div class="field" data-f="duration"><label for="f-duration">耗時 <span class="hint">分鐘</span></label><input type="number" id="f-duration" min="5" step="5" placeholder="例：10" required></div>
           <div class="field"><label for="f-category">問題分類 <span class="hint">可直接輸入新分類</span></label>
             <input type="text" id="f-category" list="category-options" placeholder="選擇或輸入分類…">
             <datalist id="category-options"></datalist>
@@ -686,7 +756,7 @@
               <option value="重大">重大</option>
             </select>
           </div>
-          <div class="field full"><label for="f-equipment">設備 <span class="hint">可直接輸入新設備代號</span></label>
+          <div class="field full" data-f="equipment"><label for="f-equipment">設備 <span class="hint">可直接輸入新設備代號</span></label>
             <input type="text" id="f-equipment" list="equipment-options-add" placeholder="選擇或輸入設備代號…" required>
             <datalist id="equipment-options-add"></datalist>
           </div>
@@ -721,6 +791,7 @@
           </div>
         </div>
         <div class="form-actions">
+          <span class="review-pending" id="review-pending" hidden></span>
           <button type="reset" class="btn">清除</button>
           <button type="submit" class="btn btn-primary">新增紀錄</button>
         </div>
@@ -799,7 +870,7 @@
 <div class="lightbox" id="lightbox"><img id="lightbox-img" src="" alt=""></div>
 
 <script type="module">
-import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/lib/aggregate.js";
+import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERITY_ORDER, STATUS_ORDER } from "/lib/aggregate.js";
 (function(){
   "use strict";
 
@@ -807,6 +878,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
     camera:'<svg class="icon" viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2-2h2l1.5-2h5L16 5h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z"/><circle cx="12" cy="13" r="3.5"/></svg>',
     warn:'<svg class="icon" viewBox="0 0 24 24"><path d="M12 2l1.9 5.8H20l-4.9 3.6 1.9 5.8L12 13.6 6.9 17.2l1.9-5.8L4 7.8h6.1z"/></svg>',
     check:'<svg class="icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>',
+    copy:'<svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>',
     x:'<svg class="icon" viewBox="0 0 24 24"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>'
   };
 
@@ -1111,7 +1183,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
     renderActiveFilters();
     var body = $("#table-body");
     if(!rows.length){
-      body.innerHTML = '<tr class="empty-row"><td colspan="9">沒有符合條件的紀錄</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="10">沒有符合條件的紀錄</td></tr>';
       return;
     }
     body.innerHTML = rows.map(function(r){
@@ -1126,10 +1198,17 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
         '<td class="problem-cell"><span class="repeat-dot" style="background:'+SEVERITY_HUE[r.severity]+'"></span>'+esc(r.problem)+'</td>'+
         '<td>'+pill(r.status, STATUS_HUE[r.status])+'</td>'+
         '<td>'+(photoCount>0 ? '<span class="photo-dot">'+ICONS.camera+(photoCount>1?' ×'+photoCount:'')+'</span>' : '<span class="photo-dot empty">'+ICONS.camera+'</span>')+'</td>'+
+        '<td><button type="button" class="row-copy" data-copy-id="'+r.id+'" title="複製這筆當新紀錄" aria-label="複製這筆當新紀錄">'+ICONS.copy+' 複製</button></td>'+
       '</tr>';
     }).join("");
     $all("tr[data-id]", body).forEach(function(tr){
       tr.onclick = function(){ openDetailById(Number(tr.getAttribute("data-id"))); };
+    });
+    $all("[data-copy-id]", body).forEach(function(b){
+      b.onclick = function(e){
+        e.stopPropagation(); // 不要同時觸發整列的「開詳情」
+        copyRecordToAdd(Number(b.getAttribute("data-copy-id")));
+      };
     });
   }
 
@@ -1234,6 +1313,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       actionsHtml =
         '<div style="display:flex;gap:8px">'+
           '<button type="button" class="btn" id="edit-btn">編輯紀錄</button>'+
+          '<button type="button" class="btn" id="copy-btn">'+ICONS.copy+' 複製為新紀錄</button>'+
           '<button type="button" class="btn" id="delete-btn" style="color:var(--critical);border-color:var(--critical)">刪除</button>'+
         '</div>';
     }
@@ -1307,6 +1387,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       };
     } else {
       $("#edit-btn").onclick = function(){ detailMode="edit"; renderSoBody(idx); };
+      $("#copy-btn").onclick = function(){ closeDetail(); copyRecordToAdd(r.id); };
       $("#delete-btn").onclick = function(){ deleteConfirmPending=true; renderSoBody(idx); };
     }
   }
@@ -1731,6 +1812,7 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
     if(view==="calendar") renderCalendar();
     if(view==="dashboard") renderDashboard();
     if(view==="trash") renderTrash();
+    if(view==="add") renderCopyChips();
     if(view==="settings") renderEquipmentMapSettings();
     if(view==="report") initReportView();
   }
@@ -1761,6 +1843,153 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
     }).join("");
     $all(".suggest-chip").forEach(function(c){
       c.onclick = function(){ $("#f-problem").value = c.textContent; };
+    });
+  }
+
+  /* ---------------- 複製既有紀錄 ---------------- */
+  // 複製「過去的紀錄」當新紀錄的起點，只需再改日期／時間／設備等少數欄位。
+  // 兩個入口共用同一個 applyCopy()：列表／詳情面板的「複製」，和新增畫面頂端的
+  // 「從過去紀錄帶入」。要複製哪些欄位由 aggregate.js 的 pickCopyFields() 決定
+  // （白名單，有單元測試），這裡只負責把值填進表單與標示「請確認」。
+  //
+  // 刻意不複製照片：照片是「選檔當下立刻上傳」、依日期資料夾存放，兩筆紀錄共用同一個
+  // 檔案會讓換日期搬檔與孤兒清理的規則變複雜（見 CLAUDE.md 核心不變量）。
+  var REVIEW_FIELDS = ["date","shift","time","duration","equipment"];
+  var COPY_FIELD_IDS = { category:"f-category", severity:"f-severity", duration:"f-duration", problem:"f-problem", action:"f-action", rootCause:"f-rootcause" };
+
+  function setReview(name, on){
+    var field = $('.field[data-f="'+name+'"]');
+    if(!field) return;
+    field.classList.toggle("review", on);
+    var tag = $(".tag-review", field);
+    if(on && !tag){
+      tag = document.createElement("span");
+      tag.className = "tag-review";
+      tag.textContent = "請確認";
+      $("label", field).appendChild(tag);
+    } else if(!on && tag){
+      tag.remove();
+    }
+    updateReviewPending();
+  }
+  function updateReviewPending(){
+    var n = $all(".field.review", $("#add-form")).length;
+    var el = $("#review-pending");
+    el.hidden = !n;
+    el.textContent = n ? "還有 "+n+" 個欄位待確認（不會擋住送出）" : "";
+  }
+  function clearCopyState(){
+    REVIEW_FIELDS.forEach(function(n){ setReview(n, false); });
+    $("#copy-banner").hidden = true;
+  }
+  function flashField(inputId){
+    var field = $("#"+inputId).closest(".field");
+    field.classList.remove("flash");
+    void field.offsetWidth; // 重新觸發動畫
+    field.classList.add("flash");
+  }
+
+  function applyCopy(rec){
+    var vals = pickCopyFields(rec);
+    Object.keys(COPY_FIELD_IDS).forEach(function(k){
+      var id = COPY_FIELD_IDS[k];
+      $("#"+id).value = vals[k]==null ? "" : vals[k];
+      flashField(id);
+    });
+    // 新事件一律從「待處理」開始；設備清空由使用者選（品號/原料類別會依新設備重新帶入）
+    $("#f-status").value = "待處理";
+    $("#f-equipment").value = "";
+    $("#f-mapping-preview").hidden = true;
+    // 已經上傳了照片的話，照片是依「當時的日期」存的，不能把日期改掉
+    if(!pendingPhotos.length){
+      setDefaultDateTime();
+      $("#f-shift").value = "早";
+    }
+    REVIEW_FIELDS.forEach(function(n){ setReview(n, true); });
+
+    var banner = $("#copy-banner");
+    banner.innerHTML =
+      '<span>已帶入自 <b>'+esc(rec.date.slice(5).replace("-","/"))+' '+esc(rec.equipment)+'・'+esc(rec.problem)+'</b></span>'+
+      '<span class="cb-sp"></span><button type="button" id="copy-undo">清除帶入</button>'+
+      '<span class="cb-note">處理與根本原因是沿用舊紀錄的內容，請確認是否適用這次事件</span>';
+    banner.hidden = false;
+    $("#copy-undo").onclick = undoCopy;
+    $("#f-equipment").focus();
+  }
+  // 只清掉「帶入」的內容，不動已經上傳的照片（跟表單的「清除」不同）
+  function undoCopy(){
+    Object.keys(COPY_FIELD_IDS).forEach(function(k){ $("#"+COPY_FIELD_IDS[k]).value = ""; });
+    $("#f-severity").value = "輕微";
+    clearCopyState();
+  }
+  function copyRecordToAdd(id){
+    var rec = DATA.find(function(r){ return r.id===id; });
+    if(!rec) return;
+    goto("add");
+    applyCopy(rec);
+  }
+
+  // 新增畫面頂端的「從過去紀錄帶入」選擇器：「最近紀錄」複製特定那一筆，
+  // 「常見問題」依分類＋問題歸併、顯示累計次數，以最近一筆當範本。
+  var cpTab = "recent", cpItems = [], cpActive = -1;
+  function cpMatch(r, kw){
+    return !kw || [r.problem, r.equipment, r.category, r.action, r.rootCause].join(" ").toLowerCase().indexOf(kw)>-1;
+  }
+  function cpOpen(){ $("#cp-dd").hidden = false; $("#cp-q").setAttribute("aria-expanded","true"); }
+  function cpClose(){ $("#cp-dd").hidden = true; $("#cp-q").setAttribute("aria-expanded","false"); cpActive = -1; }
+  function cpRender(){
+    var kw = $("#cp-q").value.trim().toLowerCase();
+    var data = activeData();
+    if(cpTab==="recent"){
+      cpItems = chronological(data).reverse().filter(function(r){ return cpMatch(r, kw); }).slice(0,8).map(function(r){
+        return { rec:r, title:r.problem, meta:r.date.slice(5).replace("-","/")+" "+r.time+"・"+r.equipment+"・"+r.category };
+      });
+    } else {
+      cpItems = commonProblems(data).filter(function(g){ return cpMatch(g.record, kw); }).slice(0,8).map(function(g){
+        return { rec:g.record, title:g.problem, meta:"累計 "+g.count+" 次・"+g.category+"・最近 "+g.record.date.slice(5).replace("-","/")+" "+g.record.equipment };
+      });
+    }
+    cpActive = cpItems.length ? 0 : -1;
+    $("#cp-dd").innerHTML =
+      '<div class="cp-tabs">'+
+        '<button type="button" class="cp-tab'+(cpTab==="recent"?" active":"")+'" data-cptab="recent">最近紀錄</button>'+
+        '<button type="button" class="cp-tab'+(cpTab==="common"?" active":"")+'" data-cptab="common">常見問題</button>'+
+      '</div>'+
+      (cpItems.length ? cpItems.map(function(it,i){
+        return '<div class="cp-item'+(i===cpActive?" hl":"")+'" role="option" data-cpi="'+i+'">'+
+          '<div class="t">'+esc(it.title)+'</div><div class="m">'+esc(it.meta)+'</div>'+
+          '<div class="p">處理：'+esc(it.rec.action||"（未填寫）")+'</div></div>';
+      }).join("") : '<div class="cp-empty">'+(kw ? "找不到符合的紀錄，直接在下方手動填寫即可" : "還沒有可帶入的紀錄")+'</div>')+
+      '<div class="cp-foot">'+(cpTab==="recent" ? "複製「那一筆」的內容" : "同分類＋問題歸併，以最近一筆當範本")+'</div>';
+    $all("[data-cptab]", $("#cp-dd")).forEach(function(b){
+      b.onclick = function(){ cpTab = b.getAttribute("data-cptab"); cpRender(); };
+    });
+    $all("[data-cpi]", $("#cp-dd")).forEach(function(d){
+      d.onclick = function(){ cpPick(Number(d.getAttribute("data-cpi"))); };
+    });
+  }
+  function cpPick(i){
+    var it = cpItems[i];
+    if(!it) return;
+    cpClose();
+    $("#cp-q").value = "";
+    applyCopy(it.rec);
+  }
+  function cpHighlight(i){
+    cpActive = i;
+    $all("[data-cpi]", $("#cp-dd")).forEach(function(d){
+      var on = Number(d.getAttribute("data-cpi"))===i;
+      d.classList.toggle("hl", on);
+      if(on) d.scrollIntoView({ block:"nearest" });
+    });
+  }
+  function renderCopyChips(){
+    var top = commonProblems(activeData()).slice(0,4);
+    $("#cp-chips").innerHTML = top.length ? '<span class="hint" style="font-size:11px;color:var(--ink-muted)">常見：</span>'+top.map(function(g,i){
+      return '<button type="button" class="cp-chip" data-cpchip="'+i+'">'+esc(g.problem)+'<span class="n">×'+g.count+'</span></button>';
+    }).join("") : "";
+    $all("[data-cpchip]", $("#cp-chips")).forEach(function(b){
+      b.onclick = function(){ applyCopy(top[Number(b.getAttribute("data-cpchip"))].record); };
     });
   }
 
@@ -1938,7 +2167,36 @@ import { aggregate, severityFromDuration, SEVERITY_ORDER, STATUS_ORDER } from "/
       }
     };
     $("#add-form").addEventListener("reset", function(){
+      clearCopyState();
       setTimeout(cleanupAbandonedAddPhotos, 0);
+    });
+
+    // 「請確認」標示：使用者動過該欄位就視為已確認
+    REVIEW_FIELDS.forEach(function(n){
+      var el = $("#f-"+n);
+      function done(){ setReview(n, false); }
+      el.addEventListener("input", done);
+      el.addEventListener("change", done);
+    });
+
+    // 從過去紀錄帶入的選擇器
+    var cpq = $("#cp-q");
+    cpq.addEventListener("focus", function(){ cpRender(); cpOpen(); });
+    cpq.addEventListener("click", function(){ if($("#cp-dd").hidden){ cpRender(); cpOpen(); } });
+    cpq.addEventListener("input", function(){ cpRender(); cpOpen(); });
+    cpq.addEventListener("keydown", function(e){
+      if(e.key==="Escape"){ cpClose(); return; }
+      if($("#cp-dd").hidden && (e.key==="ArrowDown" || e.key==="ArrowUp")){ cpRender(); cpOpen(); e.preventDefault(); return; }
+      if(!cpItems.length) return;
+      if(e.key==="ArrowDown"){ e.preventDefault(); cpHighlight((cpActive+1)%cpItems.length); }
+      else if(e.key==="ArrowUp"){ e.preventDefault(); cpHighlight((cpActive-1+cpItems.length)%cpItems.length); }
+      else if(e.key==="Enter" && !$("#cp-dd").hidden){ e.preventDefault(); cpPick(cpActive); }
+    });
+    // 點選擇器以外的地方就收起
+    // （用 composedPath：點「最近／常見」分頁會重畫下拉清單，點到的按鈕當下已被移出 DOM，
+    // e.target.closest 會找不到祖先而誤把下拉收掉）
+    document.addEventListener("click", function(e){
+      if(e.composedPath().indexOf($("#copy-picker"))===-1) cpClose();
     });
 
     $("#cal-prev").onclick = function(){ calendarCursor.setMonth(calendarCursor.getMonth()-1); renderCalendar(); };
