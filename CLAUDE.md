@@ -187,6 +187,13 @@ npm start               # 或雙擊 start.bat
   自己裁切。**寫進新分頁的 HTML 一定要帶 `<base href="{location.origin}/">`**，不然照片
   的相對路徑 `/photos/...` 解析基準不確定，可能整份報表沒有圖。`window.open` 可能被瀏覽器
   彈出視窗封鎖擋掉，`win` 會是 `null`——一定要檢查後 toast 提示使用者，不要靜默失敗。
+  **新視窗的排版必須跟 App 內一樣，靠兩件事維持**：(1) `#report-output` 固定
+  `width:100%; max-width:960px; margin:0 auto`（960 = `.app` 的 1240 − 側邊欄 224 −
+  main 左右 padding 56，也就是 App 內報表本來就最寬的寬度）——新視窗沒有側邊欄，不鎖寬度
+  就會被拉滿整個視窗，資料／照片兩欄的比例整個跑掉；(2) 新視窗的 `<body>` 要用固定的灰底
+  `#e9e7df`，不能吃 App 的 `--page`（暗色模式下會變黑底）。列印時 `max-width:none`，
+  不要拿掉，不然列印寬度會被 960 卡住。改 `.app` 的 `max-width` 或側邊欄寬度時，記得一起
+  檢查這個 960。同一套做法也用在 `personal-work-diary` 專案，兩邊要保持一致。
 
 ```bash
 npm run check   # node --check 語法檢查
