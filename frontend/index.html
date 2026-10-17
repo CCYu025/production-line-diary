@@ -1014,7 +1014,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     var trackingPct = agg.totalMinutes ? Math.round(agg.trackingMinutes/agg.totalMinutes*100) : 0;
     $("#kpi-row").innerHTML = [
       kpiCard("累計事件數", agg.totalEvents, "筆", "所有已記錄之異常事件"),
-      kpiCard("累計停機時間", agg.totalMinutes, "分", "約 " + hours.toFixed(1) + " 小時"),
+      kpiCard("累計時間", agg.totalMinutes, "分", "約 " + hours.toFixed(1) + " 小時"),
       kpiCard("平均處理耗時", agg.avg.toFixed(1), "分/件", "單次事件平均停機時間"),
       kpiCard("追蹤中事件", agg.trackingRows.length, "筆", "佔停機時間 "+trackingPct+"% · "+agg.rootCauseMissing+" 筆待補根本原因", "kpi-tracking"),
       kpiCard("照片建檔率", photoPct, "%", agg.withPhoto + " / " + agg.totalEvents + " 筆附有照片")
@@ -1741,7 +1741,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     var out = $("#report-output");
     if(!records.length){
       out.innerHTML =
-        '<div class="report-header"><h2>產線設備異常紀錄報表</h2>'+
+        '<div class="report-header"><h2>設備紀錄表</h2>'+
         '<div class="meta">日期範圍：'+esc(rangeLabel)+'　產出時間：'+esc(generatedAt)+'</div></div>'+
         '<div class="report-empty">這段日期範圍內沒有紀錄</div>';
       $("#report-print").disabled = true;
@@ -1751,12 +1751,12 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
 
     out.innerHTML =
       '<div class="report-header">'+
-        '<h2>產線設備異常紀錄報表</h2>'+
+        '<h2>設備紀錄表</h2>'+
         '<div class="meta">日期範圍：'+esc(rangeLabel)+'　共 '+records.length+' 筆　產出時間：'+esc(generatedAt)+'</div>'+
       '</div>'+
       '<div class="report-summary">'+
         kpiCard("事件數", agg.totalEvents, "筆")+
-        kpiCard("累計停機時間", agg.totalMinutes, "分")+
+        kpiCard("累計時間", agg.totalMinutes, "分")+
         kpiCard("平均耗時", agg.avg.toFixed(1), "分/件")+
         kpiCard("追蹤中", agg.trackingRows.length, "筆")+
       '</div>'+
@@ -1786,7 +1786,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     win.document.write(
       "<!doctype html><html lang=\"zh-Hant\"><head><meta charset=\"utf-8\">"+
       "<base href=\""+location.origin+"/\">"+
-      "<title>產線設備異常紀錄報表</title>"+fontLinks+styleHtml+"</head>"+
+      "<title>設備紀錄表</title>"+fontLinks+styleHtml+"</head>"+
       "<body style=\"padding:24px;background:#e9e7df\">"+$("#report-output").outerHTML+"</body></html>"
     );
     win.document.close();
