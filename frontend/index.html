@@ -1015,8 +1015,8 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     $("#kpi-row").innerHTML = [
       kpiCard("累計事件數", agg.totalEvents, "筆", "所有已記錄之異常事件"),
       kpiCard("累計時間", agg.totalMinutes, "分", "約 " + hours.toFixed(1) + " 小時"),
-      kpiCard("平均處理耗時", agg.avg.toFixed(1), "分/件", "單次事件平均停機時間"),
-      kpiCard("追蹤中事件", agg.trackingRows.length, "筆", "佔停機時間 "+trackingPct+"% · "+agg.rootCauseMissing+" 筆待補根本原因", "kpi-tracking"),
+      kpiCard("平均處理耗時", agg.avg.toFixed(1), "分/件", "單次事件平均處理時間"),
+      kpiCard("追蹤中事件", agg.trackingRows.length, "筆", "佔累計時間 "+trackingPct+"% · "+agg.rootCauseMissing+" 筆待補根本原因", "kpi-tracking"),
       kpiCard("照片建檔率", photoPct, "%", agg.withPhoto + " / " + agg.totalEvents + " 筆附有照片")
     ].join("");
     var trackingCard = $("#kpi-tracking");
