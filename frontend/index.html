@@ -200,15 +200,15 @@
   .hbar-row:hover .hbar-fill{ filter:brightness(1.1); }
   .hbar-val{ font-size:12px; text-align:right; color:var(--ink-1); font-weight:700; }
 
-  .trend-wrap{ display:flex; align-items:flex-end; gap:18px; height:126px; padding:0 4px 22px; position:relative; }
-  .trend-wrap::before{
-    content:""; position:absolute; left:0; right:0; bottom:22px; height:1px; background:var(--line-strong);
-  }
-  .trend-col{ flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; height:100%; justify-content:flex-end; position:relative; }
-  .trend-bar{ width:44px; border-radius:6px 6px 3px 3px; background:var(--seq-400); position:relative; transition:filter .15s; }
+  /* 每根柱子至少 34px 寬、天數少時平均分配並最寬 44px；天數多到塞不下就在卡片內橫向捲動
+     （renderTrend 會捲到最新一天），不會再撐出卡片外。基準線畫在每個 .trend-col 底部，
+     這樣捲動時線會跟著柱子一起走。 */
+  .trend-wrap{ display:flex; align-items:flex-end; height:140px; padding:0 4px 22px; overflow-x:auto; scrollbar-width:thin; }
+  .trend-col{ flex:1 0 34px; box-sizing:border-box; padding:0 3px; display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; height:100%; justify-content:flex-end; position:relative; border-bottom:1px solid var(--line-strong); }
+  .trend-bar{ width:100%; max-width:44px; border-radius:6px 6px 3px 3px; background:var(--seq-400); position:relative; transition:filter .15s; }
   .trend-col:hover .trend-bar{ filter:brightness(1.08); }
   .trend-val{ font-size:12px; font-weight:800; }
-  .trend-date{ position:absolute; bottom:-20px; font-size:11px; color:var(--ink-muted); }
+  .trend-date{ position:absolute; bottom:-20px; font-size:10px; color:var(--ink-muted); white-space:nowrap; }
 
   /* ---------- Filter chips ---------- */
   .filter-bar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -1128,6 +1128,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
         goto("list");
       };
     });
+    el.scrollLeft = el.scrollWidth;
   }
 
   function applyFilters(){
