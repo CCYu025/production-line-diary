@@ -16,6 +16,7 @@ import {
 } from "./lib/aggregate.js";
 import { writeSnapshotXlsx } from "./lib/xlsx.js";
 import { deleteUnreferencedPhoto, movePhotosForDateChange, sweepOrphanedPhotos } from "./lib/photos.js";
+import { sanitizePhotoCaptions } from "./lib/photoCaptions.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -124,6 +125,7 @@ app.post("/api/records", async (req, res) => {
     deleted: false,
     deletedAt: null,
   };
+  record.photoCaptions = sanitizePhotoCaptions(req.body.photoCaptions, record.photos);
   store.records.push(record);
   await saveStore(DATA_DIR, store);
   res.status(201).json({ record });
@@ -159,6 +161,7 @@ app.put("/api/records/:id", async (req, res) => {
     productCode: merged.productCode ? String(merged.productCode).trim() : null,
     materialCategory: merged.materialCategory ? String(merged.materialCategory).trim() : null,
     photos: newPhotos,
+    photoCaptions: sanitizePhotoCaptions(merged.photoCaptions, newPhotos),
     updatedAt: new Date().toISOString(),
   });
   await saveStore(DATA_DIR, store);

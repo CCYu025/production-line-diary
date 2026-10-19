@@ -300,7 +300,15 @@
   }
   .dropzone:hover{ border-color:var(--accent); color:var(--accent); }
   .dropzone .icon{ width:22px; height:22px; margin-bottom:6px; }
-  .dz-preview{ display:flex; gap:10px; margin-top:10px; flex-wrap:wrap; }
+  /* 每張照片一列：縮圖＋「圖片說明」輸入框。不用彈窗——說明只有一句話，內嵌在列裡最直接，
+     手機上也不用多一層畫面。 */
+  .dz-preview{ display:flex; flex-direction:column; gap:10px; margin-top:10px; }
+  .dz-item{ display:flex; align-items:center; gap:12px; }
+  .dz-caption{
+    flex:1; min-width:0; border:1px solid var(--line-strong); background:var(--surface); color:var(--ink-1);
+    border-radius:9px; padding:9px 11px; font-size:13px; font-family:inherit; outline:none;
+  }
+  .dz-caption:focus{ border-color:var(--accent); }
   .dz-thumb{ width:64px; height:64px; border-radius:8px; object-fit:cover; border:1px solid var(--line); display:block; }
   .dz-thumb-wrap{ position:relative; }
   .dz-thumb.placeholder-thumb{ display:flex; align-items:center; justify-content:center; color:var(--ink-muted); background:var(--surface); }
@@ -418,12 +426,16 @@
   .photo-tile.placeholder .icon{ width:18px; height:18px; }
   .photo-tile.placeholder .fname{ font-size:9px; font-family:"IBM Plex Mono",monospace; text-align:center; word-break:break-all; line-height:1.3; }
   .photo-count{ font-size:11px; color:var(--ink-muted); }
+  .photo-cap{ font-size:12px; line-height:1.45; color:var(--ink-2); margin-top:6px; word-break:break-word; }
+  .photo-grid .photo-cap{ font-size:11px; margin-top:4px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 
   .lightbox{
     position:fixed; inset:0; background:rgba(8,8,8,0.86); z-index:60; display:none;
     align-items:center; justify-content:center; padding:32px; cursor:zoom-out;
   }
-  .lightbox.open{ display:flex; }
+  .lightbox.open{ display:flex; flex-direction:column; gap:12px; }
+  .lightbox.has-cap img{ max-height:calc(100% - 56px); }
+  .lb-cap{ color:#fff; font-size:14px; line-height:1.5; max-width:min(720px,90vw); text-align:center; cursor:auto; }
   .lightbox img{ max-width:100%; max-height:100%; border-radius:10px; box-shadow:var(--shadow); }
 
   .range-tabs{
@@ -569,6 +581,8 @@
   .report-record .rr-block{ margin-bottom:12px; font-size:15px; line-height:1.65; }
   .report-photos{ display:flex; flex-direction:column; gap:8px; }
   .report-photos img{ width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:0; border:1px solid var(--line-strong); }
+  .report-photos .rp-item{ margin:0; break-inside:avoid; page-break-inside:avoid; }
+  .report-photos .rp-cap{ margin-top:4px; font-family:"Noto Sans TC",sans-serif; font-size:12px; line-height:1.5; color:var(--ink-2); }
   .report-empty{ color:var(--ink-muted); font-size:14px; padding:24px 0; font-family:"Noto Sans TC",sans-serif; }
 
   @media print{
@@ -781,7 +795,7 @@
             </select>
           </div>
           <div class="field full">
-            <label>照片 <span class="hint">可選擇本機檔案預覽（僅本機瀏覽器顯示，不會上傳）</span></label>
+            <label>照片 <span class="hint">可多張，每張都能加一句圖片說明（選填）</span></label>
             <label class="dropzone" for="f-photo">
               <svg class="icon" viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2-2h2l1.5-2h5L16 5h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z"/><circle cx="12" cy="13" r="3.5"/></svg>
               <div>點擊拍照 / 選擇照片，或拖曳檔案至此</div>
@@ -867,7 +881,7 @@
   <div class="so-body" id="so-body"></div>
 </aside>
 <div class="toast" id="toast"></div>
-<div class="lightbox" id="lightbox"><img id="lightbox-img" src="" alt=""></div>
+<div class="lightbox" id="lightbox"><img id="lightbox-img" src="" alt=""><div class="lb-cap" id="lightbox-cap" hidden></div></div>
 
 <script type="module">
 import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERITY_ORDER, STATUS_ORDER } from "/lib/aggregate.js";
@@ -923,8 +937,37 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
   function photoUrl(dateStr, filename){
     return "/photos/" + String(dateStr).replaceAll("-","") + "/" + encodeURIComponent(filename);
   }
+  // 燈箱點開時只拿得到 src，所以每次組照片清單時順手登記一份 src -> 說明，
+  // openLightbox 再查這張表（重複登記只是覆蓋，不會殘留舊資料）。
+  var lightboxCaps = {};
   function photoItems(r){
-    return (r.photos||[]).map(function(fn){ return { src: photoUrl(r.date, fn), name: fn }; });
+    var caps = r.photoCaptions || {};
+    return (r.photos||[]).map(function(fn){
+      var src = photoUrl(r.date, fn);
+      lightboxCaps[src] = caps[fn] || "";
+      return { src: src, name: fn, caption: caps[fn] || "" };
+    });
+  }
+  function captionInput(attr, i, value){
+    return '<input type="text" class="dz-caption" maxlength="100" data-'+attr+'="'+i+'" value="'+esc(value||"")+'" placeholder="圖片說明（選填），例如：模具表面裂痕">';
+  }
+  function captionHtml(text){
+    return text ? '<div class="photo-cap">'+esc(text)+'</div>' : "";
+  }
+  // 縮圖列每次上傳完成都會整列重畫，使用者正在說明欄打字時焦點會被吃掉（手機上連鍵盤都會收起來），
+  // 所以重畫前記下目前是第幾個說明欄、游標位置，重畫完再還原。
+  function setPhotoPreviewHtml(container, html){
+    var a = document.activeElement;
+    var idx = -1, selStart = 0, selEnd = 0;
+    if(a && a.classList && a.classList.contains("dz-caption") && container.contains(a)){
+      idx = Array.prototype.indexOf.call(container.querySelectorAll(".dz-caption"), a);
+      selStart = a.selectionStart; selEnd = a.selectionEnd;
+    }
+    container.innerHTML = html;
+    if(idx >= 0){
+      var n = container.querySelectorAll(".dz-caption")[idx];
+      if(n){ n.focus(); try{ n.setSelectionRange(selStart, selEnd); }catch(err){} }
+    }
   }
   var currentDetailIndex = -1;
   var detailSequence = [];
@@ -1287,10 +1330,10 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     if(!items.length){
       photoBlock = '<div class="so-photo">'+ICONS.camera+'<div class="fname">未附照片</div></div>';
     } else if(items.length===1){
-      photoBlock = '<div class="so-photo"><img src="'+items[0].src+'" data-lightbox="'+esc(items[0].src)+'"></div>';
+      photoBlock = '<div class="so-photo"><img src="'+items[0].src+'" data-lightbox="'+esc(items[0].src)+'"></div>'+captionHtml(items[0].caption);
     } else {
       photoBlock = '<div class="photo-grid">' + items.map(function(it){
-        return '<div class="photo-tile"><img src="'+it.src+'" data-lightbox="'+esc(it.src)+'"></div>';
+        return '<div class="photo-cell"><div class="photo-tile"><img src="'+it.src+'" data-lightbox="'+esc(it.src)+'"></div>'+captionHtml(it.caption)+'</div>';
       }).join("") + '</div>'+
       '<div class="photo-count">共 '+items.length+' 張照片</div>';
     }
@@ -1404,7 +1447,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
 
   function renderSoBodyEdit(idx){
     var r = detailSequence[idx];
-    editState = { keepPhotos: (r.photos||[]).slice(), pending: [] };
+    editState = { keepPhotos: (r.photos||[]).slice(), pending: [], captions: Object.assign({}, r.photoCaptions||{}) };
     $("#so-body").innerHTML =
       '<div class="form-grid">'+
         formField("日期","date","e-date",r.date)+
@@ -1418,7 +1461,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
         '<div class="field"><label for="e-material">原料類別</label><input type="text" id="e-material" value="'+esc(r.materialCategory||"")+'" list="material-options"></div>'+
         '<div class="field full"><label for="e-problem">問題</label><input type="text" id="e-problem" value="'+esc(r.problem)+'"></div>'+
         '<div class="field full"><label for="e-action">處理</label><textarea id="e-action">'+esc(r.action||"")+'</textarea></div>'+
-        '<div class="field full"><label>照片 <span class="hint">支援多張，可個別移除或新增</span></label>'+
+        '<div class="field full"><label>照片 <span class="hint">支援多張，可個別移除或新增，每張可加圖片說明</span></label>'+
           '<label class="dropzone" for="e-photo">'+ICONS.camera+'<div>點擊新增照片</div><input type="file" id="e-photo" accept="image/*" multiple style="display:none"></label>'+
           '<div class="dz-preview" id="e-photo-preview"></div>'+
         '</div>'+
@@ -1438,7 +1481,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       // 避免儲存失敗後使用者重試一次，把同一張照片重新上傳一次而多出一份。
       for(var i=0;i<files.length;i++){
         var f = files[i];
-        var entry = { file:f, url:"", date:date, filename:null, uploading:true, error:false, abandoned:false };
+        var entry = { file:f, url:"", date:date, filename:null, uploading:true, error:false, abandoned:false, caption:"" };
         try{ entry.url = URL.createObjectURL(f); }catch(err){}
         editState.pending.push(entry);
         renderEditPhotoPreview(date);
@@ -1469,14 +1512,22 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
   function renderEditPhotoPreview(dateStr){
     var html =
       editState.keepPhotos.map(function(fn,i){
-        return '<div class="dz-thumb-wrap"><img class="dz-thumb" src="'+photoUrl(dateStr, fn)+'"><button type="button" class="thumb-remove" data-rm-existing="'+i+'">'+ICONS.x+'</button></div>';
+        return '<div class="dz-item"><div class="dz-thumb-wrap"><img class="dz-thumb" src="'+photoUrl(dateStr, fn)+'"><button type="button" class="thumb-remove" data-rm-existing="'+i+'">'+ICONS.x+'</button></div>'+
+          captionInput("cap-existing", i, editState.captions[fn])+'</div>';
       }).join("")+
       editState.pending.map(function(p,i){
         var badge = p.uploading ? '<div class="dz-thumb placeholder-thumb">'+ICONS.camera+'</div>' :
           '<img class="dz-thumb" src="'+p.url+'" style="'+(p.error?'opacity:.4':'')+'">';
-        return '<div class="dz-thumb-wrap">'+badge+'<button type="button" class="thumb-remove" data-rm-pending-edit="'+i+'">'+ICONS.x+'</button></div>';
+        return '<div class="dz-item"><div class="dz-thumb-wrap">'+badge+'<button type="button" class="thumb-remove" data-rm-pending-edit="'+i+'">'+ICONS.x+'</button></div>'+
+          captionInput("cap-pending-edit", i, p.caption)+'</div>';
       }).join("");
-    $("#e-photo-preview").innerHTML = html;
+    setPhotoPreviewHtml($("#e-photo-preview"), html);
+    $all("[data-cap-existing]", $("#e-photo-preview")).forEach(function(inp){
+      inp.oninput = function(){ editState.captions[editState.keepPhotos[Number(inp.getAttribute("data-cap-existing"))]] = inp.value; };
+    });
+    $all("[data-cap-pending-edit]", $("#e-photo-preview")).forEach(function(inp){
+      inp.oninput = function(){ editState.pending[Number(inp.getAttribute("data-cap-pending-edit"))].caption = inp.value; };
+    });
     $all("[data-rm-existing]").forEach(function(b){
       b.onclick = function(){ editState.keepPhotos.splice(Number(b.getAttribute("data-rm-existing")),1); renderEditPhotoPreview(dateStr); };
     });
@@ -1500,6 +1551,14 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     saveBtn.disabled = true;
     try{
       var uploaded = editState.pending.filter(function(p){ return p.filename; }).map(function(p){ return p.filename; });
+      var photoCaptions = {};
+      editState.keepPhotos.forEach(function(fn){
+        var c = (editState.captions[fn]||"").trim();
+        if(c) photoCaptions[fn] = c;
+      });
+      editState.pending.forEach(function(p){
+        if(p.filename && p.caption.trim()) photoCaptions[p.filename] = p.caption.trim();
+      });
       var updated = await api.update(id, {
         date: date,
         shift: $("#e-shift").value,
@@ -1512,7 +1571,8 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
         action: $("#e-action").value.trim(),
         productCode: $("#e-productcode").value.trim() || null,
         materialCategory: $("#e-material").value.trim() || null,
-        photos: editState.keepPhotos.concat(uploaded)
+        photos: editState.keepPhotos.concat(uploaded),
+        photoCaptions: photoCaptions
       });
       Object.assign(r, updated);
       mergeMeta(r);
@@ -1705,7 +1765,10 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
   function reportRecordHtml(r){
     var items = photoItems(r);
     var photosHtml = items.length ?
-      '<div class="report-photos">'+items.map(function(it){ return '<img src="'+it.src+'">'; }).join("")+'</div>' : "";
+      '<div class="report-photos">'+items.map(function(it){
+        if(!it.caption) return '<img src="'+it.src+'">';
+        return '<figure class="rp-item"><img src="'+it.src+'"><figcaption class="rp-cap">'+esc(it.caption)+'</figcaption></figure>';
+      }).join("")+'</div>' : "";
     return '<div class="report-record">'+
       '<div class="rr-head">'+
         '<div class="rr-title">'+esc(r.date)+' '+esc(r.time)+'　'+esc(r.equipment)+'（'+esc(r.category)+'）</div>'+
@@ -1995,11 +2058,15 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
   }
 
   function renderAddPhotoPreview(){
-    $("#dz-preview").innerHTML = pendingPhotos.map(function(p,i){
+    setPhotoPreviewHtml($("#dz-preview"), pendingPhotos.map(function(p,i){
       var badge = p.uploading ? '<div class="dz-thumb placeholder-thumb">'+ICONS.camera+'</div>' :
         '<img class="dz-thumb" src="'+p.url+'" style="'+(p.error?'opacity:.4':'')+'">';
-      return '<div class="dz-thumb-wrap">'+badge+'<button type="button" class="thumb-remove" data-rm-pending="'+i+'">'+ICONS.x+'</button></div>';
-    }).join("");
+      return '<div class="dz-item"><div class="dz-thumb-wrap">'+badge+'<button type="button" class="thumb-remove" data-rm-pending="'+i+'">'+ICONS.x+'</button></div>'+
+        captionInput("cap-pending", i, p.caption)+'</div>';
+    }).join(""));
+    $all("[data-cap-pending]", $("#dz-preview")).forEach(function(inp){
+      inp.oninput = function(){ pendingPhotos[Number(inp.getAttribute("data-cap-pending"))].caption = inp.value; };
+    });
     $all("[data-rm-pending]").forEach(function(b){
       b.onclick = function(){
         var i = Number(b.getAttribute("data-rm-pending"));
@@ -2051,7 +2118,11 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
   }
 
   function openLightbox(src){
+    var cap = lightboxCaps[src] || "";
     $("#lightbox-img").src = src;
+    $("#lightbox-cap").textContent = cap;
+    $("#lightbox-cap").hidden = !cap;
+    $("#lightbox").classList.toggle("has-cap", !!cap);
     $("#lightbox").classList.add("open");
   }
 
@@ -2063,7 +2134,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     $("#so-prev").onclick = function(){ if(currentDetailIndex>0) openDetailByIndex(currentDetailIndex-1); };
     $("#so-next").onclick = function(){ if(currentDetailIndex<detailSequence.length-1) openDetailByIndex(currentDetailIndex+1); };
 
-    $("#lightbox").onclick = function(){ this.classList.remove("open"); };
+    $("#lightbox").onclick = function(e){ if(e.target.closest("#lightbox-cap")) return; this.classList.remove("open"); };
     document.addEventListener("click", function(e){
       var t = e.target.closest("[data-lightbox]");
       if(t) openLightbox(t.getAttribute("data-lightbox"));
@@ -2097,7 +2168,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       // 重複觸發，也不會因為重跑上傳而多出一份一樣的照片。
       for(var i=0;i<files.length;i++){
         var f = files[i];
-        var entry = { file:f, url:"", date:date, filename:null, uploading:true, error:false, abandoned:false };
+        var entry = { file:f, url:"", date:date, filename:null, uploading:true, error:false, abandoned:false, caption:"" };
         try{ entry.url = URL.createObjectURL(f); }catch(err){}
         pendingPhotos.push(entry);
         renderAddPhotoPreview();
@@ -2134,6 +2205,10 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       submitBtn.disabled = true;
       try{
         var photoNames = pendingPhotos.filter(function(p){ return p.filename; }).map(function(p){ return p.filename; });
+        var photoCaptions = {};
+        pendingPhotos.forEach(function(p){
+          if(p.filename && p.caption.trim()) photoCaptions[p.filename] = p.caption.trim();
+        });
         var rec = await api.create({
           date: date,
           shift: $("#f-shift").value,
@@ -2148,7 +2223,8 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
           status: $("#f-status").value || "待處理",
           productCode: (findEquipmentMap(equipment)||{}).productCode || null,
           materialCategory: (findEquipmentMap(equipment)||{}).materialCategory || null,
-          photos: photoNames
+          photos: photoNames,
+          photoCaptions: photoCaptions
         });
         DATA.push(rec);
         mergeMeta(rec);

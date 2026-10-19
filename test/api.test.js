@@ -406,3 +406,29 @@ test("PUT /api/equipment-map body 不是陣列時回傳 400", async () => {
   });
   assert.equal(res.status, 400);
 });
+
+test("photoCaptions：建立時清理；沒帶 photoCaptions 的 PUT 保留原說明；移除照片時說明一起拿掉", async () => {
+  const json = { "Content-Type": "application/json" };
+  let res = await fetch(`${base}/api/records`, {
+    method: "POST",
+    headers: json,
+    body: JSON.stringify({
+      date: "2026-09-24", time: "10:00", duration: 5, equipment: "F3", problem: "圖片說明測試",
+      photos: ["a.jpg", "b.jpg"],
+      photoCaptions: { "a.jpg": "  模具表面裂痕  ", "ghost.jpg": "不存在的照片", "b.jpg": "   " },
+    }),
+  });
+  assert.equal(res.status, 201);
+  const { record } = await res.json();
+  assert.deepEqual(record.photoCaptions, { "a.jpg": "模具表面裂痕" });
+
+  res = await fetch(`${base}/api/records/${record.id}`, {
+    method: "PUT", headers: json, body: JSON.stringify({ status: "追蹤中" }),
+  });
+  assert.deepEqual((await res.json()).record.photoCaptions, record.photoCaptions);
+
+  res = await fetch(`${base}/api/records/${record.id}`, {
+    method: "PUT", headers: json, body: JSON.stringify({ photos: ["b.jpg"] }),
+  });
+  assert.deepEqual((await res.json()).record.photoCaptions, {});
+});
