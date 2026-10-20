@@ -450,6 +450,8 @@
   .so-field .v.mono{ font-weight:600; }
   .so-block .k{ font-size:11px; color:var(--ink-muted); font-weight:600; margin-bottom:4px; }
   .so-block .v{ font-size:13px; line-height:1.6; color:var(--ink-1); }
+  /* 使用者在 textarea 打的多行／條列文字：保留換行與連續空白，過長的行仍會自動折行 */
+  .so-block .v.multi{ white-space:pre-wrap; overflow-wrap:anywhere; }
   .status-pill{
     display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800;
     padding:4px 10px; border-radius:100px; width:fit-content; color:var(--ink-1);
@@ -631,7 +633,7 @@
   .report-record .rr-dateline{ font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--ink-2); letter-spacing:.02em; overflow-wrap:anywhere; }
   .report-record .rr-head{ margin:6px 0 12px; font-weight:900; font-size:25px; line-height:1.3; overflow-wrap:anywhere; }
   .report-record .rr-block + .rr-block{ margin-top:10px; }
-  .report-record .rr-block .txt{ margin:3px 0 0; font-size:15px; line-height:1.7; overflow-wrap:anywhere; }
+  .report-record .rr-block .txt{ margin:3px 0 0; font-size:15px; line-height:1.7; overflow-wrap:anywhere; white-space:pre-wrap; }
   .report-record .rr-block .txt.none{ color:var(--ink-muted); }
   .rr-photos{ display:grid; gap:12px; margin-top:16px; }
   .rr-photos.n1{ grid-template-columns:minmax(0,400px); }
@@ -1402,7 +1404,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       '<div class="photo-count">共 '+items.length+' 張照片</div>';
     }
     var rootCauseBlock = r.rootCause ?
-      '<div class="v">'+esc(r.rootCause)+'</div>' :
+      '<div class="v multi">'+esc(r.rootCause)+'</div>' :
       '<div class="v"><div class="rootcause-empty">'+
         '<div class="rc-note">尚未填寫，建議於問題排除後回填，作為下次同類事件的參考</div>'+
         '<textarea id="so-rootcause-input" placeholder="例如：模具脫模劑濃度不足，調整噴塗頻率與用量後觀察"></textarea>'+
@@ -1440,7 +1442,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       '<div class="so-block"><div class="k">設備 / 分類</div><div class="v"><span class="eq-tag">'+esc(r.equipment)+'</span> <span class="eq-tag">'+esc(r.category)+'</span></div></div>'+
       (r.productCode||r.materialCategory ? '<div class="so-block"><div class="k">品號 / 原料類別</div><div class="v">'+(r.productCode?'<span class="eq-tag">'+esc(r.productCode)+'</span> ':'')+(r.materialCategory?'<span class="eq-tag">'+esc(r.materialCategory)+'</span>':'')+'</div></div>' : '')+
       '<div class="so-block"><div class="k">問題</div><div class="v">'+esc(r.problem)+'</div></div>'+
-      '<div class="so-block"><div class="k">處理</div><div class="v">'+esc(r.action||"（未填寫）")+'</div></div>'+
+      '<div class="so-block"><div class="k">處理</div><div class="v multi">'+esc(r.action||"（未填寫）")+'</div></div>'+
       '<div class="so-block"><div class="k">處理狀態</div><div class="v">'+
         '<select class="status-select" id="so-status-select">'+
           STATUS_ORDER.map(function(s){ return '<option value="'+s+'"'+(s===r.status?' selected':'')+'>'+s+'</option>'; }).join("")+
