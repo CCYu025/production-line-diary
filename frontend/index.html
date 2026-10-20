@@ -533,7 +533,7 @@
     padding:34px 40px; border:1px solid var(--line-strong);
     /* 紙張寬度固定置中。960 = .app 的 max-width 1240 − 側邊欄 224 − main 左右 padding 56，
        也就是 App 內報表本來就最寬的寬度；「開新視窗」沒有側邊欄，不鎖寬度的話會被拉滿
-       整個視窗，排版（尤其資料／照片兩欄的比例）就跟 App 內不一樣了 */
+       整個視窗，排版（尤其刊頭條與邊欄／主欄的比例）就跟 App 內不一樣了 */
     width:100%; max-width:960px; margin:0 auto;
     container-type:inline-size;
   }
@@ -665,6 +665,9 @@
   @media print{
     .no-print{ display:none !important; }
     .sidebar{ display:none !important; }
+    /* 這幾個是 position:fixed 的浮層：平常收在畫面外，但列印時每一頁都會重複，
+       詳情面板（.slideover）左邊那條 1px 邊線會剛好印在每頁右緣，變成一條貫穿整頁的直線 */
+    .slideover, .scrim, .toast, .lightbox{ display:none !important; }
     .app{ display:block; }
     main{ padding:0; }
     body{ background:#fff; }
