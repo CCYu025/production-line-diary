@@ -533,14 +533,9 @@
        也就是 App 內報表本來就最寬的寬度；「開新視窗」沒有側邊欄，不鎖寬度的話會被拉滿
        整個視窗，排版（尤其資料／照片兩欄的比例）就跟 App 內不一樣了 */
     width:100%; max-width:960px; margin:0 auto;
+    container-type:inline-size;
   }
-  #report-output .card{ border-radius:0; box-shadow:none; }
   #report-output .kpi-card{ border-radius:0; box-shadow:none; }
-  #report-output .card-title{
-    font-family:"Noto Sans TC",sans-serif; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
-  }
-  #report-output .card-note{ display:none; }
-  #report-output .hbar-label, #report-output .hbar-val{ font-family:"Noto Sans TC",sans-serif; }
 
   .report-header{ border-bottom:4px double var(--line-strong); padding-bottom:16px; margin-bottom:22px; }
   .report-header h2{ font-size:32px; font-weight:900; letter-spacing:.02em; }
@@ -559,30 +554,99 @@
   .report-summary .kpi-card:first-child{ border-left:none; }
   .report-summary .kpi-label{ font-family:"Noto Sans TC",sans-serif; font-size:12px; letter-spacing:.04em; }
   .report-summary .kpi-value{ font-size:26px; }
-  .report-charts{ display:grid; grid-template-columns:1fr 1fr; gap:32px; margin-bottom:8px; padding-top:20px; border-top:1px solid var(--line-strong); }
+  /* 統計區：兩張「排行表」（問題分類／設備），取代舊的橫條圖卡片。表格只列前 5 名、其餘併成
+     「其他 n 項」，高度固定；多了「占比」「累計耗時」，單日報表（每項都是 1 次）也不會像橫條圖那樣全部拉滿。 */
+  .report-stats{ display:grid; grid-template-columns:1fr 1fr; gap:36px; margin-bottom:8px; padding-top:20px; border-top:1px solid var(--line-strong); }
+  .rank-blk{ min-width:0; break-inside:avoid; page-break-inside:avoid; }
+  .rank-blk h4{
+    margin:0 0 6px; display:flex; justify-content:space-between; align-items:baseline; border-bottom:2px solid var(--line-strong);
+    padding-bottom:5px; font-family:"Noto Sans TC",sans-serif; font-weight:900; font-size:13px; letter-spacing:.14em;
+  }
+  .rank-blk h4 em{ font-family:"IBM Plex Mono",monospace; font-weight:500; font-size:11.5px; font-style:normal; letter-spacing:.02em; color:var(--ink-2); }
+  /* 排行表用 grid 排版而不是 <table>：數字欄寬度固定、「項目」欄（minmax(0,1fr)）吃剩下的寬度並用刪節號截斷，
+     名稱再長也不會把整張表撐出欄位外（<table> 的 width:100% 在這個容器查詢的容器裡會被算成紙張最大寬度，實測撐爆過）。 */
+  .rank-tb{ font-family:"Noto Sans TC",sans-serif; }
+  .rank-tb .rr{
+    display:grid; grid-template-columns:22px minmax(0,1fr) 36px 46px 38px 62px; column-gap:6px; align-items:center;
+    padding:7px 0; border-bottom:1px solid #e1dfd3; font-size:13px;
+  }
+  .rank-tb .rr.hd{ padding:4px 0; border-bottom:1px solid #c9c7bb; font-weight:700; font-size:10.5px; letter-spacing:.1em; color:var(--ink-muted); }
+  .rank-tb .rk{ font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-muted); }
+  .rank-tb .nm{ font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rank-tb .bar i{ display:block; height:6px; background:var(--ink-1); -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .rank-tb .n, .rank-tb .p, .rank-tb .mn{ text-align:right; font-family:"IBM Plex Mono",monospace; font-size:12.5px; white-space:nowrap; }
+  .rank-tb .hd .n, .rank-tb .hd .p, .rank-tb .hd .mn{ font-family:"Noto Sans TC",sans-serif; font-size:10.5px; }
+  .rank-tb .n{ font-weight:600; }
+  .rank-tb .p, .rank-tb .mn{ color:var(--ink-2); }
+  .rank-tb small{ font-family:"Noto Sans TC",sans-serif; font-weight:500; font-size:10.5px; margin-left:1px; color:var(--ink-muted); }
+  .rank-tb .rr.rest{ color:var(--ink-muted); font-style:italic; }
+  .rank-tb .rr.rest .nm{ font-weight:500; }
+  /* 兩張表並排至少需要約 660px 的內容寬度（A4 列印的內容寬度約 688px，剛好夠）；
+     比這窄（App 內視窗縮小、手機）就改成上下排，再窄到 380px 以下連細條也省掉。 */
+  @container (max-width:659px){
+    .report-stats{ grid-template-columns:1fr; gap:22px; }
+  }
+  @container (max-width:380px){
+    .rank-tb .rr{ grid-template-columns:22px minmax(0,1fr) 46px 38px 62px; }
+    .rank-tb .bar{ display:none; }
+  }
+  /* 紀錄版面（邊欄式）：左側窄邊欄放「事實」（班別、耗時、狀態、嚴重度、品號…），右側主欄依序是
+     電頭行（日期・設備・分類）、標題（＝問題）、處理、根本原因、照片格。標題用「問題」而不是日期＋設備，
+     因為讀報表的人要先知道「發生了什麼事」。照片依張數排 1／2／3 欄成格（不再疊成單欄，
+     照片多時不會把一筆紀錄拉得過長、左欄也不會大片留白）。 */
+  .report-sec{
+    display:flex; justify-content:space-between; align-items:baseline; border-top:1px solid var(--line-strong);
+    border-bottom:1px solid var(--line-strong); padding:7px 0; margin-top:6px;
+    font-family:"Noto Sans TC",sans-serif; font-weight:900; font-size:13px; letter-spacing:.14em;
+  }
+  .report-sec{ break-after:avoid; page-break-after:avoid; }
+  .report-sec span:last-child{ font-family:"IBM Plex Mono",monospace; font-weight:500; font-size:12px; letter-spacing:.02em; color:var(--ink-2); }
+  .report-day{
+    display:flex; align-items:baseline; gap:14px; margin:26px 0 4px; padding-bottom:5px;
+    border-bottom:2px solid var(--line-strong); break-after:avoid; page-break-after:avoid;
+  }
+  .report-day .dd{ font-weight:900; font-size:19px; }
+  .report-day .dm{ font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--ink-2); }
   .report-record{
-    border:none; border-top:1px solid var(--line); border-radius:0; padding:20px 0; margin-bottom:0;
-    break-inside:avoid; page-break-inside:avoid;
+    display:grid; grid-template-columns:148px minmax(0,1fr); gap:26px; padding:20px 0 22px;
+    border-bottom:1px solid var(--line-strong); break-inside:avoid; page-break-inside:avoid;
   }
-  .report-record:first-of-type{ border-top:none; padding-top:24px; }
-  .report-record .rr-head{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-  .report-record .rr-title{ font-weight:900; font-size:19px; }
-  .report-record .rr-body{ display:grid; grid-template-columns:1.4fr 1fr; gap:28px; align-items:start; }
-  .report-record .rr-data{ min-width:0; }
-  .report-record .rr-grid{
-    display:grid; grid-template-columns:repeat(2,1fr); gap:10px 20px; font-size:14px;
-    margin-bottom:14px; font-family:"Noto Sans TC",sans-serif;
+  .report-day + .report-record, .report-sec + .report-record{ padding-top:16px; }
+  .report-record .rr-side{ border-right:1px solid var(--line-strong); padding-right:16px; }
+  .report-record .rr-side .f{ padding:9px 0; border-bottom:1px solid #c9c7bb; }
+  .report-record .rr-side .f:first-child{ padding-top:0; }
+  .report-record .rr-side .f:last-child{ border-bottom:none; }
+  .report-record .k{
+    color:var(--ink-muted); font-family:"Noto Sans TC",sans-serif; font-weight:700; font-size:11px; letter-spacing:.1em;
   }
-  .report-record .rr-grid .k, .report-record .rr-block .k{
-    color:var(--ink-muted); font-size:11.5px; font-weight:700; margin-bottom:3px;
-    font-family:"Noto Sans TC",sans-serif; letter-spacing:.04em;
+  .report-record .rr-side .v{ font-family:"Noto Sans TC",sans-serif; font-weight:700; font-size:15px; margin-top:2px; }
+  .report-record .rr-side .v.m{ font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:22px; }
+  .report-record .rr-side .v.m small{ font-family:"Noto Sans TC",sans-serif; font-weight:500; font-size:11px; margin-left:2px; }
+  .rr-sev{ font-family:"Noto Sans TC",sans-serif; font-weight:700; font-size:12.5px; white-space:nowrap; }
+  .rr-sev i{
+    display:inline-block; width:9px; height:9px; margin-right:5px; background:var(--sev);
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
   }
-  .report-record .rr-grid .v{ font-weight:700; }
-  .report-record .rr-block{ margin-bottom:12px; font-size:15px; line-height:1.65; }
-  .report-photos{ display:flex; flex-direction:column; gap:8px; }
-  .report-photos img{ width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:0; border:1px solid var(--line-strong); }
-  .report-photos .rp-item{ margin:0; break-inside:avoid; page-break-inside:avoid; }
-  .report-photos .rp-cap{ margin-top:4px; font-family:"Noto Sans TC",sans-serif; font-size:12px; line-height:1.5; color:var(--ink-2); }
+  .report-record .rr-main{ min-width:0; }
+  .report-record .rr-dateline{ font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--ink-2); letter-spacing:.02em; overflow-wrap:anywhere; }
+  .report-record .rr-head{ margin:6px 0 12px; font-weight:900; font-size:25px; line-height:1.3; overflow-wrap:anywhere; }
+  .report-record .rr-block + .rr-block{ margin-top:10px; }
+  .report-record .rr-block .txt{ margin:3px 0 0; font-size:15px; line-height:1.7; overflow-wrap:anywhere; }
+  .report-record .rr-block .txt.none{ color:var(--ink-muted); }
+  .rr-photos{ display:grid; gap:12px; margin-top:16px; }
+  .rr-photos.n1{ grid-template-columns:minmax(0,400px); }
+  .rr-photos.n2, .rr-photos.n4{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .rr-photos.n3, .rr-photos.n5, .rr-photos.n6{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .rr-photos .rp-item{ margin:0; break-inside:avoid; page-break-inside:avoid; }
+  .rr-photos img{ display:block; width:100%; aspect-ratio:4/3; object-fit:cover; border:1px solid var(--line-strong); }
+  .rr-photos .rp-cap{ margin-top:5px; font-family:"Noto Sans TC",sans-serif; font-size:12px; line-height:1.5; color:var(--ink-2); overflow-wrap:anywhere; }
+  .rr-photos .rp-cap .fn{ font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:11px; color:var(--ink-1); margin-right:7px; letter-spacing:.02em; }
+  @media (max-width:560px){
+    .report-record{ grid-template-columns:1fr; gap:12px; }
+    .report-record .rr-side{ border-right:none; padding-right:0; display:flex; flex-wrap:wrap; gap:4px 22px; }
+    .report-record .rr-side .f{ border-bottom:none; padding:0; }
+    .rr-photos.n3, .rr-photos.n5, .rr-photos.n6{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  }
   .report-empty{ color:var(--ink-muted); font-size:14px; padding:24px 0; font-family:"Noto Sans TC",sans-serif; }
 
   @media print{
@@ -1756,39 +1820,88 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     }
   }
 
-  function rrField(k,v){
-    return '<div><div class="k">'+esc(k)+'</div><div class="v">'+esc(v||"—")+'</div></div>';
+  var WEEKDAY = ["日","一","二","三","四","五","六"];
+  function rrFact(k, valueHtml, cls){
+    return '<div class="f"><div class="k">'+esc(k)+'</div><div class="v'+(cls?' '+cls:'')+'">'+valueHtml+'</div></div>';
   }
-  function rrBlock(k,v){
-    return '<div class="rr-block"><div class="k">'+esc(k)+'</div><div>'+esc(v)+'</div></div>';
+  function rrBlock(k, v){
+    return '<div class="rr-block"><div class="k">'+esc(k)+'</div><p class="txt'+(v?'':' none')+'">'+esc(v||"（未填寫）")+'</p></div>';
   }
   function reportRecordHtml(r){
     var items = photoItems(r);
     var photosHtml = items.length ?
-      '<div class="report-photos">'+items.map(function(it){
-        if(!it.caption) return '<img src="'+it.src+'">';
-        return '<figure class="rp-item"><img src="'+it.src+'"><figcaption class="rp-cap">'+esc(it.caption)+'</figcaption></figure>';
+      '<div class="rr-photos n'+Math.min(items.length,6)+'">'+items.map(function(it,i){
+        return '<figure class="rp-item"><img src="'+it.src+'"><figcaption class="rp-cap"><span class="fn">圖'+(i+1)+'</span>'+esc(it.caption)+'</figcaption></figure>';
       }).join("")+'</div>' : "";
-    return '<div class="report-record">'+
-      '<div class="rr-head">'+
-        '<div class="rr-title">'+esc(r.date)+' '+esc(r.time)+'　'+esc(r.equipment)+'（'+esc(r.category)+'）</div>'+
-        pill(r.severity, SEVERITY_HUE[r.severity])+
-      '</div>'+
-      '<div class="rr-body">'+
-        '<div class="rr-data">'+
-          '<div class="rr-grid">'+
-            rrField("班別", r.shift)+rrField("耗時", r.duration+" 分")+
-            (r.productCode ? rrField("品號", r.productCode) : "")+
-            (r.materialCategory ? rrField("原料類別", r.materialCategory) : "")+
-            rrField("處理狀態", r.status)+
-          '</div>'+
-          rrBlock("問題", r.problem)+
-          rrBlock("處理", r.action||"（未填寫）")+
-          rrBlock("根本原因", r.rootCause||"（未填寫）")+
-        '</div>'+
+    // 品號／原料類別是「有值才顯示」（原材區、RB2 這類設備本來就沒有品號，顯示「—」會像資料漏填）
+    var facts =
+      rrFact("班別", esc(r.shift))+
+      rrFact("耗時", esc(r.duration)+'<small>分</small>', "m")+
+      rrFact("處理狀態", esc(r.status))+
+      rrFact("嚴重度", '<span class="rr-sev" style="--sev:'+(SEVERITY_HUE[r.severity]||"var(--ink-muted)")+'"><i></i>'+esc(r.severity)+'</span>')+
+      (r.productCode ? rrFact("品號", esc(r.productCode)) : "")+
+      (r.materialCategory ? rrFact("原料類別", esc(r.materialCategory)) : "");
+    return '<article class="report-record">'+
+      '<aside class="rr-side">'+facts+'</aside>'+
+      '<div class="rr-main">'+
+        '<div class="rr-dateline">'+esc(r.date)+' '+esc(r.time)+'　·　'+esc(r.equipment)+'　·　'+esc(r.category)+'</div>'+
+        '<h3 class="rr-head">'+esc(r.problem)+'</h3>'+
+        rrBlock("處理", r.action)+
+        rrBlock("根本原因", r.rootCause)+
         photosHtml+
       '</div>'+
-    '</div>';
+    '</article>';
+  }
+
+  // 統計區的「排行表」：依次數排序（同次數比累計耗時）、只列前 5 名，其餘併成「其他 n 項」。
+  // 占比＝該項次數 / 全部事件數；累計耗時＝該項所有事件的耗時加總。
+  var RANK_TOP = 5;
+  function reportRankHtml(title, rows, total, unitWord){
+    var sorted = rows.slice().sort(function(a,b){ return b.count-a.count || b.minutes-a.minutes; });
+    var top = sorted.slice(0, RANK_TOP);
+    var rest = sorted.slice(RANK_TOP);
+    var max = top.length ? top[0].count : 1;
+    function pct(n){ return total ? Math.round(n/total*100) : 0; }
+    function tr(r, i, isRest){
+      return '<div class="rr'+(isRest?' rest':'')+'">'+
+        '<span class="rk">'+(isRest?'':String(i+1).padStart(2,"0"))+'</span>'+
+        '<span class="nm" title="'+esc(r.label)+'">'+esc(r.label)+'</span>'+
+        '<span class="bar">'+(isRest?'':'<i style="width:'+Math.max(6,Math.round(r.count/max*100))+'%"></i>')+'</span>'+
+        '<span class="n">'+r.count+'<small>次</small></span>'+
+        '<span class="p">'+pct(r.count)+'%</span>'+
+        '<span class="mn">'+Number(r.minutes).toLocaleString()+'<small>分</small></span>'+
+      '</div>';
+    }
+    var restRow = rest.length ? tr({
+      label: "其他 "+rest.length+" 項",
+      count: rest.reduce(function(s,r){ return s+r.count; }, 0),
+      minutes: rest.reduce(function(s,r){ return s+r.minutes; }, 0)
+    }, 0, true) : "";
+    return '<section class="rank-blk"><h4><span>'+esc(title)+'</span><em>共 '+sorted.length+' '+unitWord+(rest.length?'・前 '+RANK_TOP+' 名':'')+'</em></h4>'+
+      '<div class="rank-tb" role="table"><div class="rr hd"><span></span><span>項目</span><span class="bar"></span><span class="n">次數</span><span class="p">占比</span><span class="mn">累計耗時</span></div>'+
+      top.map(function(r,i){ return tr(r,i,false); }).join("")+restRow+'</div></section>';
+  }
+
+  // 紀錄明細：區段標題＋（跨多天才有的）日期分組標題。日期標題顯示當天筆數與累計分鐘，
+  // 方便主管掃讀「哪一天狀況比較多」；只有一天的報表不加（封面已經寫了日期，會重複）。
+  function reportRecordsHtml(records){
+    var groups = [];
+    records.forEach(function(r){
+      var g = groups[groups.length-1];
+      if(g && g.date===r.date) g.list.push(r);
+      else groups.push({ date:r.date, list:[r] });
+    });
+    var html = '<div class="report-sec"><span>紀錄明細</span><span>共 '+records.length+' 筆</span></div>';
+    groups.forEach(function(g){
+      if(groups.length > 1){
+        var d = new Date(g.date+"T00:00:00");
+        var min = g.list.reduce(function(sum,r){ return sum + (Number(r.duration)||0); }, 0);
+        html += '<div class="report-day"><span class="dd">'+(d.getMonth()+1)+'/'+d.getDate()+'（週'+WEEKDAY[d.getDay()]+'）</span>'+
+          '<span class="dm">'+g.list.length+' 筆・累計 '+min+' 分</span></div>';
+      }
+      html += g.list.map(reportRecordHtml).join("");
+    });
+    return html;
   }
 
   function renderReport(){
@@ -1824,16 +1937,13 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
         kpiCard("平均耗時", agg.avg.toFixed(1), "分/件")+
         kpiCard("追蹤中", agg.trackingRows.length, "筆")+
       '</div>'+
-      '<div class="report-charts">'+
-        '<div class="card"><div class="card-head"><span class="card-title">問題分類發生次數</span></div><div id="report-chart-category"></div></div>'+
-        '<div class="card"><div class="card-head"><span class="card-title">設備發生次數</span></div><div id="report-chart-equipment-count"></div></div>'+
+      '<div class="report-stats">'+
+        reportRankHtml("問題分類", agg.categoryRanked, agg.totalEvents, "類")+
+        reportRankHtml("設備", agg.equipmentRanked, agg.totalEvents, "台")+
       '</div>'+
       '<div id="report-records"></div>';
 
-    var equipmentByCount = agg.equipmentRanked.slice().sort(function(a,b){ return b.count-a.count; });
-    renderHBarChart($("#report-chart-category"), agg.categoryRanked, { valueKey:"count", filterKey:"category" });
-    renderHBarChart($("#report-chart-equipment-count"), equipmentByCount, { valueKey:"count", filterKey:"equipment" });
-    $("#report-records").innerHTML = records.map(reportRecordHtml).join("");
+    $("#report-records").innerHTML = reportRecordsHtml(records);
     $("#report-print").disabled = false;
     $("#report-open-window").disabled = false;
   }
