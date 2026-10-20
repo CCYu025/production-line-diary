@@ -592,8 +592,8 @@
     .rank-tb .rr{ grid-template-columns:22px minmax(0,1fr) 46px 38px 62px; }
     .rank-tb .bar{ display:none; }
   }
-  /* 紀錄版面（邊欄式）：左側窄邊欄放「事實」（班別、耗時、狀態、嚴重度、品號…），右側主欄依序是
-     電頭行（日期・設備・分類）、標題（＝問題）、處理、根本原因、照片格。標題用「問題」而不是日期＋設備，
+  /* 紀錄版面（邊欄式）：上方一條「刊頭條」（時間・設備・分類），下方左側窄邊欄放其餘「事實」
+     （班別、耗時、狀態、嚴重度、品號…），右側主欄依序是標題（＝問題）、處理、根本原因、照片格。標題用「問題」而不是日期＋設備，
      因為讀報表的人要先知道「發生了什麼事」。照片依張數排 1／2／3 欄成格（不再疊成單欄，
      照片多時不會把一筆紀錄拉得過長、左欄也不會大片留白）。 */
   .report-sec{
@@ -609,11 +609,20 @@
   }
   .report-day .dd{ font-weight:900; font-size:19px; }
   .report-day .dm{ font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--ink-2); }
-  .report-record{
-    display:grid; grid-template-columns:148px minmax(0,1fr); gap:26px; padding:20px 0 22px;
-    border-bottom:1px solid var(--line-strong); break-inside:avoid; page-break-inside:avoid;
+  .report-record{ padding:18px 0 22px; border-bottom:1px solid var(--line-strong); break-inside:avoid; page-break-inside:avoid; }
+  .report-day + .report-record, .report-sec + .report-record{ padding-top:14px; }
+  /* 刊頭條：時間、設備、分類是每筆紀錄最重要的辨識資訊，放在標題上方一條橫跨全寬、三格並排的資訊條，
+     用大字粗體（不再是標題上方一行灰色小字，掃讀時會被漏掉）。 */
+  .rr-strip{
+    display:grid; grid-template-columns:1.25fr 1fr 1fr; border-top:2px solid var(--line-strong);
+    border-bottom:1px solid var(--line-strong); margin-bottom:16px;
   }
-  .report-day + .report-record, .report-sec + .report-record{ padding-top:16px; }
+  .rr-strip > div{ padding:8px 16px; border-left:1px solid #c9c7bb; min-width:0; }
+  .rr-strip > div:first-child{ padding-left:0; border-left:none; }
+  .rr-strip .v{ font-weight:900; font-size:21px; line-height:1.25; margin-top:2px; overflow-wrap:anywhere; }
+  .rr-strip .v.t{ font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:22px; }
+  .rr-strip .v.t span{ font-weight:500; font-size:13px; color:var(--ink-muted); margin-right:8px; }
+  .rr-cols{ display:grid; grid-template-columns:148px minmax(0,1fr); gap:26px; }
   .report-record .rr-side{ border-right:1px solid var(--line-strong); padding-right:16px; }
   .report-record .rr-side .f{ padding:9px 0; border-bottom:1px solid #c9c7bb; }
   .report-record .rr-side .f:first-child{ padding-top:0; }
@@ -621,7 +630,7 @@
   .report-record .k{
     color:var(--ink-muted); font-family:"Noto Sans TC",sans-serif; font-weight:700; font-size:11px; letter-spacing:.1em;
   }
-  .report-record .rr-side .v{ font-family:"Noto Sans TC",sans-serif; font-weight:700; font-size:15px; margin-top:2px; }
+  .report-record .rr-side .v{ font-family:"Noto Sans TC",sans-serif; font-weight:700; font-size:15px; margin-top:2px; overflow-wrap:anywhere; }
   .report-record .rr-side .v.m{ font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:22px; }
   .report-record .rr-side .v.m small{ font-family:"Noto Sans TC",sans-serif; font-weight:500; font-size:11px; margin-left:2px; }
   .rr-sev{ font-family:"Noto Sans TC",sans-serif; font-weight:700; font-size:12.5px; white-space:nowrap; }
@@ -630,8 +639,7 @@
     -webkit-print-color-adjust:exact; print-color-adjust:exact;
   }
   .report-record .rr-main{ min-width:0; }
-  .report-record .rr-dateline{ font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--ink-2); letter-spacing:.02em; overflow-wrap:anywhere; }
-  .report-record .rr-head{ margin:6px 0 12px; font-weight:900; font-size:25px; line-height:1.3; overflow-wrap:anywhere; }
+  .report-record .rr-head{ margin:0 0 12px; font-weight:900; font-size:25px; line-height:1.3; overflow-wrap:anywhere; }
   .report-record .rr-block + .rr-block{ margin-top:10px; }
   .report-record .rr-block .txt{ margin:3px 0 0; font-size:15px; line-height:1.7; overflow-wrap:anywhere; white-space:pre-wrap; }
   .report-record .rr-block .txt.none{ color:var(--ink-muted); }
@@ -644,7 +652,10 @@
   .rr-photos .rp-cap{ margin-top:5px; font-family:"Noto Sans TC",sans-serif; font-size:12px; line-height:1.5; color:var(--ink-2); overflow-wrap:anywhere; }
   .rr-photos .rp-cap .fn{ font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:11px; color:var(--ink-1); margin-right:7px; letter-spacing:.02em; }
   @media (max-width:560px){
-    .report-record{ grid-template-columns:1fr; gap:12px; }
+    .rr-cols{ grid-template-columns:minmax(0,1fr); gap:12px; }
+    .rr-strip{ grid-template-columns:1fr 1fr; }
+    .rr-strip > div:first-child{ grid-column:1 / -1; border-bottom:1px solid #c9c7bb; }
+    .rr-strip > div:nth-child(2){ padding-left:0; border-left:none; }
     .report-record .rr-side{ border-right:none; padding-right:0; display:flex; flex-wrap:wrap; gap:4px 22px; }
     .report-record .rr-side .f{ border-bottom:none; padding:0; }
     .rr-photos.n3, .rr-photos.n5, .rr-photos.n6{ grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -1843,14 +1854,22 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       rrFact("嚴重度", '<span class="rr-sev" style="--sev:'+(SEVERITY_HUE[r.severity]||"var(--ink-muted)")+'"><i></i>'+esc(r.severity)+'</span>')+
       (r.productCode ? rrFact("品號", esc(r.productCode)) : "")+
       (r.materialCategory ? rrFact("原料類別", esc(r.materialCategory)) : "");
+    var strip =
+      '<div class="rr-strip">'+
+        '<div><div class="k">時間</div><div class="v t"><span>'+esc(r.date)+'</span>'+esc(r.time)+'</div></div>'+
+        '<div><div class="k">設備</div><div class="v">'+esc(r.equipment)+'</div></div>'+
+        '<div><div class="k">分類</div><div class="v">'+esc(r.category)+'</div></div>'+
+      '</div>';
     return '<article class="report-record">'+
-      '<aside class="rr-side">'+facts+'</aside>'+
-      '<div class="rr-main">'+
-        '<div class="rr-dateline">'+esc(r.date)+' '+esc(r.time)+'　·　'+esc(r.equipment)+'　·　'+esc(r.category)+'</div>'+
-        '<h3 class="rr-head">'+esc(r.problem)+'</h3>'+
-        rrBlock("處理", r.action)+
-        rrBlock("根本原因", r.rootCause)+
-        photosHtml+
+      strip+
+      '<div class="rr-cols">'+
+        '<aside class="rr-side">'+facts+'</aside>'+
+        '<div class="rr-main">'+
+          '<h3 class="rr-head">'+esc(r.problem)+'</h3>'+
+          rrBlock("處理", r.action)+
+          rrBlock("根本原因", r.rootCause)+
+          photosHtml+
+        '</div>'+
       '</div>'+
     '</article>';
   }
