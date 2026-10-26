@@ -154,7 +154,13 @@ export function MobileTabBar() {
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            if (pathnameRef.current === openedAtRef.current) moreButtonRef.current?.focus();
+            if (pathnameRef.current === openedAtRef.current) {
+              moreButtonRef.current?.focus();
+            } else {
+              // 面板開著時換了頁（選連結、瀏覽器上一頁）：AppShell 的「換頁後聚焦主內容」跑的當下 Radix 還抓著焦點，
+              // 所以等面板真正關完（這個回呼）再把焦點交給主內容，不然會掉到 body。
+              document.getElementById("main")?.focus({ preventScroll: true });
+            }
           }}
         >
           <SheetHeader>

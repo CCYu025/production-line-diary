@@ -18,32 +18,42 @@
 
 ## 快速啟動
 
+需要 **Node.js ≥ 22.12**（`npm test` 的萬用字元路徑與 Vite 7 都要求）。
+
 ```bash
 npm install
 cp .env.example .env   # 改成實際的 DATA_DIR / LEGACY_XLSX_PATH
 npm run migrate        # 只有第一次搬遷舊版 Excel 資料時需要
 npm start               # 或雙擊 start.bat
+npm run dev:web         # 開發新介面：Vite 熱更新（見下方）
 ```
 
 沒有設定 `.env` 時會用 `backend/data/example/` 的範例資料開機。
 
+- **舊介面（正式版）在 `/`，新介面（React，預覽版）在 `/next/`**，兩者並存直到切換（`docs/refactor-plan.md` 的 WP3d）。
+- `npm start`（也就是 `start.bat`）啟動前會跑 `scripts/ensure-web-build.js`：`web/dist` 不存在或比原始碼舊就自動建置
+  （建置套件 vite 還沒裝會先 `npm install`）。**建置失敗只印警告、舊介面照常啟動**。`web/dist` 不進版控。
+- `npm run dev:web`：Vite dev server（預設 `http://localhost:5173/next/`），把 `/api`、`/photos` 代理到後端
+  （`changeOrigin: true`，後端的 Host 檢查才會過）；後端不在 3000 埠時用 `BACKEND_PORT=xxxx npm run dev:web`。
+  元件預覽頁 `#/_ui` **只存在於 `dev:web`**（`import.meta.env.DEV`），正式建置不含。
 ## 架構
 
 | 層 | 技術 |
 |---|---|
-| 前端 | 純 HTML/CSS/JS，無框架，單一檔案 `frontend/index.html` |
+| 前端（正式） | 純 HTML/CSS/JS，無框架，單一檔案 `frontend/index.html`，在 `/`，直到 WP3d 切換 |
+| 前端（新，預覽版） | `web/`：React 18 + Vite 7 + TypeScript（strict）+ Tailwind CSS 4 + shadcn/ui（Radix）+ TanStack Query + hash 路由；`web/dist` 不進版控，由 Express 掛在 `/next/`；字型用 `@fontsource` 自行託管 |
 | 後端 | Node.js（ESM）+ Express 5 |
 | 資料庫 | JSON 檔（`DATA_DIR/data.json`），**不在這個 repo 裡** |
 | 照片 | 檔案系統（`DATA_DIR/照片/`），不是塞進資料庫的 blob |
-| 測試 | Node 內建 `node:test`，沒有額外裝框架 |
-| 執行環境 | 只監聽 `127.0.0.1`，不對外網開放；沒有帳號系統 |
+| 測試 | 後端：Node 內建 `node:test`（`test/`）；新前端：Vitest + Testing Library（jsdom）+ `tsc --noEmit` |
+| 執行環境 | Node.js ≥ 22.12；只監聽 `127.0.0.1`，不對外網開放；沒有帳號系統 |
 
 ## 關鍵檔案
 
 | 檔案 | 職責 |
 |---|---|
-| `backend/server.js` | Express 5 app、REST API、multer 照片上傳。**中介層順序有意義**：先 Host 允許清單（S2）、再 `/api` 非 GET 的 `X-Requested-With` 檢查（S1）、再 `express.json()`，之後才是靜態檔與路由；所有寫入都走 `withStore()`；未知的 `/api/*` 回 JSON 404；最後一層統一錯誤中介層（async 的 rejection 只會回 JSON `{errors}`，不會讓程序結束）。啟動時、之後每小時跑一次孤兒照片清理 |
-| `backend/lib/aggregate.js` | 彙總邏輯（純函式）；**前端直接 import 這支檔案**（`/lib` 有 static mount），前後端共用同一套統計邏輯。也放「複製既有紀錄」的 `pickCopyFields()`（複製欄位白名單）與 `commonProblems()`（常見問題歸併），以及紀錄列表的篩選（`emptyFilter()` / `filterRecords()` / `facetCounts()` / `sortByDate()` / `datePresets()`）；另外匯出 `toISODate()`（本地日期字串，報表預設日期用它） |
+| `backend/server.js` | Express 5 app、REST API、multer 照片上傳；`web/dist` 掛在 `/next/`（在 Host／CSRF 之後、JSON 404 之前）。**中介層順序有意義**：先 Host 允許清單（S2）、再 `/api` 非 GET 的 `X-Requested-With` 檢查（S1）、再 `express.json()`，之後才是靜態檔與路由；所有寫入都走 `withStore()`；未知的 `/api/*` 回 JSON 404；最後一層統一錯誤中介層（async 的 rejection 只會回 JSON `{errors}`，不會讓程序結束）。啟動時、之後每小時跑一次孤兒照片清理 |
+| `backend/lib/aggregate.js` | 彙總邏輯（純函式）；**前端直接 import 這支檔案**，前後端共用同一套統計邏輯：舊介面走 `/lib/aggregate.js`（static mount），新介面（`web/`）走 Vite／TS alias `@shared`；**一律 import，絕不複製一份**。也放「複製既有紀錄」的 `pickCopyFields()`（複製欄位白名單）與 `commonProblems()`（常見問題歸併），以及紀錄列表的篩選（`emptyFilter()` / `filterRecords()` / `facetCounts()` / `sortByDate()` / `datePresets()`）；另外匯出 `toISODate()`（本地日期字串，報表預設日期用它） |
 | `backend/lib/store.js` | `data.json` 讀寫：原子性寫入（先寫暫存檔，再 `renameWithRetry()` rename；遇 EPERM/EBUSY/EACCES 退避重試）；`withStore(dataDir, fn)` 每個資料夾一把 promise 鎖，包住「讀 → 改 → 寫」；每天第一次寫入前自動備份到 `DATA_DIR/backups/data-YYYYMMDD.json`（保留最近 14 份）；讀到壞掉的 JSON 丟 `StoreCorruptError`（絕不覆寫原檔）；容忍開頭的 UTF-8 BOM |
 | `backend/lib/photos.js` | 照片檔案生命週期（刪孤兒檔、換日期時搬檔）；所有路徑操作一律經 `resolveInside()`（解析後必須仍在照片資料夾內，否則丟錯），`photoFileExists()` 檢查照片是否在某日期的資料夾裡 |
 | `backend/lib/photoCaptions.js` | 圖片說明（`photoCaptions`）的清理：只留 `photos` 還有的檔名、文字去空白並限制 100 字、空白不存 |
@@ -51,7 +61,10 @@ npm start               # 或雙擊 start.bat
 | `backend/lib/xlsx.js` | 舊版 Excel 讀取／匯出快照寫入——**注意 UTC getter**，見下方核心不變量 |
 | `backend/lib/migrateLogic.js` | 搬遷規則（問題分類對照表、「追蹤中/已解決」判斷） |
 | `backend/data/schema.md` | 資料結構完整說明（資料契約） |
-| `frontend/index.html` | 全部畫面與前端邏輯，fetch 這個 repo 自己的 API |
+| `backend/lib/aggregate.d.ts`、`backend/lib/types.d.ts` | 給 TypeScript 用的型別宣告：`aggregate.d.ts` 對應 `aggregate.js` 的每個匯出，`types.d.ts` 是 `DiaryRecord`／`Meta`／`RecordInput`…（依 `schema.md`）。**改了 `aggregate.js` 的匯出或回傳形狀、或 `schema.md` 的欄位，必須同步改這兩支**；`web/src/lib/shared.test.ts` 會檢查匯出名稱一致（簽章是否一致只有 `tsc` 看得出來） |
+| `frontend/index.html` | 舊介面（正式版）：全部畫面與前端邏輯，fetch 這個 repo 自己的 API |
+| `web/` | 新介面（預覽版，掛在 `/next/`）。結構：`src/app/`（外殼、路由）、`src/components/`（`ui/` 是 shadcn 風格元件）、`src/features/<view>/`、`src/lib/`、`src/styles/index.css`（設計 token）。`src/lib/api.ts` 是**唯一的 API 層**，每個非 GET 請求（含 multipart 上傳與 DELETE）都帶 `X-Requested-With`，失敗統一丟 `ApiError`（保留伺服器的 `errors[]`）；`src/lib/feedback.ts` 的 `notify`／`toastUndoable` 是**唯一的 toast 入口**（不要直接 import sonner；錯誤訊息是 `role="alert"`）；篩選 ⇄ URL query 用 `src/lib/urlQuery.ts` |
+| `scripts/ensure-web-build.js` | `npm start` 的前置步驟：`web/dist` 不存在或過期才建置（只比檔案的 mtime，不比資料夾的）。**永遠不阻擋舊介面**——任何失敗都只印警告、結束碼 0 |
 | `scripts/migrate.js` | 一次性搬遷腳本（CLI，`--force` 才會覆蓋既有資料） |
 
 ## 資料設計理念（給還沒讀過對話紀錄的人）
@@ -339,15 +352,26 @@ npm start               # 或雙擊 start.bat
   不要放寬**。惡意網站可以把自己的網域解析成 127.0.0.1，讓瀏覽器把本機服務當成同源讀取；這種請求的 Host 會是
   惡意網域。**只檢查主機名稱、不檢查 port**——測試與 `PORT` 環境變數會換 port，而 rebinding 攻擊靠的是換主機名稱，
   port 不是防線。這層中介層掛在最前面，連靜態檔與照片都受它保護，不只 `/api`。
+- **新舊前端並存期間（WP2 起，到 WP3d 切換為止）**：
+  - **共用邏輯用 import，不複製**：`backend/lib/aggregate.js` 由舊介面（`/lib`）與新介面（`@shared` alias）共用；型別宣告 `aggregate.d.ts`／`types.d.ts` 要跟著改（漂移測試 `web/src/lib/shared.test.ts`）。
+  - **測試分開跑**：`npm test` 只跑後端 `test/**/*.test.js`（`node:test`）；新前端用 `npm run test:web`（Vitest）、`npm run typecheck`、`npm run build`；CI 五個指令（check／test／typecheck／test:web／build）都要綠燈。
+  - **建置失敗不能拖垮舊介面**：`scripts/ensure-web-build.js` 失敗只警告、結束碼 0；`/next/` 只是預覽版，每天在用的是 `/`。
+  - **字型自行託管，不連 Google Fonts**（`@fontsource`，只打包用到的字重）——這是離線／內網也要能用的本機工具。
+  - **文字色 token 對比度 ≥ 4.5:1**（淺色、深色都是；`ink-muted` 曾經只有約 3.4:1）。`web/src/test/contrast.test.ts` 直接讀 `index.css` 的色票把關，調色票時不要把它改回難讀的顏色。
+  - **`#/_ui` 元件預覽只在 `import.meta.env.DEV`**（`npm run dev:web`）存在，正式建置不含。
+  - **新介面只是 `/next/` 的預覽版，直到 WP3d 才切換為 `/`**；每個工作包完成都要更新 `docs/refactor-plan.md` §7 進度表。
 
 ## 測試方法
 
 ```bash
-npm run check   # node --check 語法檢查
-npm test        # node --test，目前 156 個測試
+npm run check      # 後端 node --check 語法檢查
+npm test           # 後端 node:test（test/**/*.test.js），目前 156 個測試
+npm run typecheck  # 新前端 tsc --noEmit（strict）
+npm run test:web   # 新前端 Vitest（jsdom + Testing Library），目前 70 個測試（9 個檔案）
+npm run build      # 新前端 vite build → web/dist
 ```
 
-CI（`.github/workflows/ci.yml`）在每次 push/PR 到 `main` 時自動跑這兩步。
+CI（`.github/workflows/ci.yml`）在每次 push/PR 到 `main` 時自動跑這五步。
 
 手動驗證（改動 `frontend/index.html` 或 API 之後建議實際跑一次，不要只看程式碼）：
 
@@ -388,7 +412,17 @@ CI（`.github/workflows/ci.yml`）在每次 push/PR 到 `main` 時自動跑這�
      `data.json` 位元組完全沒變、資料夾裡沒有 `.tmp` 檔；修復後恢復正常
    - 每日備份：當天第一次寫入後出現 `backups/data-YYYYMMDD.json`（內容是寫入前的版本），同一天再寫不會覆蓋它
    - 並發寫入：同時送多筆新增（例如 `for i in $(seq 20); do curl … & done`），全部成功、id 不重複、沒有遺失
-9. 瀏覽器 console 應該沒有錯誤
+9. 新介面（`/next/`，改動 `web/` 之後必跑；先 `npm run build` 或用 `npm start` 自動建置，一樣用範例資料的複本當 `DATA_DIR`）：
+   - 視窗寬 375／900／1280 各看一次，每個各看淺色與深色（改系統偏好）；都不能出現橫向捲動（含 320 寬）
+   - 側欄：1280 完整側欄；900 收合成圖示列，滑過圖示出現 tooltip；375 只有頂部標題與底部分頁列（中央突出的「新增」）；
+     品牌「產線日誌」不會換行成直排
+   - 鍵盤：Tab 走得到所有導覽項目與按鈕、焦點環清楚可見；手機「更多」面板開啟時焦點在第一個項目、
+     按 Esc／關閉鈕關閉後焦點回到「更多」按鈕、選了連結或按瀏覽器上一頁關閉後焦點在主內容（不是掉到 body）
+   - 儀表板空殼：筆數正確；關掉後端再重新整理資料會看到錯誤狀態與重試鈕，重啟後按重試恢復
+   - 側欄／「更多」的「匯出 Excel」：進行中 toast → 成功 toast；連點只送出一個請求
+   - 安全：`curl -i localhost:<埠>/next/ -H 'Host: evil.com'` 回 403；`web/dist` 裡找不到元件預覽頁（`#/_ui` 只在 `dev:web`）
+   - 舊介面 `/` 完全不受影響（上面第 1–8 項照舊可用）
+10. 瀏覽器 console 應該沒有錯誤
 
 ## 敏感檔案清單
 

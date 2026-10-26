@@ -23,6 +23,9 @@ function setup() {
         <Routes>
           <Route path="*" element={<Nav />} />
         </Routes>
+        <main id="main" tabIndex={-1}>
+          內容
+        </main>
         <MobileTabBar />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -78,5 +81,7 @@ describe("手機底部分頁列的「更多」面板", () => {
     const nav = screen.getByText("去日曆（模擬上一頁／程式導覽）");
     nav.click();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // 焦點落在主內容，不是 body
+    await waitFor(() => expect(document.getElementById("main")).toHaveFocus());
   });
 });

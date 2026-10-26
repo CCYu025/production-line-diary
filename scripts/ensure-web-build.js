@@ -25,6 +25,8 @@ const SOURCES = [
 ];
 const SKIP_DIRS = new Set(["node_modules", "dist"]);
 
+// 只比「檔案」的修改時間（遞迴）；資料夾自己的 mtime 會因為 dev server 建立暫存檔等原因變動，
+// 不代表原始碼改了，算進去會造成不必要的重新建置。
 function newestMtime(target) {
   let st;
   try {
@@ -33,7 +35,7 @@ function newestMtime(target) {
     return 0;
   }
   if (!st.isDirectory()) return st.mtimeMs;
-  let newest = st.mtimeMs;
+  let newest = 0;
   for (const entry of readdirSync(target, { withFileTypes: true })) {
     if (entry.isDirectory() && SKIP_DIRS.has(entry.name)) continue;
     newest = Math.max(newest, newestMtime(path.join(target, entry.name)));
