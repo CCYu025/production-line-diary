@@ -1,6 +1,6 @@
 # 產線日誌 重構計畫書
 
-> 建立日期：2026-10-26　｜　狀態：執行中　｜　進度見文末〈進度追蹤〉
+> 建立日期：2026-10-26　｜　狀態：完成待最終驗收　｜　進度見文末〈進度追蹤〉
 >
 > 這份計畫書是 2026-10-26 專案審查的結論整理。**接手實作的人（或 AI agent）動手前必讀**：
 > 本文件 →〈不可破壞的既有決策〉→ 專案根目錄 `CLAUDE.md` →（動到資料時）`backend/data/schema.md`。
@@ -120,7 +120,7 @@ App 每天在用，重構期間舊 UI 仍是正式版，所以 bug 先修在現�
 - 共用邏輯：直接 import `backend/lib/aggregate.js`（Vite alias `@shared`），補型別宣告；**不要複製一份到前端**。
 - `lib/api.ts`：型別化 API client（帶 `X-Requested-With` header、統一錯誤處理）；TanStack Query 管理資料與失效更新。
 - 型別 `Record` / `Store` / `Meta` 依 `schema.md` 定義。
-- **新舊並存**：伺服器在 `web/dist` 存在時把新 UI 掛在 `/next/`，`/` 仍是舊 UI，直到 WP3d 切換。
+- **新舊並存**（WP2–WP3c 期間；WP3d 已切換，`/` 現在是新 UI、`/next/` 轉址到 `/`）：伺服器在 `web/dist` 存在時把新 UI 掛在 `/next/`，`/` 仍是舊 UI，直到 WP3d 切換。
 - 設計系統（見〈UI/UX 規格〉§U0）：把現有 CSS 變數（淺色／深色）移植成 Tailwind 語意 token；間距、圓角、字級統一成尺度；字型改用 `@fontsource`（Noto Sans TC、Noto Serif TC、IBM Plex Mono）自行託管，不連 Google Fonts。
 - App 外殼：桌面側欄、手機底部分頁列（§U1）、hash 路由（`#/dashboard`、`#/records?…`、`#/records/new`、`#/calendar`、`#/report`、`#/trash`、`#/settings`），篩選條件同步到 URL query，上一頁可用。
 - 全域元件：Toast（成功／錯誤兩種樣式，`aria-live`）、確認對話框、可撤銷操作的 toast。
@@ -220,4 +220,8 @@ App 每天在用，重構期間舊 UI 仍是正式版，所以 bug 先修在現�
 | WP3a 儀表板／列表／詳情 | `feat/web-dashboard-records` | #36 | 已完成 |
 | WP3b 紀錄表單 | `feat/web-record-form` | #35 | 已完成 |
 | WP3c 日曆／回收桶／設定 | `feat/web-calendar-trash-settings` | #34 | 已完成 |
-| WP3d 報表＋切換 | `feat/web-report-cutover` | #37 | Phase A 已完成，Phase B 進行中 |
+| WP3d 報表＋切換 | `feat/web-report-cutover`（報表）、`feat/web-cutover`（切換） | #37、#38 | 已完成（#38 待合併） |
+
+**WP3d 切換紀錄**：`/` 改為新 UI（Vite `base: "/"`），`/next/…` 轉址到 `/…`，`frontend/index.html` 與 `/lib` 靜態路徑已移除。
+建置失敗時（不再有舊介面可退）：`npm start` 印出明確錯誤、寫 `.web-build-error.log`、仍啟動伺服器，`/` 顯示「介面建置失敗」頁；修好後 `npm run build` 重新整理即可。
+`CLAUDE.md`／`AGENTS.md`／`README.md` 已改寫為最終架構（核心不變量指向新介面的位置）。
