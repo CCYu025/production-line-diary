@@ -19,3 +19,6 @@ Thumbs.db
 
 # 測試/覆蓋率輸出
 coverage/
+
+# 用範例資料夾當 DATA_DIR 時自動產生的每日備份
+backend/data/example/backups/
