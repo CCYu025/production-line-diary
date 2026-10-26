@@ -44,7 +44,7 @@
 - `equipment` / `category` / `productCode` / `materialCategory` 是開放清單（`knownXxx()` 動態計算），`severity`（4 值）/ `status`（3 值）是固定 enum。
 - `severity` 存的是新增當下決定的值（依耗時建議、可手動覆蓋）。
 - 軟刪除 → 回收桶 → 永久刪除才清照片；`deleteUnreferencedPhoto` 判斷是否仍被參照（含軟刪除紀錄）。
-- **照片選檔當下立刻上傳**，不是送出時上傳；放棄新增／編輯時要清掉已上傳未送出的照片，**上傳途中放棄**也要在上傳完成後補刪（新實作建議用 `AbortController` + 完成後檢查「已放棄」）。
+- **照片選檔當下立刻上傳**，不是送出時上傳；放棄新增／編輯時要清掉已上傳未送出的照片，**上傳途中放棄**也要在上傳完成後補刪（新實作：**不要中止上傳**，等請求結束後檢查「已放棄」再依回傳檔名刪除——中止可能讓伺服器已存好的檔案變成沒人知道檔名的孤兒）。
 - `sweepOrphanedPhotos` 的 1 小時安全時間不可縮短。
 - `photoCaptions`：`{檔名: 一句話}`，最多 100 字，不進 Excel 匯出。
 - 「處理」「根本原因」顯示全文的地方一律 `white-space: pre-wrap`。
@@ -218,6 +218,6 @@ App 每天在用，重構期間舊 UI 仍是正式版，所以 bug 先修在現�
 | WP1b 後端強化 | `fix/backend-hardening` | #32 | 已完成 |
 | WP2 新前端基礎 | `feat/web-foundation` | #33 | 已完成 |
 | WP3a 儀表板／列表／詳情 | `feat/web-dashboard-records` | #36 | 已完成 |
-| WP3b 紀錄表單 | `feat/web-record-form` | — | 未開始 |
+| WP3b 紀錄表單 | `feat/web-record-form` | #35 | 已完成 |
 | WP3c 日曆／回收桶／設定 | `feat/web-calendar-trash-settings` | #34 | 已完成 |
 | WP3d 報表＋切換 | `feat/web-report-cutover` | — | 未開始 |

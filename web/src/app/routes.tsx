@@ -1,7 +1,7 @@
 import { createHashRouter, Navigate } from "react-router-dom";
 import { CalendarPage } from "@/features/calendar/CalendarPage";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
-import { RecordNewPage } from "@/features/records/RecordNewPage";
+import { RecordEditPage, RecordNewPage } from "@/features/records/form/RecordFormPages";
 import { RecordsPage } from "@/features/records/RecordsPage";
 import { ReportPage } from "@/features/report/ReportPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
@@ -14,7 +14,7 @@ const handle = (title: string): RouteHandle => ({ title });
 /**
  * Hash 路由（#/dashboard …）。用 hash 是因為 Express 不需要為前端路由做 fallback，
  * 而且網址可直接複製、書籤、瀏覽器上一頁都能用。
- *   #/dashboard  #/records?status=待處理  #/records/new  #/calendar  #/report  #/trash  #/settings
+ *   #/dashboard  #/records?status=待處理  #/records/new[?copy=<id>]  #/records/<id>/edit  #/calendar  #/report  #/trash  #/settings
  */
 export const routes = [
   {
@@ -25,6 +25,7 @@ export const routes = [
       { path: "dashboard", element: <DashboardPage />, handle: handle(PAGE_TITLES.dashboard) },
       { path: "records", element: <RecordsPage />, handle: handle(PAGE_TITLES.records) },
       { path: "records/new", element: <RecordNewPage />, handle: handle(PAGE_TITLES.recordsNew) },
+      { path: "records/:id/edit", element: <RecordEditPage />, handle: handle("編輯紀錄") },
       { path: "calendar", element: <CalendarPage />, handle: handle(PAGE_TITLES.calendar) },
       { path: "report", element: <ReportPage />, handle: handle(PAGE_TITLES.report) },
       { path: "trash", element: <TrashPage />, handle: handle(PAGE_TITLES.trash) },

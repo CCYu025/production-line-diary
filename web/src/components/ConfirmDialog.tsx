@@ -17,6 +17,8 @@ export interface ConfirmOptions {
   cancelLabel?: string;
   /** 破壞性操作（永久刪除…）：確認鈕用紅色 */
   destructive?: boolean;
+  /** 對話框關閉後要把焦點還給誰；預設是呼叫當下的焦點元素 */
+  returnFocusTo?: HTMLElement | null;
 }
 
 type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
@@ -43,7 +45,8 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const confirm = React.useCallback<ConfirmFn>((options) => {
     // 前一個還沒回答的對話框視同取消
     pendingRef.current?.resolve(false);
-    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    returnFocusRef.current =
+      options.returnFocusTo ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     return new Promise<boolean>((resolve) => {
       const next = { ...options, resolve };
       pendingRef.current = next;
