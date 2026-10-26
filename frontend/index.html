@@ -211,7 +211,6 @@
   .trend-date{ position:absolute; bottom:-20px; font-size:10px; color:var(--ink-muted); white-space:nowrap; }
 
   /* ---------- Filter chips ---------- */
-  .filter-bar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .search{
     display:flex; align-items:center; gap:7px; border:1px solid var(--line); background:var(--surface-raised);
     border-radius:9px; padding:7px 11px; flex:1; min-width:180px;
@@ -224,11 +223,85 @@
     padding:5px 6px 5px 10px; border-radius:100px; border:none; cursor:pointer;
   }
   .filter-chip .icon{ width:12px; height:12px; }
-  .select-chip{
-    font-size:12px; font-weight:600; color:var(--ink-2); background:var(--surface-raised);
-    border:1px solid var(--line); border-radius:100px; padding:6px 12px; cursor:pointer;
+  .filter-chip:hover{ filter:brightness(1.1); }
+  .link-btn{ border:none; background:none; color:var(--accent); font-size:12px; font-weight:700; cursor:pointer; padding:0; font-family:inherit; }
+
+  /* 紀錄列表的篩選列：固定在頂端；固定值（狀態/嚴重度）常駐，開放清單（設備/分類）收進下拉 */
+  .list-filters{ position:sticky; top:0; z-index:25; background:var(--page); padding:8px 0 10px; display:flex; flex-direction:column; gap:10px; }
+  .list-filters.stuck{ box-shadow:0 1px 0 var(--line); }
+  .frow{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .frow .grow{ flex:1; }
+  .flabel{ font-size:11px; color:var(--ink-muted); font-weight:700; }
+  .seg{ display:inline-flex; max-width:100%; overflow-x:auto; scrollbar-width:none; border:1px solid var(--line); border-radius:9px; background:var(--surface-raised); padding:2px; gap:2px; }
+  .seg::-webkit-scrollbar{ display:none; }
+  .seg button{ border:none; background:transparent; color:var(--ink-2); font-size:12px; font-weight:600; padding:5px 11px; border-radius:7px; cursor:pointer; white-space:nowrap; }
+  .seg button:hover{ background:var(--surface); }
+  .seg button.on{ background:var(--accent-wash); color:var(--accent); font-weight:800; }
+  .seg button .n{ margin-left:5px; font-size:10.5px; color:var(--ink-muted); }
+  .seg button.on .n{ color:var(--accent); }
+  .seg button.zero:not(.on){ opacity:.55; }
+  .seg .dot{ display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:6px; }
+  .dd{ position:relative; }
+  .dd-btn{
+    display:inline-flex; align-items:center; gap:7px; font-size:12.5px; font-weight:600; color:var(--ink-2);
+    background:var(--surface-raised); border:1px solid var(--line); border-radius:9px; padding:7px 11px; cursor:pointer;
   }
-  .select-chip.active{ border-color:var(--accent); color:var(--accent); background:var(--accent-wash); }
+  .dd-btn:hover{ border-color:var(--line-strong); }
+  .dd-btn .icon{ width:13px; height:13px; }
+  .dd-btn .chev{ width:11px; height:11px; color:var(--ink-muted); }
+  .dd-btn.has{ border-color:var(--accent); color:var(--accent); background:var(--accent-wash); }
+  .dd.open .dd-btn{ border-color:var(--accent); }
+  .dd-btn .badge{ font-size:10.5px; font-weight:800; background:var(--accent); color:var(--accent-ink); border-radius:100px; padding:0 6px; line-height:16px; }
+  .pop{
+    position:absolute; top:calc(100% + 6px); left:0; width:270px; max-width:calc(100vw - 32px); z-index:40; overflow:hidden;
+    background:var(--surface-raised); border:1px solid var(--line-strong); border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,.16);
+  }
+  .pop-search{ padding:8px; border-bottom:1px solid var(--line); }
+  .pop-search input{
+    width:100%; border:1px solid var(--line-strong); background:var(--surface); color:var(--ink-1);
+    border-radius:8px; padding:7px 10px; font-size:12.5px; font-family:inherit; outline:none;
+  }
+  .pop-search input:focus{ border-color:var(--accent); }
+  .pop-list{ max-height:280px; overflow:auto; padding:4px; }
+  .opt{ display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:7px; cursor:pointer; font-size:12.8px; user-select:none; }
+  .opt:hover{ background:var(--accent-wash); }
+  .opt .cb{ width:15px; height:15px; border:1.5px solid var(--line-strong); border-radius:4px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .opt.on .cb{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .opt .cb .icon{ width:11px; height:11px; stroke-width:3; opacity:0; }
+  .opt.on .cb .icon{ opacity:1; }
+  .opt .nm{ flex:1; }
+  .opt .ct{ font-size:11px; color:var(--ink-muted); }
+  .opt.zero:not(.on) .nm, .opt.zero:not(.on) .ct{ opacity:.45; }
+  .pop-foot{ display:flex; justify-content:space-between; align-items:center; padding:7px 12px; border-top:1px solid var(--line); font-size:11.5px; color:var(--ink-muted); }
+  .pop-foot .link-btn{ font-size:11.5px; }
+  .pop-empty{ padding:16px; text-align:center; font-size:12px; color:var(--ink-muted); }
+  .pop.date{ width:300px; padding:8px; overflow:visible; }
+  .presets{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:10px; }
+  .preset{ border:1px solid var(--line); background:var(--surface); color:var(--ink-2); font-size:12px; font-weight:600; padding:6px 0; border-radius:8px; cursor:pointer; }
+  .preset:hover{ border-color:var(--accent); color:var(--accent); }
+  .preset.on{ background:var(--accent-wash); border-color:var(--accent); color:var(--accent); }
+  .daterow{ display:grid; grid-template-columns:1fr auto 1fr; gap:6px; align-items:center; }
+  .daterow input{
+    width:100%; border:1px solid var(--line-strong); background:var(--surface); color:var(--ink-1);
+    border-radius:8px; padding:7px 8px; font-size:12.5px; font-family:inherit; outline:none;
+  }
+  .daterow input:focus{ border-color:var(--accent); }
+  .daterow span{ color:var(--ink-muted); font-size:12px; }
+  .sort-btn{ border:1px solid var(--line); background:var(--surface-raised); color:var(--ink-2); border-radius:9px; padding:7px 11px; font-size:12.5px; font-weight:600; cursor:pointer; }
+  .sort-btn:hover{ border-color:var(--line-strong); }
+  .applied-meta{ margin-left:auto; display:flex; gap:12px; align-items:center; font-size:12px; color:var(--ink-muted); }
+  .applied-meta b{ color:var(--ink-1); }
+  thead th.sortable{ cursor:pointer; user-select:none; }
+  thead th.sortable:hover{ color:var(--ink-1); }
+  .empty-row .link-btn{ display:block; margin:8px auto 0; font-size:12.5px; }
+  @media (max-width:720px){
+    .list-filters{ position:static; }
+    .frow .grow{ display:none; }
+    .frow > .seg{ flex:1 1 100%; }
+    .pop{ position:fixed; left:12px; right:12px; top:auto; bottom:12px; width:auto; max-width:none; }
+    .pop.date{ width:auto; }
+    .applied-meta{ margin-left:0; width:100%; }
+  }
 
   /* ---------- Table ---------- */
   .table-card{ background:var(--surface-raised); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
@@ -759,25 +832,34 @@
           <div class="desc" id="list-desc">共 10 筆紀錄</div>
         </div>
       </div>
-      <div class="filter-bar" id="filter-bar">
-        <div class="search"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.6" y2="16.6"/></svg><input type="text" id="search-input" placeholder="搜尋設備、問題或處理內容…"></div>
-        <span id="eq-filter-chips"></span>
+      <div class="list-filters" id="list-filters">
+        <div class="frow">
+          <div class="search"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.6" y2="16.6"/></svg><input type="text" id="search-input" placeholder="搜尋設備、問題、處理內容、根本原因…"></div>
+        </div>
+        <div class="frow">
+          <span class="flabel">狀態</span><div class="seg" id="seg-status"></div>
+          <span class="grow"></span>
+          <span class="flabel">嚴重度</span><div class="seg" id="seg-severity"></div>
+        </div>
+        <div class="frow">
+          <div class="dd" id="dd-date">
+            <button class="dd-btn" type="button" aria-haspopup="true" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg><span class="lbl">日期</span><svg class="icon chev" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button>
+            <div class="pop date" hidden>
+              <div class="presets" id="date-presets"></div>
+              <div class="daterow"><input type="date" id="date-from" aria-label="起始日期"><span>至</span><input type="date" id="date-to" aria-label="結束日期"></div>
+            </div>
+          </div>
+          <div class="dd" id="dd-equipment"><button class="dd-btn" type="button" aria-haspopup="true" aria-expanded="false"><span class="lbl">設備</span><svg class="icon chev" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button><div class="pop" hidden></div></div>
+          <div class="dd" id="dd-category"><button class="dd-btn" type="button" aria-haspopup="true" aria-expanded="false"><span class="lbl">分類</span><svg class="icon chev" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button><div class="pop" hidden></div></div>
+          <span class="grow"></span>
+          <button type="button" class="sort-btn" id="sort-btn"></button>
+        </div>
+        <div class="frow" id="active-filters"></div>
       </div>
-      <div class="filter-bar" id="filter-bar-2">
-        <span style="font-size:11px;color:var(--ink-muted);font-weight:700">分類</span>
-        <span id="cat-filter-chips"></span>
-        <span style="width:1px;height:16px;background:var(--line);margin:0 2px"></span>
-        <span style="font-size:11px;color:var(--ink-muted);font-weight:700">狀態</span>
-        <button class="select-chip" data-statusfilter="">全部</button>
-        <button class="select-chip" data-statusfilter="待處理">待處理</button>
-        <button class="select-chip" data-statusfilter="追蹤中">追蹤中</button>
-        <button class="select-chip" data-statusfilter="已解決">已解決</button>
-      </div>
-      <div id="active-filters" class="filter-bar"></div>
       <div class="table-card">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>日期</th><th>班別</th><th>時間</th><th>耗時</th><th>設備</th><th>分類</th><th>問題</th><th>狀態</th><th>照片</th><th></th></tr></thead>
+            <thead><tr><th class="sortable" id="th-date" title="點一下切換排序">日期 <span id="th-arrow"></span></th><th>班別</th><th>時間</th><th>耗時</th><th>設備</th><th>分類</th><th>問題</th><th>狀態</th><th>照片</th><th></th></tr></thead>
             <tbody id="table-body"></tbody>
           </table>
         </div>
@@ -964,7 +1046,7 @@
 <div class="lightbox" id="lightbox"><img id="lightbox-img" src="" alt=""><div class="lb-cap" id="lightbox-cap" hidden></div></div>
 
 <script type="module">
-import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERITY_ORDER, STATUS_ORDER } from "/lib/aggregate.js";
+import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERITY_ORDER, STATUS_ORDER, emptyFilter, hasActiveFilter, filterRecords, facetCounts, sortByDate, datePresets } from "/lib/aggregate.js";
 (function(){
   "use strict";
 
@@ -1000,10 +1082,21 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
   }
 
   var DATA = [];
-  var filterState = { equipment:"", category:"", severity:"", status:"", problem:"", date:"", query:"" };
+  // 篩選狀態的結構與比對邏輯在 aggregate.js（emptyFilter / filterRecords）：設備、分類是陣列（多選），
+  // 日期是 from / to 區間（單日 = from 與 to 相同）。
+  var filterState = emptyFilter();
+  var listSortDesc = true; // 預設新到舊
   function clearFilters(){
-    filterState = { equipment:"", category:"", severity:"", status:"", problem:"", date:"", query:"" };
+    filterState = emptyFilter();
     var si = document.getElementById("search-input"); if(si) si.value = "";
+  }
+  // 從儀表板圖表、KPI 卡片、日曆格子點進列表：清掉舊條件、只帶入這一個，然後切到列表
+  function drillTo(key, value){
+    clearFilters();
+    if(key==="equipment" || key==="category") filterState[key] = [value];
+    else if(key==="date"){ filterState.from = value; filterState.to = value; }
+    else filterState[key] = value;
+    goto("list");
   }
   function activeData(){ return DATA.filter(function(r){ return !r.deleted; }); }
   function chronological(list){
@@ -1146,7 +1239,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     if(trackingCard && agg.trackingRows.length){
       trackingCard.style.cursor = "pointer";
       trackingCard.title = "點一下查看追蹤中的紀錄";
-      trackingCard.onclick = function(){ clearFilters(); filterState.status = "追蹤中"; goto("list"); };
+      trackingCard.onclick = function(){ drillTo("status", "追蹤中"); };
     }
   }
   function kpiCard(label, value, unit, sub, id){
@@ -1170,9 +1263,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     $all(".hbar-row", container).forEach(function(el){
       el.onclick = function(){
         var label = el.getAttribute("data-label");
-        clearFilters();
-        filterState[opts.filterKey || "equipment"] = label;
-        goto("list");
+        drillTo(opts.filterKey || "equipment", label);
       };
     });
   }
@@ -1204,9 +1295,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       '</div>';
     $all("[data-severity]", container).forEach(function(el){
       el.onclick = function(){
-        clearFilters();
-        filterState.severity = el.getAttribute("data-severity");
-        goto("list");
+        drillTo("severity", el.getAttribute("data-severity"));
       };
     });
   }
@@ -1226,9 +1315,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       '</div>';
     $all("[data-status]", container).forEach(function(el){
       el.onclick = function(){
-        clearFilters();
-        filterState.status = el.getAttribute("data-status");
-        goto("list");
+        drillTo("status", el.getAttribute("data-status"));
       };
     });
   }
@@ -1246,68 +1333,168 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     }).join("");
     $all(".trend-col", el).forEach(function(c){
       c.onclick = function(){
-        clearFilters();
-        filterState.date = c.getAttribute("data-date");
-        goto("list");
+        drillTo("date", c.getAttribute("data-date"));
       };
     });
     el.scrollLeft = el.scrollWidth;
   }
 
-  function applyFilters(){
-    return activeData().filter(function(r){
-      if(filterState.equipment && r.equipment!==filterState.equipment) return false;
-      if(filterState.category && r.category!==filterState.category) return false;
-      if(filterState.severity && r.severity!==filterState.severity) return false;
-      if(filterState.status && r.status!==filterState.status) return false;
-      if(filterState.problem && r.problem!==filterState.problem) return false;
-      if(filterState.date && r.date!==filterState.date) return false;
-      if(filterState.query){
-        var q = filterState.query.toLowerCase();
-        var hay = (r.equipment+r.category+r.problem+r.action).toLowerCase();
-        if(hay.indexOf(q)===-1) return false;
-      }
-      return true;
-    }).sort(function(a,b){ return (a.date+a.time).localeCompare(b.date+b.time); });
+  /* ---------------- 紀錄列表：篩選列 ---------------- */
+  // 固定值（狀態 3 值、嚴重度 4 值）常駐成分段按鈕；會隨資料增長的開放清單（設備、分類）收進可搜尋的多選下拉；
+  // 日期是區間。各項筆數用 facetCounts：套用其他條件、不套用自己這一維。
+  var openDropdown = null; // "date" | "equipment" | "category" | null
+  var popQuery = { equipment:"", category:"" };
+  var DD_KEYS = ["date","equipment","category"];
+
+  function mdLabel(iso){ return iso.slice(5).replace("-","/"); }
+  function dateLabel(){
+    var f = filterState;
+    if(!f.from && !f.to) return "";
+    var p = datePresets().find(function(x){ return x.id!=="all" && x.from===f.from && x.to===f.to; });
+    if(p) return p.label;
+    if(f.from===f.to) return mdLabel(f.from);
+    return (f.from ? mdLabel(f.from) : "…") + "–" + (f.to ? mdLabel(f.to) : "…");
+  }
+  function sumCounts(o){ return Object.keys(o).reduce(function(s,k){ return s+o[k]; }, 0); }
+
+  function setDropdown(key){
+    openDropdown = key;
+    DD_KEYS.forEach(function(k){
+      var dd = $("#dd-"+k), open = (k===key);
+      dd.classList.toggle("open", open);
+      $(".pop", dd).hidden = !open;
+      $(".dd-btn", dd).setAttribute("aria-expanded", open ? "true" : "false");
+    });
+    if(key==="equipment" || key==="category") renderMultiPop(key);
+    if(key==="date") renderDatePop();
   }
 
-  function renderActiveFilters(){
-    var chips = [];
-    if(filterState.equipment) chips.push(["設備："+filterState.equipment, "equipment"]);
-    if(filterState.category) chips.push(["分類："+filterState.category, "category"]);
-    if(filterState.severity) chips.push(["嚴重度："+filterState.severity, "severity"]);
-    if(filterState.status) chips.push(["狀態："+filterState.status, "status"]);
-    if(filterState.problem) chips.push(["問題："+filterState.problem, "problem"]);
-    if(filterState.date) chips.push(["日期："+filterState.date, "date"]);
-    var el = $("#active-filters");
-    if(!chips.length){ el.innerHTML = ""; }
-    else {
-      el.innerHTML = chips.map(function(c){
-        return '<button class="filter-chip" data-clear="'+c[1]+'">'+esc(c[0])+' '+ICONS.x+'</button>';
-      }).join("");
-      $all("[data-clear]", el).forEach(function(b){
-        b.onclick = function(){ filterState[b.getAttribute("data-clear")] = ""; renderList(); };
-      });
+  function renderSegs(){
+    function seg(el, key, order, counts, hues){
+      el.innerHTML = '<button type="button" data-v="" class="'+(filterState[key]===""?"on":"")+'">全部<span class="n mono">'+sumCounts(counts)+'</span></button>' +
+        order.map(function(v){
+          var n = counts[v]||0;
+          return '<button type="button" data-v="'+esc(v)+'" class="'+(filterState[key]===v?"on":"")+(n===0?" zero":"")+'">'+
+            '<span class="dot" style="background:'+hues[v]+'"></span>'+esc(v)+'<span class="n mono">'+n+'</span></button>';
+        }).join("");
+      el.onclick = function(e){
+        var b = e.target.closest("button[data-v]"); if(!b) return;
+        filterState[key] = b.getAttribute("data-v"); renderList();
+      };
     }
-    $all("[data-eqfilter]", $("#filter-bar")).forEach(function(b){
-      b.classList.toggle("active", b.getAttribute("data-eqfilter")===filterState.equipment);
+    seg($("#seg-status"), "status", STATUS_ORDER, facetCounts(DATA, filterState, "status"), STATUS_HUE);
+    seg($("#seg-severity"), "severity", SEVERITY_ORDER, facetCounts(DATA, filterState, "severity"), SEVERITY_HUE);
+  }
+
+  function setDDButton(key, label, summary, extra){
+    var btn = $(".dd-btn", $("#dd-"+key));
+    btn.classList.toggle("has", !!summary);
+    $(".lbl", btn).textContent = summary ? label+"："+summary : label;
+    var old = $(".badge", btn); if(old) old.remove();
+    if(extra){
+      var b = document.createElement("span"); b.className = "badge"; b.textContent = "+"+extra;
+      $(".lbl", btn).after(b);
+    }
+  }
+
+  // 多選下拉：選項 = 目前已知的設備/分類（META，含沒有紀錄的預設值）∪ 資料裡出現過的 ∪ 已選的；
+  // 依「全部紀錄中的總筆數」由多到少排，順序不會因為套用其他條件而跳動。
+  function multiOptions(key){
+    var totals = facetCounts(DATA, emptyFilter(), key);
+    var seen = {}, vals = [];
+    (key==="equipment" ? META.equipment : META.categories).concat(Object.keys(totals), filterState[key]).forEach(function(v){
+      if(v && !seen[v]){ seen[v] = true; vals.push(v); }
     });
-    $all("[data-catfilter]", $("#filter-bar-2")).forEach(function(b){
-      b.classList.toggle("active", b.getAttribute("data-catfilter")===filterState.category);
+    return vals.sort(function(a,b){ return (totals[b]||0)-(totals[a]||0) || a.localeCompare(b, "zh-Hant"); });
+  }
+  function buildMultiPop(key){
+    var pop = $("#dd-"+key+" .pop");
+    if(pop.getAttribute("data-built")) return pop;
+    pop.setAttribute("data-built", "1");
+    var noun = key==="equipment" ? "設備" : "分類";
+    pop.innerHTML = '<div class="pop-search"><input type="text" placeholder="搜尋'+noun+'…" aria-label="搜尋'+noun+'"></div>'+
+      '<div class="pop-list" role="listbox" aria-multiselectable="true"></div>'+
+      '<div class="pop-foot"><span class="info"></span><button type="button" class="link-btn clr">清除</button></div>';
+    $("input", pop).oninput = function(e){ popQuery[key] = e.target.value; renderMultiPop(key); };
+    $(".clr", pop).onclick = function(){ filterState[key] = []; renderList(); };
+    $(".pop-list", pop).onclick = function(e){
+      var o = e.target.closest(".opt"); if(!o) return;
+      var v = o.getAttribute("data-v");
+      if(filterState[key].indexOf(v)===-1) filterState[key] = filterState[key].concat([v]);
+      else filterState[key] = filterState[key].filter(function(x){ return x!==v; });
+      renderList();
+    };
+    return pop;
+  }
+  function renderMultiPop(key){
+    var pop = buildMultiPop(key);
+    var counts = facetCounts(DATA, filterState, key), kw = popQuery[key].trim().toLowerCase();
+    var items = multiOptions(key).filter(function(v){ return !kw || v.toLowerCase().indexOf(kw)>-1; });
+    $(".pop-list", pop).innerHTML = items.length ? items.map(function(v){
+      var n = counts[v]||0, on = filterState[key].indexOf(v)>-1;
+      return '<div class="opt'+(on?" on":"")+(n===0?" zero":"")+'" role="option" aria-selected="'+on+'" data-v="'+esc(v)+'">'+
+        '<span class="cb">'+ICONS.check+'</span><span class="nm">'+esc(v)+'</span><span class="ct mono">'+n+'</span></div>';
+    }).join("") : '<div class="pop-empty">找不到符合的'+(key==="equipment"?"設備":"分類")+'</div>';
+    $(".info", pop).textContent = filterState[key].length ? "已選 "+filterState[key].length+" 項" : "可複選";
+    $(".clr", pop).style.visibility = filterState[key].length ? "visible" : "hidden";
+  }
+
+  function renderDatePop(){
+    $("#date-presets").innerHTML = datePresets().map(function(p){
+      var on = p.from===filterState.from && p.to===filterState.to;
+      return '<button type="button" class="preset'+(on?" on":"")+'" data-id="'+p.id+'">'+p.label+'</button>';
+    }).join("");
+    var fi = $("#date-from"), ti = $("#date-to");
+    fi.value = filterState.from; ti.value = filterState.to;
+    fi.max = filterState.to; ti.min = filterState.from;
+  }
+
+  function renderFilterBar(){
+    renderSegs();
+    setDDButton("date", "日期", dateLabel());
+    setDDButton("equipment", "設備", filterState.equipment[0]||"", Math.max(0, filterState.equipment.length-1));
+    setDDButton("category", "分類", filterState.category[0]||"", Math.max(0, filterState.category.length-1));
+    if(openDropdown==="equipment" || openDropdown==="category") renderMultiPop(openDropdown);
+    if(openDropdown==="date") renderDatePop();
+    $("#sort-btn").textContent = "日期 "+(listSortDesc ? "新 → 舊" : "舊 → 新");
+    $("#th-arrow").textContent = listSortDesc ? "↓" : "↑";
+  }
+
+  function removeFilter(key, val){
+    if(key==="equipment" || key==="category") filterState[key] = filterState[key].filter(function(x){ return x!==val; });
+    else if(key==="date"){ filterState.from = ""; filterState.to = ""; }
+    else filterState[key] = "";
+  }
+  // 已套用條件：狀態、嚴重度、關鍵字本來就看得到（分段按鈕、搜尋框），不重複顯示成小標籤
+  function renderActiveFilters(shown, total){
+    var chips = [];
+    filterState.equipment.forEach(function(v){ chips.push(["設備："+v, "equipment", v]); });
+    filterState.category.forEach(function(v){ chips.push(["分類："+v, "category", v]); });
+    if(filterState.from || filterState.to) chips.push(["日期："+dateLabel(), "date", ""]);
+    if(filterState.problem) chips.push(["問題："+filterState.problem, "problem", ""]);
+    var el = $("#active-filters");
+    el.innerHTML = chips.map(function(c, i){
+      return '<button type="button" class="filter-chip" data-i="'+i+'" aria-label="移除 '+esc(c[0])+'">'+esc(c[0])+' '+ICONS.x+'</button>';
+    }).join("") +
+      '<span class="applied-meta">'+(hasActiveFilter(filterState) ? '<button type="button" class="link-btn" id="clear-all">清除全部</button>' : "")+
+      '<span>共 <b class="mono">'+shown+'</b> / '+total+' 筆</span></span>';
+    $all(".filter-chip", el).forEach(function(b){
+      b.onclick = function(){ var c = chips[Number(b.getAttribute("data-i"))]; removeFilter(c[1], c[2]); renderList(); };
     });
-    $all("[data-statusfilter]", $("#filter-bar-2")).forEach(function(b){
-      b.classList.toggle("active", b.getAttribute("data-statusfilter")===filterState.status);
-    });
+    var ca = $("#clear-all"); if(ca) ca.onclick = function(){ clearFilters(); renderList(); };
   }
 
   function renderList(){
-    var rows = applyFilters();
+    var rows = sortByDate(filterRecords(DATA, filterState), listSortDesc);
     var activeTotal = activeData().length;
     $("#list-desc").textContent = "共 " + rows.length + " 筆紀錄" + (rows.length!==activeTotal ? "（已篩選，全部 "+activeTotal+" 筆）" : "");
-    renderActiveFilters();
+    renderFilterBar();
+    renderActiveFilters(rows.length, activeTotal);
     var body = $("#table-body");
     if(!rows.length){
-      body.innerHTML = '<tr class="empty-row"><td colspan="10">沒有符合條件的紀錄</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="10">沒有符合條件的紀錄'+
+        (hasActiveFilter(filterState) ? '<button type="button" class="link-btn" id="empty-clear">清除全部條件</button>' : "")+'</td></tr>';
+      var ec = $("#empty-clear"); if(ec) ec.onclick = function(){ clearFilters(); renderList(); };
       return;
     }
     body.innerHTML = rows.map(function(r){
@@ -1373,9 +1560,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     $("#cal-grid").innerHTML = html;
     $all(".cal-cell.has-data", $("#cal-grid")).forEach(function(c){
       c.onclick = function(){
-        clearFilters();
-        filterState.date = c.getAttribute("data-date");
-        goto("list");
+        drillTo("date", c.getAttribute("data-date"));
       };
     });
   }
@@ -1679,7 +1864,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     updateTrashBadge();
     rebuildProblemHistory();
     renderSuggestions();
-    renderFilterChips();
+    renderFilterBar();
   }
 
   /* ---------------- 動態建議清單（設備/分類）---------------- */
@@ -1689,7 +1874,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     if(record.productCode && META.productCodes.indexOf(record.productCode)===-1){ META.productCodes.push(record.productCode); META.productCodes.sort(); }
     if(record.materialCategory && META.materialCategories.indexOf(record.materialCategory)===-1){ META.materialCategories.push(record.materialCategory); META.materialCategories.sort(); }
     renderMetaOptions();
-    renderFilterChips();
+    renderFilterBar();
   }
   function renderMetaOptions(){
     $("#category-options").innerHTML = META.categories.map(function(v){ return '<option value="'+esc(v)+'">'; }).join("");
@@ -1699,26 +1884,6 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     if(pcOpts) pcOpts.innerHTML = META.productCodes.map(function(v){ return '<option value="'+esc(v)+'">'; }).join("");
     var matOpts = $("#material-options");
     if(matOpts) matOpts.innerHTML = META.materialCategories.map(function(v){ return '<option value="'+esc(v)+'">'; }).join("");
-  }
-  function renderFilterChips(){
-    var eqWrap = $("#eq-filter-chips");
-    if(eqWrap){
-      eqWrap.innerHTML = '<button type="button" class="select-chip" data-eqfilter="">全部設備</button>' +
-        META.equipment.map(function(v){ return '<button type="button" class="select-chip" data-eqfilter="'+esc(v)+'">'+esc(v)+'</button>'; }).join("");
-      $all("[data-eqfilter]", eqWrap).forEach(function(b){
-        b.classList.toggle("active", b.getAttribute("data-eqfilter")===filterState.equipment);
-        b.onclick = function(){ filterState.equipment = b.getAttribute("data-eqfilter"); renderList(); };
-      });
-    }
-    var catWrap = $("#cat-filter-chips");
-    if(catWrap){
-      catWrap.innerHTML = '<button type="button" class="select-chip" data-catfilter="">全部</button>' +
-        META.categories.map(function(v){ return '<button type="button" class="select-chip" data-catfilter="'+esc(v)+'">'+esc(v)+'</button>'; }).join("");
-      $all("[data-catfilter]", catWrap).forEach(function(b){
-        b.classList.toggle("active", b.getAttribute("data-catfilter")===filterState.category);
-        b.onclick = function(){ filterState.category = b.getAttribute("data-catfilter"); renderList(); };
-      });
-    }
   }
   /* ---------------- 設備對照設定 ---------------- */
   var equipmentMapDraft = [];
@@ -2002,6 +2167,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
 
   /* ---------------- Navigation ---------------- */
   function goto(view){
+    if(openDropdown) setDropdown(null);
     if(view!=="add" && !$("#view-add").hidden) cleanupAbandonedAddPhotos();
     $all(".view").forEach(function(v){ v.hidden = true; });
     $("#view-"+view).hidden = false;
@@ -2283,9 +2449,38 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     });
 
     $("#search-input").oninput = function(e){ filterState.query = e.target.value; renderList(); };
-    $all("[data-statusfilter]", $("#filter-bar-2")).forEach(function(b){
-      b.onclick = function(){ filterState.status = b.getAttribute("data-statusfilter"); renderList(); };
+    $("#sort-btn").onclick = $("#th-date").onclick = function(){ listSortDesc = !listSortDesc; renderList(); };
+    DD_KEYS.forEach(function(k){
+      $(".dd-btn", $("#dd-"+k)).onclick = function(){ setDropdown(openDropdown===k ? null : k); };
     });
+    $("#date-presets").onclick = function(e){
+      var b = e.target.closest(".preset"); if(!b) return;
+      var p = datePresets().find(function(x){ return x.id===b.getAttribute("data-id"); });
+      filterState.from = p.from; filterState.to = p.to; renderList();
+    };
+    // 起訖顛倒時，把另一端一起拉過來，不讓使用者卡在「起 > 迄」的空結果
+    $("#date-from").onchange = function(){
+      filterState.from = this.value;
+      if(filterState.from && filterState.to && filterState.from>filterState.to) filterState.to = filterState.from;
+      renderList();
+    };
+    $("#date-to").onchange = function(){
+      filterState.to = this.value;
+      if(filterState.from && filterState.to && filterState.to<filterState.from) filterState.from = filterState.to;
+      renderList();
+    };
+    // 點在下拉外面才收起。用 composedPath、不用 e.target.closest：選項被點下去會重畫清單，
+    // 被點的元素當下已脫離 DOM（同 #copy-picker 的做法，見 CLAUDE.md）
+    document.addEventListener("click", function(e){
+      if(!openDropdown) return;
+      if(e.composedPath().indexOf($("#dd-"+openDropdown))===-1) setDropdown(null);
+    });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape" && openDropdown) setDropdown(null); });
+    // 篩選列固定在頂端、浮在表格上方時，補一條底線把它跟表格分開
+    window.addEventListener("scroll", function(){
+      var lf = $("#list-filters");
+      if(lf) lf.classList.toggle("stuck", lf.getBoundingClientRect().top<=0.5);
+    }, { passive:true });
 
     $("#f-duration").oninput = function(){
       var v = Number(this.value);
@@ -2487,7 +2682,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       showToast("無法連線到伺服器，請確認 App 是否已啟動");
     }
     renderMetaOptions();
-    renderFilterChips();
+    renderFilterBar();
     rebuildProblemHistory();
     renderSuggestions();
     renderDashboard();

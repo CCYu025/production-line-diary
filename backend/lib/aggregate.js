@@ -177,3 +177,96 @@ export function commonProblems(records) {
       `${b.record.date} ${b.record.time}`.localeCompare(`${a.record.date} ${a.record.time}`),
   );
 }
+
+/**
+ * 紀錄列表的篩選。純函式，前端與測試共用同一份邏輯。
+ *
+ * 篩選狀態：
+ *   equipment / category：陣列（多選，空陣列 = 不篩）
+ *   severity / status / problem：單一字串（空字串 = 不篩）
+ *   from / to：YYYY-MM-DD 起訖（含頭尾，空字串 = 該端不設限；單日就是 from === to）
+ *   query：關鍵字，比對設備、分類、問題、處理內容、根本原因
+ */
+export function emptyFilter() {
+  return { equipment: [], category: [], severity: "", status: "", problem: "", from: "", to: "", query: "" };
+}
+
+export function hasActiveFilter(f) {
+  return !!(
+    f.equipment.length || f.category.length || f.severity || f.status || f.problem || f.from || f.to || f.query
+  );
+}
+
+// skip：略過某一個維度，用來算「不含自己這一維」的筆數（見 facetCounts）。
+// 可以是 equipment / category / severity / status。
+function matchesFilter(r, f, skip) {
+  if (skip !== "equipment" && f.equipment.length && !f.equipment.includes(r.equipment)) return false;
+  if (skip !== "category" && f.category.length && !f.category.includes(r.category)) return false;
+  if (skip !== "severity" && f.severity && r.severity !== f.severity) return false;
+  if (skip !== "status" && f.status && r.status !== f.status) return false;
+  if (f.from && r.date < f.from) return false;
+  if (f.to && r.date > f.to) return false;
+  if (f.problem && r.problem !== f.problem) return false;
+  if (f.query) {
+    const q = f.query.toLowerCase();
+    const hay = [r.equipment, r.category, r.problem, r.action, r.rootCause].join("\n").toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
+/** 軟刪除的紀錄一律不算。 */
+export function filterRecords(records, f) {
+  return records.filter((r) => !r.deleted && matchesFilter(r, f));
+}
+
+/**
+ * 某個維度每個值各有幾筆——套用「其他所有條件」，但不套用自己這一維。
+ * 例如已選設備 F3 時，設備下拉仍會顯示其他設備各有幾筆（才能加選第二台），
+ * 而分類下拉則只算 F3 的紀錄。
+ * @param {"equipment"|"category"|"severity"|"status"} key
+ */
+export function facetCounts(records, f, key) {
+  const out = {};
+  for (const r of records) {
+    if (r.deleted || !matchesFilter(r, f, key)) continue;
+    out[r[key]] = (out[r[key]] || 0) + 1;
+  }
+  return out;
+}
+
+/** 日期排序用。同日同時間用 id 當穩定的決勝，避免切換排序方向時同組紀錄的順序亂跳。 */
+export function sortByDate(records, desc = true) {
+  const dir = desc ? -1 : 1;
+  return records.slice().sort((a, b) => {
+    const k = `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`) || a.id - b.id;
+    return k * dir;
+  });
+}
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+function toISODate(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function addDays(d, n) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+}
+
+/**
+ * 日期快捷。「本週」從週一算起、「本月」從 1 號算起，與 withinRange 的語意一致。
+ * @param {Date} now - 注入目前時間，方便測試
+ */
+export function datePresets(now = new Date()) {
+  const today = toISODate(now);
+  const dow = now.getDay();
+  return [
+    { id: "today", label: "今天", from: today, to: today },
+    { id: "week", label: "本週", from: toISODate(addDays(now, dow === 0 ? -6 : 1 - dow)), to: today },
+    { id: "d7", label: "近 7 天", from: toISODate(addDays(now, -6)), to: today },
+    { id: "month", label: "本月", from: `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`, to: today },
+    { id: "d30", label: "近 30 天", from: toISODate(addDays(now, -29)), to: today },
+    { id: "all", label: "全部", from: "", to: "" },
+  ];
+}
