@@ -51,8 +51,8 @@ describe("欄位順序與預設值", () => {
   it("設備 → 問題 → 問題分類 → 耗時（含嚴重度）→ 處理 → 根本原因 → 處理狀態 → 照片", async () => {
     const { container } = renderForm();
     await waitForNewForm();
-    const severity = screen.getByRole("radiogroup", { name: /嚴重度/ });
-    const status = screen.getByRole("radiogroup", { name: "處理狀態" });
+    const severity = screen.getByRole("group", { name: "嚴重度" });
+    const status = screen.getByRole("group", { name: "處理狀態" });
     const sequence = [
       equipmentInput(),
       problemInput(),
@@ -192,18 +192,18 @@ describe("嚴重度建議", () => {
     const u = user();
     renderForm();
     await waitForNewForm();
-    const sev = (name: string) => screen.getByRole("radio", { name });
+    const sev = (name: string) => screen.getByRole("button", { name, pressed: true });
     await u.type(durationInput(), "12");
-    expect(sev("一般")).toBeChecked();
+    expect(sev("一般")).toBeInTheDocument();
     await u.clear(durationInput());
     await u.type(durationInput(), "18");
-    expect(sev("嚴重")).toBeChecked();
+    expect(sev("嚴重")).toBeInTheDocument();
     await u.clear(durationInput());
     await u.type(durationInput(), "25");
-    expect(sev("重大")).toBeChecked();
+    expect(sev("重大")).toBeInTheDocument();
     await u.clear(durationInput());
     await u.type(durationInput(), "5");
-    expect(sev("輕微")).toBeChecked();
+    expect(sev("輕微")).toBeInTheDocument();
   });
 
   it("使用者手動選了嚴重度就不再被耗時覆蓋，並提供〔改用建議〕", async () => {
@@ -211,13 +211,13 @@ describe("嚴重度建議", () => {
     renderForm();
     await waitForNewForm();
     await u.type(durationInput(), "12");
-    await u.click(screen.getByRole("radio", { name: "嚴重" }));
+    await u.click(screen.getByRole("button", { name: "嚴重" }));
     await u.clear(durationInput());
     await u.type(durationInput(), "25");
-    expect(screen.getByRole("radio", { name: "嚴重" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "嚴重", pressed: true }));
     expect(screen.getByText(/依耗時建議為「重大」/)).toBeInTheDocument();
     await u.click(screen.getByRole("button", { name: "改用建議" }));
-    expect(screen.getByRole("radio", { name: "重大" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "重大", pressed: true }));
   });
 
   it("送出的嚴重度就是畫面上選的值", async () => {
@@ -225,7 +225,7 @@ describe("嚴重度建議", () => {
     renderForm();
     await waitForNewForm();
     await fillMinimum(u);
-    await u.click(screen.getByRole("radio", { name: "重大" }));
+    await u.click(screen.getByRole("button", { name: "重大" }));
     await u.click(submitButton());
     await waitFor(() => expect(mocks.createRecord).toHaveBeenCalled());
     expect(mocks.createRecord.mock.calls[0]![0]).toMatchObject({ severity: "重大", duration: 7 });
@@ -381,10 +381,10 @@ describe("複製既有紀錄", () => {
     expect(problemInput().value).toBe("半成品沾黏模具");
     expect(categoryInput().value).toBe("沾模");
     expect(durationInput().value).toBe("12");
-    expect(screen.getByRole("radio", { name: "一般" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "一般", pressed: true }));
     expect(actionInput().value).toBe("清潔模具後重啟");
     expect(rootCauseInput().value).toBe("脫模劑濃度不足"); // 根本原因會複製
-    expect(screen.getByRole("radio", { name: "待處理" })).toBeChecked(); // 來源是已解決
+    expect(screen.getByRole("button", { name: "待處理", pressed: true })); // 來源是已解決
     expect(equipmentInput().value).toBe("");
     expect(screen.queryByTestId("mapping-preview")).toBeNull();
     // 不複製照片
@@ -816,8 +816,8 @@ describe("編輯模式", () => {
     expect(equipmentInput().value).toBe("F3");
     expect(problemInput().value).toBe("半成品沾黏模具");
     expect(rootCauseInput().value).toBe("脫模劑濃度不足");
-    expect(screen.getByRole("radio", { name: "已解決" })).toBeChecked();
-    expect(screen.getByRole("radio", { name: "一般" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "已解決", pressed: true }));
+    expect(screen.getByRole("button", { name: "一般", pressed: true }));
     expect(durationInput().value).toBe("12");
     expect(summary()).toBe("2026/10/20 10:30・中班");
     expect(screen.getByRole("combobox", { name: /^品號/ })).toHaveValue("P-OLD");
@@ -834,7 +834,7 @@ describe("編輯模式", () => {
     await screen.findByRole("form", { name: "編輯紀錄" });
     await u.clear(durationInput());
     await u.type(durationInput(), "40");
-    expect(screen.getByRole("radio", { name: "一般" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "一般", pressed: true }));
   });
 
   it("清空根本原因存成 null；改處理狀態；儲存後回到 #/records?open=<id>", async () => {
@@ -842,7 +842,7 @@ describe("編輯模式", () => {
     const { router } = renderForm("/records/3/edit");
     await screen.findByRole("form", { name: "編輯紀錄" });
     await u.clear(rootCauseInput());
-    await u.click(screen.getByRole("radio", { name: "追蹤中" }));
+    await u.click(screen.getByRole("button", { name: "追蹤中" }));
     await u.click(submitButton());
     await waitFor(() => expect(mocks.updateRecord).toHaveBeenCalledTimes(1));
     const [id, input] = mocks.updateRecord.mock.calls[0]!;

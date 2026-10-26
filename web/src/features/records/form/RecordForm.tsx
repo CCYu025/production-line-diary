@@ -39,7 +39,7 @@ const FOCUS_ORDER: FieldName[] = ["date", "time", "shift", "equipment", "product
 const SEVERITY_OPTIONS: SegmentedOption<Severity>[] = SEVERITY_ORDER.map((s: Severity) => ({
   value: s,
   label: s,
-  icon: <span aria-hidden="true" className={`h-4 w-1.5 rounded-full ${SEVERITY_BG[s]}`} />,
+  prefix: <span aria-hidden="true" className={`h-4 w-1.5 rounded-full ${SEVERITY_BG[s]}`} />,
 }));
 
 function StatusGlyph({ status }: { status: Status }) {
@@ -55,7 +55,7 @@ function StatusGlyph({ status }: { status: Status }) {
 const STATUS_OPTIONS: SegmentedOption<Status>[] = STATUS_ORDER.map((s: Status) => ({
   value: s,
   label: s,
-  icon: <StatusGlyph status={s} />,
+  prefix: <StatusGlyph status={s} />,
 }));
 
 export interface RecordFormProps {
@@ -454,17 +454,16 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
             )}
           </Field>
           <div className="flex flex-col gap-1.5">
-            <span id="rf-severity-label" className="text-sm font-bold">
+            <span className="text-sm font-bold">
               嚴重度{" "}
               <span className="text-xs font-normal text-ink-muted">
                 {state.severityTouched ? "已手動選擇" : "依耗時自動建議，可自行調整"}
               </span>
             </span>
             <SegmentedControl
-              name="severity"
-              aria-labelledby="rf-severity-label"
+              label="嚴重度"
               value={values.severity}
-              onValueChange={(v) => set("severity")(v)}
+              onChange={(v) => set("severity")(v)}
               options={SEVERITY_OPTIONS}
             />
             {showSuggestHint ? (
@@ -515,14 +514,13 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
         </Field>
 
         <div className="flex flex-col gap-1.5">
-          <span id="rf-status-label" className="text-sm font-bold">
+          <span className="text-sm font-bold">
             處理狀態
           </span>
           <SegmentedControl
-            name="status"
-            aria-labelledby="rf-status-label"
+            label="處理狀態"
             value={values.status}
-            onValueChange={(v) => set("status")(v)}
+            onChange={(v) => set("status")(v)}
             options={STATUS_OPTIONS}
           />
         </div>
