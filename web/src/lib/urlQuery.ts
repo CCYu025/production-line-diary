@@ -14,8 +14,10 @@ export const FILTER_KEYS = ["equipment", "category", "severity", "status", "prob
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// 設備／分類／問題是「精確比對」的值：紀錄裡存的是 "F3 " 就要能用 "F3 " 篩到它（與舊介面一致），所以不 trim。
+// 只有自由文字的關鍵字 q 會 trim。
 function uniqueNonEmpty(values: string[]): string[] {
-  return Array.from(new Set(values.map((v) => v.trim()).filter(Boolean)));
+  return Array.from(new Set(values.filter((v) => v.trim() !== "")));
 }
 
 export function parseRecordFilter(params: URLSearchParams): RecordFilter {
@@ -28,7 +30,7 @@ export function parseRecordFilter(params: URLSearchParams): RecordFilter {
   const status = params.get("status");
   f.status = STATUS_ORDER.find((s) => s === status) ?? "";
 
-  f.problem = params.get("problem")?.trim() ?? "";
+  f.problem = params.get("problem") ?? "";
   const from = params.get("from") ?? "";
   const to = params.get("to") ?? "";
   f.from = DATE_RE.test(from) ? from : "";

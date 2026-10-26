@@ -31,7 +31,7 @@ export function SeverityBadge({ severity, compact, className, ...props }: BadgeP
   );
 }
 
-function StatusGlyph({ status, className }: { status: Status; className?: string }) {
+export function StatusGlyph({ status, className }: { status: Status; className?: string }) {
   return (
     <svg viewBox="0 0 16 16" aria-hidden="true" className={cn("size-3.5 shrink-0", className)}>
       <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.8" />

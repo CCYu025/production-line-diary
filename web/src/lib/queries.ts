@@ -37,7 +37,7 @@ export function useCreateRecord() {
 export function useUpdateRecord() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, input }: { id: number; input: RecordInput }) => api.updateRecord(id, input),
+    mutationFn: ({ id, input }: { id: number; input: Partial<RecordInput> }) => api.updateRecord(id, input),
     onSuccess: () => invalidateRecordData(qc),
   });
 }

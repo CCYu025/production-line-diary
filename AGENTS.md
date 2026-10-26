@@ -63,7 +63,7 @@ npm run dev:web         # 開發新介面：Vite 熱更新（見下方）
 | `backend/data/schema.md` | 資料結構完整說明（資料契約） |
 | `backend/lib/aggregate.d.ts`、`backend/lib/types.d.ts` | 給 TypeScript 用的型別宣告：`aggregate.d.ts` 對應 `aggregate.js` 的每個匯出，`types.d.ts` 是 `DiaryRecord`／`Meta`／`RecordInput`…（依 `schema.md`）。**改了 `aggregate.js` 的匯出或回傳形狀、或 `schema.md` 的欄位，必須同步改這兩支**；`web/src/lib/shared.test.ts` 會檢查匯出名稱一致（簽章是否一致只有 `tsc` 看得出來） |
 | `frontend/index.html` | 舊介面（正式版）：全部畫面與前端邏輯，fetch 這個 repo 自己的 API |
-| `web/` | 新介面（預覽版，掛在 `/next/`）。結構：`src/app/`（外殼、路由）、`src/components/`（`ui/` 是 shadcn 風格元件）、`src/features/<view>/`、`src/lib/`、`src/styles/index.css`（設計 token）。`src/lib/api.ts` 是**唯一的 API 層**，每個非 GET 請求（含 multipart 上傳與 DELETE）都帶 `X-Requested-With`，失敗統一丟 `ApiError`（保留伺服器的 `errors[]`）；`src/lib/feedback.ts` 的 `notify`／`toastUndoable` 是**唯一的 toast 入口**（不要直接 import sonner；錯誤訊息是 `role="alert"`）；篩選 ⇄ URL query 用 `src/lib/urlQuery.ts` |
+| `web/` | 新介面（預覽版，掛在 `/next/`）。結構：`src/app/`（外殼、路由）、`src/components/`（`ui/` 是 shadcn 風格元件）、`src/features/<view>/`、`src/lib/`、`src/styles/index.css`（設計 token）。`src/lib/api.ts` 是**唯一的 API 層**，每個非 GET 請求（含 multipart 上傳與 DELETE）都帶 `X-Requested-With`，失敗統一丟 `ApiError`（保留伺服器的 `errors[]`）；`src/lib/feedback.ts` 的 `notify`／`toastUndoable` 是**唯一的 toast 入口**（不要直接 import sonner；錯誤訊息是 `role="alert"`）；篩選 ⇄ URL query 用 `src/lib/urlQuery.ts`；**所有「點進紀錄列表」的動作（儀表板圖表／KPI、日曆格子…）一律走 `src/lib/drill.ts` 的 `useDrillTo`／`drillFilter`** |
 | `scripts/ensure-web-build.js` | `npm start` 的前置步驟：`web/dist` 不存在或過期才建置（只比檔案的 mtime，不比資料夾的）。**永遠不阻擋舊介面**——任何失敗都只印警告、結束碼 0 |
 | `scripts/migrate.js` | 一次性搬遷腳本（CLI，`--force` 才會覆蓋既有資料） |
 
@@ -359,6 +359,9 @@ npm run dev:web         # 開發新介面：Vite 熱更新（見下方）
   - **字型自行託管，不連 Google Fonts**（`@fontsource`，只打包用到的字重）——這是離線／內網也要能用的本機工具。
   - **文字色 token 對比度 ≥ 4.5:1**（淺色、深色都是；`ink-muted` 曾經只有約 3.4:1）。`web/src/test/contrast.test.ts` 直接讀 `index.css` 的色票把關，調色票時不要把它改回難讀的顏色。
   - **`#/_ui` 元件預覽只在 `import.meta.env.DEV`**（`npm run dev:web`）存在，正式建置不含。
+  - **紀錄列表的網址慣例（`#/records?…`，新 UI 的單一事實來源是網址）**：篩選條件用 `equipment`／`category`（重複的 key，值**不 trim**：紀錄裡存 `"F3 "` 就要用 `"F3 "` 篩到它，與舊介面一致）、`severity`、`status`、`problem`、`from`、`to`、`q`（只有 `q` 會 trim）；排序 `sort=asc`（預設新到舊不寫）；詳情面板 `open=<id>`（無效或不存在的值載入後會被拿掉）；儀表板範圍 `range=month|week`（`all` 不寫）。**預設值一律不寫進網址**。開詳情面板用 push（瀏覽器上一頁關閉面板），詳情內上一筆／下一筆、搜尋打字、切換排序用 replace；上一筆／下一筆依**全部有效紀錄的時間順序**（`chronological(activeData)`），不跟列表篩選。對外的入口網址：新增 `#/records/new`、複製 `#/records/new?copy=<id>`、編輯 `#/records/<id>/edit`（表單由 WP3b 實作，列表與詳情只負責導過去）。
+  - **所有「drill 進列表」都走 `web/src/lib/drill.ts`**（`drillFilter(key, value)`：先清掉舊條件再帶入單一值，日期是 from = to；`useDrillTo()` 導到 `/records?…`）。儀表板、日曆都用它，不要各寫一份。
+  - **舊資料欄位可能缺漏**（搬遷來的紀錄可能沒有 `photos`／`photoCaptions`）：新 UI 讀這些欄位一律先 `?? []`／`?.`，不要假設一定存在。
   - **新介面只是 `/next/` 的預覽版，直到 WP3d 才切換為 `/`**；每個工作包完成都要更新 `docs/refactor-plan.md` §7 進度表。
 
 ## 測試方法
@@ -367,7 +370,7 @@ npm run dev:web         # 開發新介面：Vite 熱更新（見下方）
 npm run check      # 後端 node --check 語法檢查
 npm test           # 後端 node:test（test/**/*.test.js），目前 156 個測試
 npm run typecheck  # 新前端 tsc --noEmit（strict）
-npm run test:web   # 新前端 Vitest（jsdom + Testing Library），目前 134 個測試（14 個檔案）
+npm run test:web   # 新前端 Vitest（jsdom + Testing Library），目前 222 個測試（17 個檔案）
 npm run build      # 新前端 vite build → web/dist
 ```
 

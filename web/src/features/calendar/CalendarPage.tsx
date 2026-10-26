@@ -1,14 +1,14 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import * as React from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { aggregate, emptyFilter } from "@shared/aggregate";
+import { useSearchParams } from "react-router-dom";
+import { aggregate } from "@shared/aggregate";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecords } from "@/lib/queries";
 import { cn } from "@/lib/utils";
-import { recordFilterToParams } from "@/lib/urlQuery";
+import { useDrillTo } from "@/lib/drill";
 import {
   buildMonthGrid,
   colorStep,
@@ -43,7 +43,6 @@ function useCalendarMonth() {
 
 export function CalendarPage() {
   const { data: records, isPending, isError, error, refetch, isRefetching } = useRecords();
-  const navigate = useNavigate();
   const { month, current, go } = useCalendarMonth();
 
   const { countByDate, maxCount } = React.useMemo(() => {
@@ -58,11 +57,8 @@ export function CalendarPage() {
   const today = todayIso();
   const label = `${month.year} 年 ${month.month} 月`;
 
-  // 點格子 → 紀錄列表，先清掉其他條件，只帶入那一天（from = to）
-  const drillTo = (date: string) => {
-    const params = recordFilterToParams({ ...emptyFilter(), from: date, to: date });
-    navigate({ pathname: "/records", search: `?${params.toString()}` });
-  };
+  // 點格子 → 紀錄列表，先清掉其他條件，只帶入那一天（from = to）；與儀表板共用 lib/drill.ts
+  const drill = useDrillTo();
 
   return (
     <>
@@ -151,7 +147,7 @@ export function CalendarPage() {
                             )}
                             aria-current={isToday ? "date" : undefined}
                             aria-label={`${dayLabel}，${count} 筆紀錄，查看當日紀錄`}
-                            onClick={() => drillTo(cell.date)}
+                            onClick={() => drill("date", cell.date)}
                           >
                             <span className={cn("num text-xs opacity-90 md:text-sm", todayNum)} aria-hidden="true">
                               {cell.day}

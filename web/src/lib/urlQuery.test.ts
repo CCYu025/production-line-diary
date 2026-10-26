@@ -28,8 +28,10 @@ describe("urlQuery: parseRecordFilter", () => {
     expect(f).toEqual(emptyFilter());
   });
 
-  it("陣列去重、去空白", () => {
-    expect(parse("equipment=F3&equipment=F3&equipment=%20F4%20").equipment).toEqual(["F3", "F4"]);
+  it("陣列去重、略過空值；值前後的空白保留（紀錄裡存 \"F3 \" 就要篩得到它），只有關鍵字 q 會 trim", () => {
+    expect(parse("equipment=F3&equipment=F3&equipment=&equipment=%20F4%20").equipment).toEqual(["F3", " F4 "]);
+    expect(parse("category=%E5%8F%96%E6%96%99%20").category).toEqual(["取料 "]);
+    expect(parse("q=%20%E5%8D%A1%E6%96%99%20").query).toBe("卡料");
   });
 
   it("名稱含逗號、& 、空白的設備可以來回而不被拆開", () => {
