@@ -196,7 +196,10 @@ test("V3 deleteUnreferencedPhoto：檔名帶 ../ 想刪資料夾外的檔案 →
   const { root, photosDir } = tmpRootWithSecret();
   try {
     mkdirSync(path.join(photosDir, "20260922"), { recursive: true });
-    for (const evil of ["../../secret.txt", "..\\..\\secret.txt", "../../../secret.txt"]) {
+    // 反斜線只有在 Windows 上才是路徑分隔符號；其他平台上它只是檔名的一部分（API 層的 isSafeFilename 一律擋掉）
+    const evilNames = ["../../secret.txt", "../../../secret.txt"];
+    if (process.platform === "win32") evilNames.push("..\\..\\secret.txt");
+    for (const evil of evilNames) {
       await assert.rejects(deleteUnreferencedPhoto(photosDir, [], "2026-09-22", evil), /不合法的照片路徑/);
     }
     assert.ok(existsSync(path.join(root, "secret.txt")));
