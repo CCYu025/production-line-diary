@@ -564,9 +564,14 @@ test("H1 + H3：data.json 損毀時 GET／寫入都回 500 {errors}，原檔絕�
     assert.equal(res.status, 500);
     const body = await res.json();
     assert.ok(body.errors[0].includes("data.json"));
+    assert.equal(body.errors[0], "data.json 無法解析，原檔未被修改，請檢查或從 backups/ 還原");
+    assert.ok(!JSON.stringify(body).includes(dataDir), "回應不可洩漏伺服器上的絕對路徑");
+    assert.ok(!JSON.stringify(body).includes("position"), "回應不可帶 JSON.parse 的內部錯誤細節");
 
     res = await postRecord({});
     assert.equal(res.status, 500);
+    assert.ok(!JSON.stringify(await res.json()).includes(dataDir));
+    assert.deepEqual(readdirSync(dataDir).filter((n) => n.includes(".tmp-")), [], "不應留下暫存檔");
     res = await fetch(`${base}/api/equipment-map`, { method: "PUT", headers: JSON_HEADERS, body: "[]" });
     assert.equal(res.status, 500);
     assert.equal(readFileSync(file, "utf8"), corrupt, "損毀的 data.json 不可被覆寫");

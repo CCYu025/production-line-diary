@@ -420,3 +420,18 @@ test("L4 withStore：讀到帶 BOM 的檔案再存回去，內容是乾淨的 JS
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("StoreCorruptError：message 是固定的中文訊息、不含路徑；路徑與原因只放在 file / cause", async () => {
+  const dir = tmpDir();
+  try {
+    writeFileSync(path.join(dir, "data.json"), "{ broken");
+    const err = await loadStore(dir).catch((e) => e);
+    assert.ok(err instanceof StoreCorruptError);
+    assert.equal(err.message, "data.json 無法解析，原檔未被修改，請檢查或從 backups/ 還原");
+    assert.ok(!err.message.includes(dir));
+    assert.equal(err.file, path.join(dir, "data.json"));
+    assert.ok(err.cause instanceof Error);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

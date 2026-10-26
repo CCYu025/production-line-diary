@@ -108,7 +108,7 @@ App 每天在用，重構期間舊 UI 仍是正式版，所以 bug 先修在現�
 | V3 | 照片檔名與路徑 | `photos[]` 每個元素必須是安全檔名（無 `/`、`\`、`..`、控制字元）；`DELETE /api/photos/:date/:filename` 驗證 `date` 格式與檔名；`photos.js` 內所有路徑操作 `path.resolve` 後確認仍在照片資料夾內（縱深防禦） |
 | V4 | 照片存在性 | `POST`/`PUT` 時，新加入的照片檔必須存在於該紀錄日期的資料夾，否則 400（訊息說明「照片與日期不一致」）——B1 的伺服器端防線 |
 | S1 | 本機 CSRF | 所有非 GET 的 `/api/*` 需帶 `X-Requested-With: production-line-diary`（自訂 header 會觸發 CORS preflight，跨站網頁送不出來）；前端 `api` 統一加上 |
-| S2 | DNS rebinding | `Host` 必須是 `localhost:PORT` 或 `127.0.0.1:PORT`（`[::1]` 亦可），否則 403 |
+| S2 | DNS rebinding | `Host` 主機名稱必須是 `localhost`／`127.0.0.1`／`[::1]`（不綁 port），否則 403 |
 
 每一項都要有 `node:test` 測試（`test/api.test.js`、`test/store.test.js`、`test/photos.test.js`）。
 
@@ -215,7 +215,7 @@ App 每天在用，重構期間舊 UI 仍是正式版，所以 bug 先修在現�
 |---|---|---|---|
 | 計畫書 | `docs/refactor-plan` | — | 已完成 |
 | WP1a 正確性修正 | `fix/correctness` | #31 | 已完成 |
-| WP1b 後端強化 | `fix/backend-hardening` | — | 未開始 |
+| WP1b 後端強化 | `fix/backend-hardening` | #32 | 已完成 |
 | WP2 新前端基礎 | `feat/web-foundation` | — | 未開始 |
 | WP3a 儀表板／列表／詳情 | `feat/web-dashboard-records` | — | 未開始 |
 | WP3b 紀錄表單 | `feat/web-record-form` | — | 未開始 |

@@ -14,11 +14,15 @@ import path from "node:path";
 export const SCHEMA_VERSION = "1.2";
 export const BACKUP_KEEP = 14;
 
-/** data.json 讀得到但不是合法 JSON：呼叫端應回 500，且不可以寫入（會蓋掉原檔）。 */
+/**
+ * data.json 讀得到但不是合法 JSON：呼叫端應回 500，且不可以寫入（會蓋掉原檔）。
+ * message 會原樣回給前端，所以不放伺服器上的絕對路徑；路徑與解析錯誤原因放在 file / cause，只進伺服器 log。
+ */
 export class StoreCorruptError extends Error {
   constructor(file, cause) {
-    super(`data.json 無法解析（${file}）：${cause?.message ?? cause}。原檔未被修改，請先修復或從 backups 資料夾還原。`);
+    super("data.json 無法解析，原檔未被修改，請檢查或從 backups/ 還原");
     this.name = "StoreCorruptError";
+    this.file = file;
     this.cause = cause;
   }
 }
