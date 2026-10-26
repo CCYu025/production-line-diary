@@ -264,8 +264,8 @@
   .pop-search input:focus{ border-color:var(--accent); }
   .pop-list{ max-height:280px; overflow:auto; padding:4px; }
   .opt{ display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:7px; cursor:pointer; font-size:12.8px; user-select:none; }
-  .opt:hover{ background:var(--accent-wash); }
-  .opt .cb{ width:15px; height:15px; border:1.5px solid var(--line-strong); border-radius:4px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .opt:hover, .opt:focus-visible{ background:var(--accent-wash); outline:none; }
+  .opt .cb{ width:15px; height:15px; border:1.5px solid var(--ink-muted); border-radius:4px; display:flex; align-items:center; justify-content:center; flex:none; }
   .opt.on .cb{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
   .opt .cb .icon{ width:11px; height:11px; stroke-width:3; opacity:0; }
   .opt.on .cb .icon{ opacity:1; }
@@ -1346,7 +1346,8 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
   var popQuery = { equipment:"", category:"" };
   var DD_KEYS = ["date","equipment","category"];
 
-  function mdLabel(iso){ return iso.slice(5).replace("-","/"); }
+  // 不是今年的日期要帶年份，不然「10/15」可能是別年的
+  function mdLabel(iso){ return (iso.slice(0,4)===String(new Date().getFullYear()) ? "" : iso.slice(0,4)+"/") + iso.slice(5).replace("-","/"); }
   function dateLabel(){
     var f = filterState;
     if(!f.from && !f.to) return "";
@@ -1358,6 +1359,12 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
   function sumCounts(o){ return Object.keys(o).reduce(function(s,k){ return s+o[k]; }, 0); }
 
   function setDropdown(key){
+    // 離開的下拉：把裡面的搜尋關鍵字清掉，不然下次打開只剩被過濾的幾項，看起來像選項不見了
+    ["equipment","category"].forEach(function(k){
+      if(k===key || !popQuery[k]) return;
+      popQuery[k] = "";
+      var inp = $("#dd-"+k+" .pop-search input"); if(inp) inp.value = "";
+    });
     openDropdown = key;
     DD_KEYS.forEach(function(k){
       var dd = $("#dd-"+k), open = (k===key);
@@ -1417,12 +1424,27 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       '<div class="pop-foot"><span class="info"></span><button type="button" class="link-btn clr">清除</button></div>';
     $("input", pop).oninput = function(e){ popQuery[key] = e.target.value; renderMultiPop(key); };
     $(".clr", pop).onclick = function(){ filterState[key] = []; renderList(); };
-    $(".pop-list", pop).onclick = function(e){
-      var o = e.target.closest(".opt"); if(!o) return;
+    function toggleOpt(o, refocus){
       var v = o.getAttribute("data-v");
       if(filterState[key].indexOf(v)===-1) filterState[key] = filterState[key].concat([v]);
       else filterState[key] = filterState[key].filter(function(x){ return x!==v; });
       renderList();
+      if(refocus){ // 清單被重畫了，鍵盤操作時把焦點還給同一個選項，才能接著往下勾
+        var again = $all(".opt", pop).filter(function(x){ return x.getAttribute("data-v")===v; })[0];
+        if(again) again.focus();
+      }
+    }
+    $(".pop-list", pop).onclick = function(e){
+      var o = e.target.closest(".opt"); if(o) toggleOpt(o, false);
+    };
+    $(".pop-list", pop).onkeydown = function(e){
+      var o = e.target.closest(".opt"); if(!o) return;
+      if(e.key==="Enter" || e.key===" "){ e.preventDefault(); toggleOpt(o, true); }
+      else if(e.key==="ArrowDown" || e.key==="ArrowUp"){
+        e.preventDefault();
+        var all = $all(".opt", pop), i = all.indexOf(o) + (e.key==="ArrowDown" ? 1 : -1);
+        if(all[i]) all[i].focus();
+      }
     };
     return pop;
   }
@@ -1432,7 +1454,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     var items = multiOptions(key).filter(function(v){ return !kw || v.toLowerCase().indexOf(kw)>-1; });
     $(".pop-list", pop).innerHTML = items.length ? items.map(function(v){
       var n = counts[v]||0, on = filterState[key].indexOf(v)>-1;
-      return '<div class="opt'+(on?" on":"")+(n===0?" zero":"")+'" role="option" aria-selected="'+on+'" data-v="'+esc(v)+'">'+
+      return '<div class="opt'+(on?" on":"")+(n===0?" zero":"")+'" role="option" tabindex="0" aria-selected="'+on+'" data-v="'+esc(v)+'">'+
         '<span class="cb">'+ICONS.check+'</span><span class="nm">'+esc(v)+'</span><span class="ct mono">'+n+'</span></div>';
     }).join("") : '<div class="pop-empty">找不到符合的'+(key==="equipment"?"設備":"分類")+'</div>';
     $(".info", pop).textContent = filterState[key].length ? "已選 "+filterState[key].length+" 項" : "可複選";
@@ -2458,13 +2480,18 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       var p = datePresets().find(function(x){ return x.id===b.getAttribute("data-id"); });
       filterState.from = p.from; filterState.to = p.to; renderList();
     };
-    // 起訖顛倒時，把另一端一起拉過來，不讓使用者卡在「起 > 迄」的空結果
+    // 起訖顛倒時，把另一端一起拉過來，不讓使用者卡在「起 > 迄」的空結果。
+    // 在已有完整日期的欄位逐位改年份時，瀏覽器每打一位就觸發一次 change（0002 → 0020 → 0202 → 2026），
+    // 中間值不是使用者要的日期，套用會把另一端誤拉到 0002 年，所以年份不到 1900 的先忽略。
+    function plausibleDate(v){ return v==="" || Number(v.slice(0,4))>=1900; }
     $("#date-from").onchange = function(){
+      if(!plausibleDate(this.value)) return;
       filterState.from = this.value;
       if(filterState.from && filterState.to && filterState.from>filterState.to) filterState.to = filterState.from;
       renderList();
     };
     $("#date-to").onchange = function(){
+      if(!plausibleDate(this.value)) return;
       filterState.to = this.value;
       if(filterState.from && filterState.to && filterState.to<filterState.from) filterState.from = filterState.to;
       renderList();
