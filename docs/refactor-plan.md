@@ -220,7 +220,7 @@ App 每天在用，重構期間舊 UI 仍是正式版，所以 bug 先修在現�
 | WP3a 儀表板／列表／詳情 | `feat/web-dashboard-records` | #36 | 已完成 |
 | WP3b 紀錄表單 | `feat/web-record-form` | #35 | 已完成 |
 | WP3c 日曆／回收桶／設定 | `feat/web-calendar-trash-settings` | #34 | 已完成 |
-| WP3d 報表＋切換 | `feat/web-report-cutover`（報表）、`feat/web-cutover`（切換） | #37、#38 | 已完成（#38 待合併） |
+| WP3d 報表＋切換 | `feat/web-report-cutover`（報表）、`feat/web-cutover`（切換） | #37、#38 | 已完成 |
 
 **WP3d 切換紀錄**：`/` 改為新 UI（Vite `base: "/"`），`/next/…` 轉址到 `/…`，`frontend/index.html` 與 `/lib` 靜態路徑已移除。
 建置失敗時（不再有舊介面可退）：`npm start` 印出明確錯誤、寫 `.web-build-error.log`、仍啟動伺服器，`/` 顯示「介面建置失敗」頁；修好後 `npm run build` 重新整理即可。
