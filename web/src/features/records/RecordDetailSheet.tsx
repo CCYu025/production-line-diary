@@ -120,7 +120,7 @@ function DetailBody({ r, position, repeatCount, hasPrev, hasNext, onPrev, onNext
     setLightbox(i);
   };
 
-  const photos = r.photos.map((filename) => ({
+  const photos = (r.photos ?? []).map((filename) => ({
     filename,
     src: photoUrl(r.date, filename),
     caption: r.photoCaptions?.[filename] ?? "",

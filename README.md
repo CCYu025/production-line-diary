@@ -81,7 +81,7 @@ frontend/
 web/                   新介面（預覽版，網址 /next/）：React 18 + Vite + TypeScript + Tailwind CSS + shadcn/ui
   src/app/             外殼（側欄／底部分頁列）、hash 路由
   src/components/      共用元件（ui/ 是 shadcn 風格元件）
-  src/features/        各頁面（日曆／回收桶／設備對照設定已實作（WP3c），其餘仍是空殼，WP3a／b／d 實作）
+  src/features/        各頁面（儀表板／紀錄列表／詳情面板（WP3a）、日曆／回收桶／設備對照設定（WP3c）已實作；新增／編輯表單（WP3b）與列印報表（WP3d）仍是空殼）
   src/lib/             api.ts（型別化 API client）、TanStack Query、URL query helper、toast
   src/styles/          設計 token（淺色／深色）
 docs/

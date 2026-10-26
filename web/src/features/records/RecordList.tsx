@@ -61,7 +61,7 @@ function RecordTable({ rows, sortDesc, onToggleSort, onOpen, onCopy }: RecordLis
           <col className="w-[4.25rem]" />
           <col className="w-[5rem]" />
           <col />
-          <col className="w-[3.5rem]" />
+          <col className="w-[4.25rem]" />
           <col className="w-[4.75rem]" />
           <col className="w-[6.25rem]" />
           <col className="w-[2.75rem]" />
@@ -116,10 +116,10 @@ function RecordTable({ rows, sortDesc, onToggleSort, onOpen, onCopy }: RecordLis
                   <span className="line-clamp-2 min-w-0 flex-1 whitespace-normal break-words font-medium" title={r.problem}>
                     {r.problem}
                   </span>
-                  <PhotoCount count={r.photos.length} className="mt-0.5" />
+                  <PhotoCount count={(r.photos ?? []).length} className="mt-0.5" />
                 </div>
               </td>
-              <td className="num px-2 py-2.5 text-right align-top">{r.duration} 分</td>
+              <td className="num whitespace-nowrap px-2 py-2.5 text-right align-top">{r.duration} 分</td>
               <td className="px-1.5 py-2 align-top">
                 <SeverityBadge severity={r.severity} />
               </td>
@@ -183,7 +183,7 @@ function RecordCards({ rows, onOpen }: RecordListProps) {
                 {r.severity}
               </span>
               <span className="num">{r.duration} 分</span>
-              <PhotoCount count={r.photos.length} />
+              <PhotoCount count={(r.photos ?? []).length} />
             </span>
           </button>
         </li>

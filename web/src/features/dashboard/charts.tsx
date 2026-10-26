@@ -183,7 +183,7 @@ export function StatusStack({
   return (
     <div className="flex flex-col gap-4">
       {/* 堆疊條本身只給滑鼠點（aria-hidden、不佔 Tab）；鍵盤與輔助科技走下面的圖例按鈕，內容完全相同 */}
-      <div className="flex h-8 w-full gap-0.5 overflow-hidden rounded-md bg-line" aria-hidden="true">
+      <div className="flex h-11 w-full gap-0.5 overflow-hidden rounded-md bg-line md:h-8" aria-hidden="true">
         {counts
           .filter((s) => s.count > 0)
           .map((s) => (
@@ -199,13 +199,13 @@ export function StatusStack({
             />
           ))}
       </div>
-      <ul className="grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-3">
+      <ul className="flex flex-wrap gap-x-3 gap-y-0.5">
         {counts.map((s) => (
-          <li key={s.label}>
+          <li key={s.label} className="min-w-[8rem] flex-1">
             <button
               type="button"
               onClick={() => onSelect(s.label)}
-              className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface md:min-h-9"
+              className="flex min-h-11 w-full items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-sm hover:bg-surface md:min-h-9"
             >
               <span aria-hidden="true" className={cn("size-3 shrink-0 rounded-sm", STATUS_FILL[s.label])} />
               <StatusGlyph status={s.label} className="text-ink-2" />

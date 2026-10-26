@@ -48,6 +48,13 @@ describe("儀表板：KPI 兩級、用語", () => {
     expect(screen.getByText("累計時間")).toBeInTheDocument();
   });
 
+  it("舊紀錄沒有 photos 欄位也能算（照片建檔率 0%），不會當掉", async () => {
+    const r = makeRecord({ id: 1 });
+    delete (r as Partial<typeof r>).photos;
+    await setup([r]);
+    expect(screen.getByText("0 / 1 筆附有照片")).toBeInTheDocument();
+  });
+
   it("0 筆的主要 KPI 不是按鈕（沒東西可看）", async () => {
     await setup([makeRecord({ id: 1, status: "已解決" })]);
     expect(screen.queryByRole("button", { name: "待處理 0 筆，查看紀錄" })).toBeNull();
@@ -145,6 +152,12 @@ describe("儀表板：點進紀錄列表（drillTo：先清掉舊條件，再帶
     expect(query().get("from")).toBe("2026-10-23");
     expect(query().get("to")).toBe("2026-10-23");
     expect([...query().keys()].sort()).toEqual(["from", "to"]);
+  });
+
+  it("設備名稱帶空白：點長條導到 equipment=F3%20，不 trim", async () => {
+    const user = await setup([makeRecord({ id: 1, equipment: "F3 " })]);
+    await user.click(within(card("設備發生次數")).getByRole("button", { name: /查看設備/ }));
+    expect(loc()).toBe("/records?equipment=F3+");
   });
 
   it("從「本週」範圍點進去：列表只帶那一個條件（不帶 range）", async () => {

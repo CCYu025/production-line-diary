@@ -39,7 +39,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
             aria-pressed={on}
             onClick={() => onChange(o.value)}
             className={cn(
-              "inline-flex min-h-11 min-w-0 items-center justify-center whitespace-nowrap rounded-sm px-1 text-sm transition-colors max-md:flex-col max-md:py-1 md:min-h-9 md:gap-1.5 md:px-2.5",
+              "inline-flex min-h-11 min-w-11 items-center justify-center whitespace-nowrap rounded-sm px-1 text-sm transition-colors max-md:flex-col max-md:py-1 md:min-h-9 md:gap-1.5 md:px-2.5",
               on ? "bg-accent font-bold text-accent-ink" : "text-ink-2 hover:bg-surface hover:text-ink-1",
               !on && o.count === 0 && "text-ink-muted",
             )}

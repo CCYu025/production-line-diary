@@ -17,12 +17,16 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
 
 function CommandInput({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
-    <div data-slot="command-input-wrapper" className="flex h-9 items-center gap-2 border-b px-3">
+    <div
+      data-slot="command-input-wrapper"
+      // 手機觸控目標 ≥ 44px；輸入框取得焦點時整列有可見的焦點環（輸入框本身 outline-hidden）
+      className="flex h-11 items-center gap-2 border-b px-3 focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring md:h-9"
+    >
       <SearchIcon className="size-4 shrink-0 opacity-50" aria-hidden="true" />
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
-          "flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+          "flex h-full w-full rounded-md bg-transparent py-3 text-sm outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
           className,
         )}
         {...props}

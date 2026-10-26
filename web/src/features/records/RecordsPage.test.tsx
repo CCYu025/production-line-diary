@@ -286,6 +286,15 @@ describe("詳情面板（?open=<id>）", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it.each(["abc", "0", "-1", "1.5", ""])("無效的 ?open=%s 會被拿掉（和不存在的 id 一樣），不顯示面板", async (bad) => {
+    mockApi(sampleRecords());
+    renderWithApp(`/records?open=${encodeURIComponent(bad)}&status=${encodeURIComponent("待處理")}`);
+    await screen.findByTestId("result-count");
+    await waitFor(() => expect(query().has("open")).toBe(false));
+    expect(query().get("status")).toBe("待處理"); // 其他條件原樣保留
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("上一筆／下一筆走「全部有效紀錄」的時間順序，不跟列表的篩選", async () => {
     // 篩選只剩 F3（1、3、5），但 #3 的上一筆是 #2（F4）、下一筆是 #4（G5）
     const { user } = await setup("/records?equipment=F3&open=3");
@@ -485,6 +494,48 @@ describe("詳情：照片", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument(); // 詳情面板還在
     expect(query().get("open")).toBe("5");
     await waitFor(() => expect(thumb).toHaveFocus());
+  });
+});
+
+describe("舊資料／欄位缺漏不會讓畫面當掉", () => {
+  /** 搬遷來的舊紀錄可能沒有 photos、photoCaptions 欄位 */
+  const legacy = () => {
+    const r = makeRecord({ id: 9, date: "2026-10-26", time: "14:00", equipment: "F3 ", problem: "舊紀錄" });
+    delete (r as Partial<typeof r>).photos;
+    delete (r as Partial<typeof r>).photoCaptions;
+    return r;
+  };
+
+  it("沒有 photos 欄位：桌面表格與詳情都正常（顯示「未附照片」）", async () => {
+    mockApi([legacy()]);
+    renderWithApp("/records?open=9");
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("未附照片")).toBeInTheDocument();
+    expect(document.querySelector('tr[data-record-id="9"]')).not.toBeNull();
+  });
+
+  it("沒有 photos 欄位：手機卡片也正常", async () => {
+    setViewportWidth(375);
+    mockApi([legacy()]);
+    renderWithApp("/records");
+    await screen.findByTestId("result-count");
+    expect(document.querySelector('[data-record-id="9"]')).toHaveTextContent("舊紀錄");
+  });
+
+  it("設備名稱帶空白（\"F3 \"）：網址不會 trim，篩選精確命中那一筆", async () => {
+    mockApi([legacy(), makeRecord({ id: 10, date: "2026-10-25", equipment: "F3", problem: "另一筆" })]);
+    renderWithApp(`/records?equipment=${encodeURIComponent("F3 ")}`);
+    await screen.findByTestId("result-count");
+    expect(visibleProblems()).toEqual(["9"]);
+    expect(screen.getByRole("button", { name: /^移除 設備：F3s*$/ })).toBeInTheDocument();
+  });
+
+  it("耗時欄不換行（三位數以上也是一行）", async () => {
+    mockApi([makeRecord({ id: 11, duration: 120 })]);
+    renderWithApp("/records");
+    await screen.findByTestId("result-count");
+    const cell = screen.getByText("120 分");
+    expect(cell).toHaveClass("whitespace-nowrap");
   });
 });
 

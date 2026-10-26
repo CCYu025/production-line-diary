@@ -49,7 +49,8 @@ export function RecordsPage() {
   const navigate = useNavigate();
 
   const sortDesc = searchParams.get("sort") !== "asc"; // 預設新到舊
-  const openId = parseOpenId(searchParams.get("open"));
+  const rawOpen = searchParams.get("open");
+  const openId = parseOpenId(rawOpen);
 
   const active = React.useMemo(() => (records.data ?? []).filter((r) => !r.deleted), [records.data]);
   const rows = React.useMemo(() => sortByDate(filterRecords(active, filter), sortDesc), [active, filter, sortDesc]);
@@ -87,8 +88,11 @@ export function RecordsPage() {
 
   // 網址指到不存在（或已刪除）的紀錄：資料載入後把 ?open 拿掉
   React.useEffect(() => {
-    if (records.data && openId !== null && !openRecord) setOpenParam(null, { replace: true });
-  }, [records.data, openId, openRecord]);
+    // 無效的值（abc、0、-1）馬上拿掉；指到不存在／已刪除紀錄的 id 等資料載入後再拿掉
+    const invalid = rawOpen !== null && openId === null;
+    const missing = openId !== null && !!records.data && !openRecord;
+    if (invalid || missing) setOpenParam(null, { replace: true });
+  }, [records.data, rawOpen, openId, openRecord]);
 
   const getReturnFocus = (): HTMLElement | null => {
     const t = triggerRef.current;
