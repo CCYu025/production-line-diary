@@ -1741,7 +1741,7 @@ import { aggregate, toISODate, severityFromDuration, commonProblems, pickCopyFie
 
   function renderSoBodyEdit(idx){
     var r = detailSequence[idx];
-    editState = { keepPhotos: (r.photos||[]).slice(), pending: [], captions: Object.assign({}, r.photoCaptions||{}) };
+    editState = { origDate: r.date, keepPhotos: (r.photos||[]).slice(), pending: [], captions: Object.assign({}, r.photoCaptions||{}) };
     $("#so-body").innerHTML =
       '<div class="form-grid">'+
         '<div class="field"><label for="e-date">日期</label><input type="date" id="e-date" value="'+esc(r.date)+'"><div class="lock-hint" id="e-date-lock" hidden>已上傳照片，要改日期請先移除照片</div></div>'+
@@ -1773,13 +1773,19 @@ import { aggregate, toISODate, severityFromDuration, commonProblems, pickCopyFie
       var files = Array.prototype.slice.call(e.target.files||[]);
       e.target.value = "";
       var date = $("#e-date").value || r.date;
+      // 這個迴圈屬於「這一次編輯」：cleanupAbandonedEditPhotos 會換掉 editState.pending 陣列、
+      // 儲存／重新編輯會換掉 editState，所以記住當時的陣列，被換掉就不要再往新表單塞檔案。
+      var session = editState, list = editState.pending;
+      var prev = null;
       // 跟新增紀錄一樣：選到檔案就立刻上傳，不要等按下「儲存變更」才上傳，
       // 避免儲存失敗後使用者重試一次，把同一張照片重新上傳一次而多出一份。
       for(var i=0;i<files.length;i++){
+        if(editState !== session || session.pending !== list || (prev && prev.abandoned)) break;
         var f = files[i];
         var entry = { file:f, url:"", date:date, filename:null, uploading:true, error:false, abandoned:false, caption:"" };
+        prev = entry;
         try{ entry.url = URL.createObjectURL(f); }catch(err){}
-        editState.pending.push(entry);
+        list.push(entry);
         renderEditPhotoPreview(date);
         try{
           entry.filename = await api.uploadPhoto(date, f);
@@ -1815,10 +1821,12 @@ import { aggregate, toISODate, severityFromDuration, commonProblems, pickCopyFie
   }
 
   function renderEditPhotoPreview(dateStr){
+    // 放棄／切走後 editState 或容器可能已不在，不要再畫
+    if(!editState || !$("#e-photo-preview")) return;
     syncDateLock("#e-date", "#e-date-lock", !!editState && hasLivePhoto(editState.pending));
     var html =
       editState.keepPhotos.map(function(fn,i){
-        return '<div class="dz-item"><div class="dz-thumb-wrap"><img class="dz-thumb" src="'+photoUrl(dateStr, fn)+'"><button type="button" class="thumb-remove" data-rm-existing="'+i+'">'+ICONS.x+'</button></div>'+
+        return '<div class="dz-item"><div class="dz-thumb-wrap"><img class="dz-thumb" src="'+photoUrl(editState.origDate, fn)+'"><button type="button" class="thumb-remove" data-rm-existing="'+i+'">'+ICONS.x+'</button></div>'+
           captionInput("cap-existing", i, editState.captions[fn])+'</div>';
       }).join("")+
       editState.pending.map(function(p,i){
@@ -1854,6 +1862,9 @@ import { aggregate, toISODate, severityFromDuration, commonProblems, pickCopyFie
     var id = r.id;
     var date = $("#e-date").value || r.date;
     if(editState.pending.some(function(p){ return p.uploading; })){ showToast("照片還在上傳中，請稍候"); return; }
+    // 編輯面板不是 <form>，min/step 不會自動驗證：這裡自己擋（正整數）
+    var durationVal = Number($("#e-duration").value);
+    if(!Number.isInteger(durationVal) || durationVal < 1){ showToast("耗時請輸入 1 以上的整數（分鐘）"); return; }
     var saveBtn = $("#edit-save");
     saveBtn.disabled = true;
     try{
@@ -1870,7 +1881,7 @@ import { aggregate, toISODate, severityFromDuration, commonProblems, pickCopyFie
         date: date,
         shift: $("#e-shift").value,
         time: $("#e-time").value || r.time,
-        duration: Number($("#e-duration").value) || r.duration,
+        duration: durationVal,
         category: $("#e-category").value.trim() || r.category,
         equipment: $("#e-equipment").value.trim() || r.equipment,
         severity: $("#e-severity").value || r.severity,
@@ -2544,14 +2555,19 @@ import { aggregate, toISODate, severityFromDuration, commonProblems, pickCopyFie
       e.target.value = "";
       var date = $("#f-date").value;
       if(!date){ showToast("請先選擇日期，再新增照片"); return; }
+      // 這個迴圈屬於「這一次新增」：放棄（清除／切走）或送出成功會換掉 pendingPhotos 陣列，
+      // 記住當時的陣列，被換掉或上一張已被放棄就停止，不要再往新表單塞檔案。
+      var list = pendingPhotos, prev = null;
       // 選到檔案就立刻上傳，不要等送出表單才上傳——這樣「送出」永遠只是
       // 拿已經上傳好的檔名去建立紀錄，就算使用者手滑點兩次送出、或按 Enter
       // 重複觸發，也不會因為重跑上傳而多出一份一樣的照片。
       for(var i=0;i<files.length;i++){
+        if(pendingPhotos !== list || (prev && prev.abandoned)) break;
         var f = files[i];
         var entry = { file:f, url:"", date:date, filename:null, uploading:true, error:false, abandoned:false, caption:"" };
+        prev = entry;
         try{ entry.url = URL.createObjectURL(f); }catch(err){}
-        pendingPhotos.push(entry);
+        list.push(entry);
         renderAddPhotoPreview();
         try{
           entry.filename = await api.uploadPhoto(date, f);
