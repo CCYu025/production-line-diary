@@ -356,6 +356,8 @@
   }
   .field input:focus, .field select:focus, .field textarea:focus{ border-color:var(--accent); }
   .field textarea{ resize:vertical; min-height:56px; }
+  .field input:disabled{ opacity:.6; cursor:not-allowed; }
+  .field .lock-hint{ font-size:12px; color:var(--ink-2); }
   .eqmap-row{ display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:8px; align-items:center; }
   .eqmap-row input{
     border:1px solid var(--line-strong); background:var(--surface); color:var(--ink-1);
@@ -912,7 +914,7 @@
       <div class="copy-banner" id="copy-banner" hidden></div>
       <form class="form-card" id="add-form">
         <div class="form-grid">
-          <div class="field" data-f="date"><label for="f-date">日期</label><input type="date" id="f-date" required></div>
+          <div class="field" data-f="date"><label for="f-date">日期</label><input type="date" id="f-date" required><div class="lock-hint" id="f-date-lock" hidden>已上傳照片，要改日期請先移除照片</div></div>
           <div class="field" data-f="shift"><label for="f-shift">班別</label>
             <select id="f-shift">
               <option value="早">早</option>
@@ -921,7 +923,7 @@
             </select>
           </div>
           <div class="field" data-f="time"><label for="f-time">時間</label><input type="time" id="f-time" required></div>
-          <div class="field" data-f="duration"><label for="f-duration">耗時 <span class="hint">分鐘</span></label><input type="number" id="f-duration" min="5" step="5" placeholder="例：10" required></div>
+          <div class="field" data-f="duration"><label for="f-duration">耗時 <span class="hint">分鐘</span></label><input type="number" id="f-duration" min="1" step="1" placeholder="例：10" required></div>
           <div class="field"><label for="f-category">問題分類 <span class="hint">可直接輸入新分類</span></label>
             <input type="text" id="f-category" list="category-options" placeholder="選擇或輸入分類…">
             <datalist id="category-options"></datalist>
@@ -1048,7 +1050,7 @@
 <div class="lightbox" id="lightbox"><img id="lightbox-img" src="" alt=""><div class="lb-cap" id="lightbox-cap" hidden></div></div>
 
 <script type="module">
-import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERITY_ORDER, STATUS_ORDER, emptyFilter, hasActiveFilter, filterRecords, facetCounts, sortByDate, datePresets } from "/lib/aggregate.js";
+import { aggregate, toISODate, severityFromDuration, commonProblems, pickCopyFields, SEVERITY_ORDER, STATUS_ORDER, emptyFilter, hasActiveFilter, filterRecords, facetCounts, sortByDate, datePresets } from "/lib/aggregate.js";
 (function(){
   "use strict";
 
@@ -1728,8 +1730,8 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     }
   }
 
-  function formField(label, type, id, value){
-    return '<div class="field"><label for="'+id+'">'+esc(label)+'</label><input type="'+type+'" id="'+id+'" value="'+esc(value)+'"></div>';
+  function formField(label, type, id, value, extraAttrs){
+    return '<div class="field"><label for="'+id+'">'+esc(label)+'</label><input type="'+type+'" id="'+id+'" value="'+esc(value)+'"'+(extraAttrs?' '+extraAttrs:'')+'></div>';
   }
   function selectField(label, id, options, current){
     return '<div class="field"><label for="'+id+'">'+esc(label)+'</label><select id="'+id+'">'+
@@ -1742,10 +1744,10 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     editState = { keepPhotos: (r.photos||[]).slice(), pending: [], captions: Object.assign({}, r.photoCaptions||{}) };
     $("#so-body").innerHTML =
       '<div class="form-grid">'+
-        formField("日期","date","e-date",r.date)+
+        '<div class="field"><label for="e-date">日期</label><input type="date" id="e-date" value="'+esc(r.date)+'"><div class="lock-hint" id="e-date-lock" hidden>已上傳照片，要改日期請先移除照片</div></div>'+
         selectField("班別","e-shift",["早","中","晚"],r.shift)+
         formField("時間","time","e-time",r.time)+
-        formField("耗時（分鐘）","number","e-duration",r.duration)+
+        formField("耗時（分鐘）","number","e-duration",r.duration,'min="1" step="1"')+
         '<div class="field"><label for="e-category">問題分類</label><input type="text" id="e-category" value="'+esc(r.category)+'" list="category-options"></div>'+
         selectField("嚴重度","e-severity",SEVERITY_ORDER,r.severity)+
         '<div class="field full"><label for="e-equipment">設備</label><input type="text" id="e-equipment" value="'+esc(r.equipment)+'" list="equipment-options-edit"></div>'+
@@ -1753,6 +1755,8 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
         '<div class="field"><label for="e-material">原料類別</label><input type="text" id="e-material" value="'+esc(r.materialCategory||"")+'" list="material-options"></div>'+
         '<div class="field full"><label for="e-problem">問題</label><input type="text" id="e-problem" value="'+esc(r.problem)+'"></div>'+
         '<div class="field full"><label for="e-action">處理</label><textarea id="e-action">'+esc(r.action||"")+'</textarea></div>'+
+        '<div class="field full"><label for="e-rootcause">根本原因</label><textarea id="e-rootcause">'+esc(r.rootCause||"")+'</textarea></div>'+
+        selectField("處理狀態","e-status",STATUS_ORDER,r.status)+
         '<div class="field full"><label>照片 <span class="hint">支援多張，可個別移除或新增，每張可加圖片說明</span></label>'+
           '<label class="dropzone" for="e-photo">'+ICONS.camera+'<div>點擊新增照片</div><input type="file" id="e-photo" accept="image/*" multiple style="display:none"></label>'+
           '<div class="dz-preview" id="e-photo-preview"></div>'+
@@ -1801,7 +1805,17 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
     $("#edit-save").onclick = function(){ saveEdit(idx); };
   }
 
+  // 有「上傳中」或「已上傳、尚未儲存」的照片時鎖定日期欄：照片是依選檔當下的日期存進資料夾的，
+  // 再改日期會讓紀錄指向別的日期資料夾而破圖（伺服器端另有檢查）。上傳失敗的不算。
+  function hasLivePhoto(list){ return list.some(function(p){ return !p.abandoned && (p.uploading || p.filename); }); }
+  function syncDateLock(inputSel, hintSel, locked){
+    var inp = $(inputSel), hint = $(hintSel);
+    if(inp) inp.disabled = locked;
+    if(hint) hint.hidden = !locked;
+  }
+
   function renderEditPhotoPreview(dateStr){
+    syncDateLock("#e-date", "#e-date-lock", !!editState && hasLivePhoto(editState.pending));
     var html =
       editState.keepPhotos.map(function(fn,i){
         return '<div class="dz-item"><div class="dz-thumb-wrap"><img class="dz-thumb" src="'+photoUrl(dateStr, fn)+'"><button type="button" class="thumb-remove" data-rm-existing="'+i+'">'+ICONS.x+'</button></div>'+
@@ -1827,6 +1841,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       b.onclick = function(){
         var i = Number(b.getAttribute("data-rm-pending-edit"));
         var p = editState.pending[i];
+        if(p && !p.filename && p.uploading) p.abandoned = true; // 上傳還沒回來：讓 onchange 的 await 收尾時補刪
         editState.pending.splice(i,1);
         renderEditPhotoPreview(dateStr);
         if(p && p.filename){ api.deletePhoto(p.date, p.filename); }
@@ -1861,6 +1876,8 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
         severity: $("#e-severity").value || r.severity,
         problem: $("#e-problem").value.trim() || r.problem,
         action: $("#e-action").value.trim(),
+        rootCause: $("#e-rootcause").value.trim() || null,
+        status: $("#e-status").value || r.status,
         productCode: $("#e-productcode").value.trim() || null,
         materialCategory: $("#e-material").value.trim() || null,
         photos: editState.keepPhotos.concat(uploaded),
@@ -2022,7 +2039,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
   /* ---------------- Report（列印/PDF） ---------------- */
   function initReportView(){
     if(!$("#report-start").value){
-      var today = new Date().toISOString().slice(0,10);
+      var today = toISODate(new Date()); // 本地日期；toISOString 是 UTC，台灣 00:00–08:00 會變成昨天
       $("#report-start").value = today;
       $("#report-end").value = today;
     }
@@ -2385,6 +2402,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
   }
 
   function renderAddPhotoPreview(){
+    syncDateLock("#f-date", "#f-date-lock", hasLivePhoto(pendingPhotos));
     setPhotoPreviewHtml($("#dz-preview"), pendingPhotos.map(function(p,i){
       var badge = p.uploading ? '<div class="dz-thumb placeholder-thumb">'+ICONS.camera+'</div>' :
         '<img class="dz-thumb" src="'+p.url+'" style="'+(p.error?'opacity:.4':'')+'">';
@@ -2398,6 +2416,7 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       b.onclick = function(){
         var i = Number(b.getAttribute("data-rm-pending"));
         var p = pendingPhotos[i];
+        if(p && !p.filename && p.uploading) p.abandoned = true; // 上傳還沒回來：讓 onchange 的 await 收尾時補刪
         pendingPhotos.splice(i,1);
         renderAddPhotoPreview();
         if(p && p.filename){ api.deletePhoto(p.date, p.filename); }

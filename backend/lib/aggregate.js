@@ -247,7 +247,7 @@ export function sortByDate(records, desc = true) {
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
-function toISODate(d) {
+export function toISODate(d) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 function addDays(d, n) {
