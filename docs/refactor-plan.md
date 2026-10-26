@@ -214,7 +214,7 @@ App 每天在用，重構期間舊 UI 仍是正式版，所以 bug 先修在現�
 | 工作包 | 分支 | PR | 狀態 |
 |---|---|---|---|
 | 計畫書 | `docs/refactor-plan` | — | 已完成 |
-| WP1a 正確性修正 | `fix/correctness` | — | 未開始 |
+| WP1a 正確性修正 | `fix/correctness` | #31 | 已完成 |
 | WP1b 後端強化 | `fix/backend-hardening` | — | 未開始 |
 | WP2 新前端基礎 | `feat/web-foundation` | — | 未開始 |
 | WP3a 儀表板／列表／詳情 | `feat/web-dashboard-records` | — | 未開始 |
