@@ -131,7 +131,8 @@ export function createApi(options: ApiOptions = {}) {
     createRecord: async (input: RecordInput) =>
       (await request<{ record: DiaryRecord }>("/api/records", { method: "POST", json: input })).record,
 
-    updateRecord: async (id: number, input: RecordInput) =>
+    /** PUT 只寫入 body 有帶的欄位（快速切換狀態／補根本原因只送 { status } 或 { rootCause }），所以是 Partial。 */
+    updateRecord: async (id: number, input: Partial<RecordInput>) =>
       (await request<{ record: DiaryRecord }>(recordPath(id), { method: "PUT", json: input })).record,
 
     /** 移到回收桶（軟刪除，照片保留）。 */
