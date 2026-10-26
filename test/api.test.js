@@ -181,7 +181,7 @@ test("POST /api/export-xlsx 會在 DATA_DIR 產生工作日誌.xlsx", async () =
 // 結果硬碟上多出一份 xxx-1.jpg、原始檔案變成沒人參照的孤兒。
 //
 // 前端實際的操作順序是「先上傳新檔案，才送出移除舊檔案的 PUT」（見
-// frontend/index.html 的 saveEdit），所以第二次上傳當下舊檔名還在被參照、
+// 表單的儲存流程，原本是舊介面的 saveEdit，現在是 usePhotoUploads／RecordForm），所以第二次上傳當下舊檔名還在被參照、
 // 一定會被改名成 S__same-1.jpg——這點修不掉也不必修。真正該修的是:
 // PUT 完成、確認舊檔名沒有任何紀錄再參照之後，那個孤兒檔案要被清掉，
 // 不能留著佔位置、誤導使用者以為多了一張重複照片。

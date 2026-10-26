@@ -49,7 +49,13 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
               {o.label}
             </span>
             {o.count !== undefined ? (
-              <span className={cn("num text-xs", on ? "opacity-90" : "text-ink-muted")}>{o.count}</span>
+              <>
+                {/* 視覺上是數字；輔助科技唸「待處理，3 筆」，不要唸成「待處理3」 */}
+                <span aria-hidden="true" className={cn("num text-xs", on ? "opacity-90" : "text-ink-muted")}>
+                  {o.count}
+                </span>
+                <span className="sr-only">，{o.count} 筆</span>
+              </>
             ) : null}
           </button>
         );

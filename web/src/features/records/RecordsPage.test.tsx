@@ -79,21 +79,21 @@ describe("篩選：狀態／嚴重度 分段按鈕與筆數", () => {
   it("每顆帶 facet 筆數；點下去篩選並寫進網址", async () => {
     const { user } = await setup();
     const status = screen.getByRole("group", { name: "處理狀態" });
-    expect(within(status).getByRole("button", { name: /全部\s*5/ })).toBeInTheDocument();
-    expect(within(status).getByRole("button", { name: /待處理\s*2/ })).toBeInTheDocument();
-    expect(within(status).getByRole("button", { name: /追蹤中\s*2/ })).toBeInTheDocument();
-    expect(within(status).getByRole("button", { name: /已解決\s*1/ })).toBeInTheDocument();
+    expect(within(status).getByRole("button", { name: /全部，5 筆/ })).toBeInTheDocument();
+    expect(within(status).getByRole("button", { name: /待處理，2 筆/ })).toBeInTheDocument();
+    expect(within(status).getByRole("button", { name: /追蹤中，2 筆/ })).toBeInTheDocument();
+    expect(within(status).getByRole("button", { name: /已解決，1 筆/ })).toBeInTheDocument();
 
     await user.click(within(status).getByRole("button", { name: /待處理/ }));
     expect(query().get("status")).toBe("待處理");
     expect(visibleProblems()).toEqual(["4", "1"]);
     expect(getCount(2, 5)).toBeInTheDocument();
     // 狀態自己這一維不被自己篩掉：其他狀態的筆數還在
-    expect(within(status).getByRole("button", { name: /追蹤中\s*2/ })).toBeInTheDocument();
+    expect(within(status).getByRole("button", { name: /追蹤中，2 筆/ })).toBeInTheDocument();
     // 嚴重度的筆數則套用了「待處理」：輕微 1、重大 1
     const sev = screen.getByRole("group", { name: "嚴重度" });
-    expect(within(sev).getByRole("button", { name: /輕微\s*1/ })).toBeInTheDocument();
-    expect(within(sev).getByRole("button", { name: /嚴重\s*0/ })).toBeInTheDocument();
+    expect(within(sev).getByRole("button", { name: /輕微，1 筆/ })).toBeInTheDocument();
+    expect(within(sev).getByRole("button", { name: /嚴重，0 筆/ })).toBeInTheDocument();
   });
 
   it("狀態、嚴重度、關鍵字不另外顯示成「已套用條件」chip", async () => {

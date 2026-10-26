@@ -3,7 +3,7 @@
 
 /*
  * 設計 token（docs/refactor-plan.md §4 U0）。
- * 色票語意沿用舊 UI（frontend/index.html）的 CSS 變數，淺色／深色兩套、跟隨系統；
+ * 色票語意沿用切換前舊 UI 的 CSS 變數（舊 frontend/index.html 已移除），淺色／深色兩套、跟隨系統；
  * 也可用 <html data-theme="light|dark"> 強制指定（跟舊 UI 一致）。
  * 與舊 UI 不同之處（皆為了對比度 ≥ 4.5:1，量測值見 web/src/test/contrast.test.ts）：
  *   - ink-muted：淺色 #898781(3.4:1) → #6b6a64；深色 #898781 → #9b9a93

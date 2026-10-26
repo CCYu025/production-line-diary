@@ -25,3 +25,6 @@ backend/data/example/backups/
 
 # 新前端建置輸出（npm run build / npm start 會自動產生）
 web/dist/
+
+# 前端建置失敗時 scripts/ensure-web-build.js 留下的錯誤摘要（「介面建置失敗」頁會顯示）
+.web-build-error.log

@@ -4,7 +4,7 @@ import { chronological } from "@/features/records/filterUtils";
 
 /*
  * 列印報表的純函式（不碰 React／DOM）：預設日期、選紀錄、排行表（前 5 名＋其他）、日期分組、照片格 class。
- * 規則全部來自舊 UI（frontend/index.html 的 reportRankHtml／reportRecordsHtml／reportRecordHtml／initReportView），
+ * 規則全部來自切換前的舊 UI（已移除，函式是 reportRankHtml／reportRecordsHtml／reportRecordHtml／initReportView，可查 git 歷史），
  * 行為必須一致；對應的測試在 reportModel.test.ts。
  */
 
