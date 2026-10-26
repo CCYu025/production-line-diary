@@ -6,7 +6,7 @@
  *
  * 新視窗的排版必須跟 App 內一樣，靠這幾件事維持：
  *   1. `<base href="{origin}/">`：照片是 `/photos/…` 的站內路徑，沒有 base 的話 document.write 出來的頁面
- *      解析基準不確定，可能整份報表沒有圖；樣式表與字型的網址也是站內絕對路徑（/next/assets/…），靠它載入。
+ *      解析基準不確定，可能整份報表沒有圖；樣式表與字型的網址也是站內絕對路徑（/assets/…），靠它載入。
  *   2. 複製目前頁面的所有樣式表（<link rel="stylesheet"> 與 dev 模式的 <style>），和 App 內用同一份 CSS。
  *   3. #report-output 固定 width:100%; max-width:960px; margin:0 auto（在 report.css）——新視窗沒有側欄，
  *      不鎖寬度就會被拉滿整個視窗，刊頭條與邊欄／主欄的比例整個跑掉；列印時 max-width:none（同檔案），不要拿掉。

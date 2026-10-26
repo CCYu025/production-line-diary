@@ -160,6 +160,19 @@ describe("儀表板：點進紀錄列表（drillTo：先清掉舊條件，再帶
     expect(loc()).toBe("/records?equipment=F3+");
   });
 
+  it("舊資料設備是空字串：長條顯示「（未填）」，點下去仍精確篩到那些紀錄（equipment= 空值）", async () => {
+    const user = await setup([makeRecord({ id: 1, equipment: "" }), makeRecord({ id: 2, equipment: "F3" })]);
+    const bar = within(card("設備發生次數")).getByRole("button", { name: "查看設備：（未填），1 次" });
+    expect(bar).toHaveTextContent("（未填）");
+    await user.click(bar);
+    expect(loc()).toBe("/records?equipment=");
+  });
+
+  it("舊資料分類是空字串：同樣顯示「（未填）」", async () => {
+    await setup([makeRecord({ id: 1, category: "" })]);
+    expect(within(card("問題分類發生次數")).getByRole("button", { name: "查看分類：（未填），1 次" })).toBeInTheDocument();
+  });
+
   it("從「本週」範圍點進去：列表只帶那一個條件（不帶 range）", async () => {
     const today = toISODate(new Date());
     const user = await setup([makeRecord({ id: 1, date: today, status: "待處理" }), makeRecord({ id: 2, date: today, status: "追蹤中" })], "/dashboard?range=week");

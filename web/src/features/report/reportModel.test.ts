@@ -12,6 +12,7 @@ import {
   defaultReportRange,
   formatGeneratedAt,
   parseReportRangeParams,
+  reversedReportRangeParams,
   groupByDay,
   photoGridClass,
   rangeLabel,
@@ -56,7 +57,19 @@ describe("parseReportRangeParams（網址上的範圍）", () => {
     expect(p("to=2026-10-20")).toBeNull();
     expect(p("from=2026-1-2&to=2026-10-26")).toBeNull();
     expect(p("from=abc&to=2026-10-26")).toBeNull();
+    expect(p("from=2026-13-45&to=2026-10-26")).toBeNull();
+    expect(p("from=2026-02-30&to=2026-03-02")).toBeNull();
     expect(p("from=2026-10-27&to=2026-10-26")).toBeNull();
+  });
+});
+
+describe("reversedReportRangeParams", () => {
+  const r = (q: string) => reversedReportRangeParams(new URLSearchParams(q));
+  it("兩個都是真實日期且起 > 迄才回傳原樣的值；其餘 null", () => {
+    expect(r("from=2026-10-26&to=2026-10-20")).toEqual({ start: "2026-10-26", end: "2026-10-20" });
+    expect(r("from=2026-10-20&to=2026-10-26")).toBeNull();
+    expect(r("from=2026-13-45&to=2026-10-20")).toBeNull();
+    expect(r("from=2026-10-26")).toBeNull();
   });
 });
 

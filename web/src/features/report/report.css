@@ -1,5 +1,5 @@
 /*
- * 列印報表（#report-output）的版面。從舊 UI（frontend/index.html 的 Report 區段）忠實移植——
+ * 列印報表（#report-output）的版面。從切換前的舊 UI（已移除，可查 git 歷史的 frontend/index.html Report 區段）忠實移植——
  * 「報紙式」是使用者逐項選定過的設計，畫面必須與舊報表一致，只換實作方式。
  *
  * 為什麼是一份獨立的純 CSS、不寫成 Tailwind utility：

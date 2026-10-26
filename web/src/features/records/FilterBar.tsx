@@ -5,7 +5,7 @@ import { SEVERITY_BG, StatusGlyph } from "@/components/badges";
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { SegmentedControl, type SegmentedOption } from "@/components/SegmentedControl";
 import type { DiaryRecord, RecordFilter, Severity, Status } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, labelOrUnfilled } from "@/lib/utils";
 import { DateRangeFilter } from "./DateRangeFilter";
 import { dateLabel, multiOptions } from "./filterUtils";
 
@@ -79,12 +79,12 @@ export function FilterBar({
   const chips: { key: string; label: string; remove: () => void }[] = [
     ...filter.equipment.map((v) => ({
       key: `equipment:${v}`,
-      label: `設備：${v}`,
+      label: `設備：${labelOrUnfilled(v)}`,
       remove: () => setFilter((f) => ({ ...f, equipment: f.equipment.filter((x) => x !== v) })),
     })),
     ...filter.category.map((v) => ({
       key: `category:${v}`,
-      label: `分類：${v}`,
+      label: `分類：${labelOrUnfilled(v)}`,
       remove: () => setFilter((f) => ({ ...f, category: f.category.filter((x) => x !== v) })),
     })),
     ...(filter.from || filter.to

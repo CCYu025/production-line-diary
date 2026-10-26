@@ -5,7 +5,7 @@ describe("buildReportWindowHtml（開新視窗的 HTML）", () => {
   const html = buildReportWindowHtml({
     reportHtml: '<div id="report-output">內容</div>',
     origin: "http://localhost:3000",
-    headStyles: '<link rel="stylesheet" href="/next/assets/index.css">',
+    headStyles: '<link rel="stylesheet" href="/assets/index.css">',
   });
 
   it("帶 <base href=origin/>（照片 /photos/… 才找得到）", () => {
@@ -21,7 +21,7 @@ describe("buildReportWindowHtml（開新視窗的 HTML）", () => {
 
   it("報表包在 #root 裡（列印規則用 body > :not(#root) 隱藏浮層），樣式表與標題都帶過去", () => {
     expect(html).toContain('<div id="root"><div id="report-output">內容</div></div>');
-    expect(html).toContain('<link rel="stylesheet" href="/next/assets/index.css">');
+    expect(html).toContain('<link rel="stylesheet" href="/assets/index.css">');
     expect(html).toContain("<title>設備紀錄表</title>");
     expect(html).toContain('lang="zh-Hant"');
   });

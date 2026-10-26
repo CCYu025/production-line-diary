@@ -25,8 +25,8 @@ function dropWoffFallback(): Plugin {
 
 export default defineConfig({
   root,
-  // 新舊 UI 並存：Express 把 web/dist 掛在 /next/（見 backend/server.js）。
-  base: "/next/",
+  // Express 把 web/dist 直接掛在 /（見 backend/lib/webUi.js；舊的 /next/ 網址會轉址到 /）。
+  base: "/",
   plugins: [dropWoffFallback(), react(), tailwindcss()],
   resolve: {
     alias: {

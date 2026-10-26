@@ -200,7 +200,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
 
   /* ---------- 清除（新增）／取消（編輯） ---------- */
   const reset = () => {
-    photos.abandonAll(); // 中止上傳中的、刪掉已上傳未送出的
+    photos.abandonAll(); // 已上傳未送出的立刻刪；上傳中的標記「已放棄」（不中止請求），回應回來後補刪
     dispatch({ type: "reset" }); // 日期／時間回到「現在」
     setFormErrors([]);
     clearCopyParam();
@@ -208,7 +208,8 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
   };
 
   const cancelEdit = () => {
-    if (record) navigate(`/records?open=${record.id}`);
+    // replace：取消後上一頁不要又回到編輯表單
+    if (record) navigate(`/records?open=${record.id}`, { replace: true });
     else navigate("/records");
   };
 
@@ -286,7 +287,8 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
         allowLeaveRef.current = true;
         photos.commit();
         notify.success("已儲存變更");
-        navigate(`/records?open=${record.id}`);
+        // replace：儲存後按上一頁不要回到（已經存完的）編輯表單
+        navigate(`/records?open=${record.id}`, { replace: true });
       } else {
         const created = await create.mutateAsync(input);
         allowLeaveRef.current = true;
@@ -377,11 +379,12 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
         </Field>
 
         {!isEdit && hasMapping(mapping) ? (
-          <div className="flex flex-col gap-1.5" data-testid="mapping-preview">
+          <div className="flex min-w-0 flex-col gap-1.5" data-testid="mapping-preview">
             <span className="text-sm font-bold">品號 / 原料類別</span>
-            <div className="num flex w-fit flex-wrap gap-x-4 gap-y-1 rounded-md border border-line bg-surface px-3 py-2 text-sm">
-              {mapping.productCode ? <span>品號 {mapping.productCode}</span> : null}
-              {mapping.materialCategory ? <span>原料 {mapping.materialCategory}</span> : null}
+            {/* min-w-0＋overflow-wrap:anywhere：很長的品號（沒有空白可斷行）在 320 寬也不會撐出畫面 */}
+            <div className="num flex w-fit min-w-0 max-w-full flex-wrap gap-x-4 gap-y-1 rounded-md border border-line bg-surface px-3 py-2 text-sm">
+              {mapping.productCode ? <span className="min-w-0 [overflow-wrap:anywhere]">品號 {mapping.productCode}</span> : null}
+              {mapping.materialCategory ? <span className="min-w-0 [overflow-wrap:anywhere]">原料 {mapping.materialCategory}</span> : null}
             </div>
             <p className="text-xs text-ink-muted">依「設備對照設定」自動帶入，例外情形請於送出後至編輯畫面調整</p>
           </div>
@@ -471,7 +474,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
                 依耗時建議為「{suggested}」{" "}
                 <button
                   type="button"
-                  className="font-medium text-accent-text underline underline-offset-2"
+                  className="inline-flex min-h-11 items-center px-2 font-medium text-accent-text underline underline-offset-2 md:min-h-0 md:px-0"
                   onClick={() => dispatch({ type: "applySuggestedSeverity" })}
                 >
                   改用建議

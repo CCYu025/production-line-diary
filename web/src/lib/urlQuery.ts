@@ -2,6 +2,7 @@ import * as React from "react";
 import { useSearchParams } from "react-router-dom";
 import { emptyFilter, SEVERITY_ORDER, STATUS_ORDER } from "@shared/aggregate";
 import type { RecordFilter } from "./types";
+import { isRealIsoDate } from "./utils";
 
 /*
  * 紀錄列表的篩選條件 ⇄ URL query（hash 路由，例如 #/records?equipment=F3&status=待處理）。
@@ -12,18 +13,19 @@ import type { RecordFilter } from "./types";
 
 export const FILTER_KEYS = ["equipment", "category", "severity", "status", "problem", "from", "to", "q"] as const;
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // 設備／分類／問題是「精確比對」的值：紀錄裡存的是 "F3 " 就要能用 "F3 " 篩到它（與舊介面一致），所以不 trim。
 // 只有自由文字的關鍵字 q 會 trim。
-function uniqueNonEmpty(values: string[]): string[] {
-  return Array.from(new Set(values.filter((v) => v.trim() !== "")));
+// 例外：剛好是空字串 "" 的值保留——舊資料裡有「設備／分類沒填」的紀錄，儀表板長條圖點「（未填）」要能精確篩到它們。
+// 只有空白的值（"%20"）仍然忽略。
+function uniqueValues(values: string[]): string[] {
+  return Array.from(new Set(values.filter((v) => v === "" || v.trim() !== "")));
 }
 
 export function parseRecordFilter(params: URLSearchParams): RecordFilter {
   const f = emptyFilter();
-  f.equipment = uniqueNonEmpty(params.getAll("equipment"));
-  f.category = uniqueNonEmpty(params.getAll("category"));
+  f.equipment = uniqueValues(params.getAll("equipment"));
+  f.category = uniqueValues(params.getAll("category"));
 
   const severity = params.get("severity");
   f.severity = SEVERITY_ORDER.find((s) => s === severity) ?? "";
@@ -33,8 +35,9 @@ export function parseRecordFilter(params: URLSearchParams): RecordFilter {
   f.problem = params.get("problem") ?? "";
   const from = params.get("from") ?? "";
   const to = params.get("to") ?? "";
-  f.from = DATE_RE.test(from) ? from : "";
-  f.to = DATE_RE.test(to) ? to : "";
+  // 要是真實存在的日期：2026-13-45 這種格式對、但不存在的值忽略，不然 chip 會顯示「日期：…–13/45」之類的破文字
+  f.from = isRealIsoDate(from) ? from : "";
+  f.to = isRealIsoDate(to) ? to : "";
   f.query = params.get("q")?.trim() ?? "";
   return f;
 }

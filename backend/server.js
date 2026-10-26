@@ -22,6 +22,7 @@ import {
   photoFileExists,
 } from "./lib/photos.js";
 import { sanitizePhotoCaptions } from "./lib/photoCaptions.js";
+import { mountWebUi } from "./lib/webUi.js";
 import {
   isRealDate,
   isSafeFilename,
@@ -40,6 +41,14 @@ const DATA_DIR = process.env.DATA_DIR
   : path.join(__dirname, "data", "example");
 const PORT = Number(process.env.PORT) || 3000;
 const PHOTOS_DIR = path.join(DATA_DIR, "照片");
+// 前端建置產物（web/dist）與 scripts/ensure-web-build.js 留下的建置錯誤紀錄。
+// 可用環境變數覆寫（給測試用；平常不用設）。
+const WEB_DIST_DIR = process.env.WEB_DIST_DIR
+  ? path.resolve(process.env.WEB_DIST_DIR)
+  : path.join(__dirname, "..", "web", "dist");
+const WEB_BUILD_ERROR_FILE = process.env.WEB_BUILD_ERROR_FILE
+  ? path.resolve(process.env.WEB_BUILD_ERROR_FILE)
+  : path.join(__dirname, "..", ".web-build-error.log");
 
 /** 路由裡用來中止請求（在 withStore 回呼裡丟出來就不會寫入）並指定 HTTP 狀態碼。 */
 class HttpError extends Error {
@@ -78,15 +87,12 @@ app.use("/api", (req, res, next) => {
 });
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "..", "frontend")));
-// 新 UI（web/ 以 Vite 建置出 web/dist）暫時掛在 /next/，`/` 仍是舊 UI，直到切換（見 docs/refactor-plan.md）。
-// express.static 每次請求才解析路徑，所以 web/dist 還不存在也能掛上去、之後建置完不用重啟。
-app.use("/next", express.static(path.join(__dirname, "..", "web", "dist")));
-app.use("/lib", express.static(path.join(__dirname, "lib")));
 // 這個 static middleware 在啟動當下就算資料夾還不存在也能掛上去——
 // express.static 是在「每次收到請求」時才去解析檔案路徑，不是啟動當下就掃描整個資料夾，
 // 所以之後第一次上傳照片、資料夾才被建立出來，也不用重啟伺服器。
 app.use("/photos", express.static(PHOTOS_DIR));
+// 前端：`/` 是 web/dist（沒有建置產物時回「介面建置失敗」頁），舊的 /next/… 網址轉址到 /…。見 lib/webUi.js。
+mountWebUi(app, { distDir: WEB_DIST_DIR, errorLogFile: WEB_BUILD_ERROR_FILE });
 
 function safeFilename(originalName) {
   const base = path

@@ -1,10 +1,11 @@
 import { toISODate } from "@shared/aggregate";
 import type { DiaryRecord, RankEntry } from "@/lib/types";
+import { isRealIsoDate } from "@/lib/utils";
 import { chronological } from "@/features/records/filterUtils";
 
 /*
  * 列印報表的純函式（不碰 React／DOM）：預設日期、選紀錄、排行表（前 5 名＋其他）、日期分組、照片格 class。
- * 規則全部來自舊 UI（frontend/index.html 的 reportRankHtml／reportRecordsHtml／reportRecordHtml／initReportView），
+ * 規則全部來自切換前的舊 UI（已移除，函式是 reportRankHtml／reportRecordsHtml／reportRecordHtml／initReportView，可查 git 歷史），
  * 行為必須一致；對應的測試在 reportModel.test.ts。
  */
 
@@ -30,7 +31,6 @@ export function defaultReportRange(now: Date = new Date()): ReportRange {
   return { start: today, end: today };
 }
 
-const DATE_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 
 /**
  * 網址上的 `?from=YYYY-MM-DD&to=YYYY-MM-DD`：兩個都有、格式正確、起 <= 迄才算（否則 null，不自動產生）。
@@ -39,8 +39,18 @@ const DATE_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 export function parseReportRangeParams(params: URLSearchParams): ReportRange | null {
   const start = params.get("from") ?? "";
   const end = params.get("to") ?? "";
-  if (!DATE_RE.test(start) || !DATE_RE.test(end) || start > end) return null;
+  if (!isRealIsoDate(start) || !isRealIsoDate(end) || start > end) return null;
   return { start, end };
+}
+
+/**
+ * 網址上兩個日期都是真實存在的日期、但起 > 迄：回傳原樣的值（不自動產生、也不換成別的範圍）。
+ * 頁面會顯示和按「產生報表」時相同的驗證訊息，輸入框保留網址上的值讓使用者自己改。
+ */
+export function reversedReportRangeParams(params: URLSearchParams): ReportRange | null {
+  const start = params.get("from") ?? "";
+  const end = params.get("to") ?? "";
+  return isRealIsoDate(start) && isRealIsoDate(end) && start > end ? { start, end } : null;
 }
 
 /** 起訖驗證；回傳要顯示給使用者的錯誤訊息，沒問題回 null（訊息與舊 UI 相同）。 */

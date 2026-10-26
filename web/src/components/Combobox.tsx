@@ -118,10 +118,11 @@ export function Combobox({
             if (!open) setOpen(true);
             else if (rows.length) setActive((a) => (a <= 0 ? rows.length - 1 : a - 1));
           } else if (e.key === "Enter") {
-            if (open && active >= 0 && rows[active]) {
-              e.preventDefault();
-              pick(rows[active].text);
-            }
+            // Enter 在這裡永遠不送出整張表單：有反白的建議就選它，否則只是「確認目前打的值」並收起清單
+            // （設備／分類在欄位裡打完字按 Enter，不該意外送出還沒填完的紀錄）
+            e.preventDefault();
+            if (open && active >= 0 && rows[active]) pick(rows[active].text);
+            else close();
           } else if (e.key === "Escape") {
             if (open) {
               e.preventDefault();

@@ -243,6 +243,9 @@ describe("設備對照：新增畫面的品號／原料類別是唯讀預覽", (
     const preview = await screen.findByTestId("mapping-preview");
     expect(preview).toHaveTextContent("品號 P-300");
     expect(preview).toHaveTextContent("原料 膠料A");
+    // 很長的品號（沒有空白可斷行）在 320 寬不能撐出畫面：容器 min-w-0／max-w-full、文字 overflow-wrap:anywhere
+    expect(preview.querySelector("div")).toHaveClass("min-w-0", "max-w-full");
+    expect(within(preview).getByText(/品號 P-300/)).toHaveClass("[overflow-wrap:anywhere]");
     expect(screen.queryByRole("combobox", { name: /品號/ })).toBeNull();
     expect(screen.queryByRole("textbox", { name: /品號|原料/ })).toBeNull();
 
@@ -589,6 +592,9 @@ describe("照片：選檔立刻上傳、鎖日期、放棄清理", () => {
     expect(screen.getByText("上傳中…")).toBeInTheDocument();
     expect(dateInput()).toBeDisabled();
     expect(screen.getByTestId("date-lock-hint")).toHaveTextContent("已上傳照片，要改日期請先移除照片");
+    // 日期面板收合時（預設）也看得到鎖：摘要旁有鎖頭、提示文字照常顯示
+    expect(screen.getByRole("button", { name: "修改" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByTestId("date-lock-icon")).toHaveTextContent("日期已鎖定");
 
     await act(async () => calls[0]!.d.resolve("a.jpg"));
     expect(screen.queryByText("上傳中…")).toBeNull();
@@ -849,6 +855,8 @@ describe("編輯模式", () => {
     expect(id).toBe(3);
     expect(input).toMatchObject({ rootCause: null, status: "追蹤中", photos: ["a.jpg"], photoCaptions: { "a.jpg": "模具上的沾黏" } });
     await waitFor(() => expect(router.state.location.pathname + router.state.location.search).toBe("/records?open=3"));
+    // replace：儲存後按上一頁不會回到編輯表單
+    expect(router.state.historyAction).toBe("REPLACE");
   });
 
   it("品號／原料類別可以修改，清空存 null", async () => {
@@ -936,6 +944,7 @@ describe("編輯模式", () => {
     await screen.findByRole("form", { name: "編輯紀錄" });
     await u.click(screen.getByRole("button", { name: "取消" }));
     await waitFor(() => expect(router.state.location.search).toBe("?open=3"));
+    expect(router.state.historyAction).toBe("REPLACE"); // 取消後上一頁也不要回到編輯表單
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 });

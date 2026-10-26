@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Combobox } from "./Combobox";
 
 function Harness({ initial = "", options = ["F3", "F4", "G5", "原材區1"] }: { initial?: string; options?: string[] }) {
@@ -56,6 +56,30 @@ describe("Combobox（可輸入的下拉）", () => {
     await u.keyboard("{Enter}");
     expect(box().value).toBe("原材區1");
     expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("Enter 沒有反白的建議時：不送出整張表單，只確認目前打的值並收起清單", async () => {
+    const u = userEvent.setup();
+    const submitted = vi.fn((e: React.FormEvent) => e.preventDefault());
+    render(
+      <form onSubmit={submitted}>
+        <Harness />
+      </form>,
+    );
+    await u.type(box(), "RB2");
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    await u.keyboard("{Enter}");
+    expect(submitted).not.toHaveBeenCalled();
+    expect(box().value).toBe("RB2");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    // 清單已收起、再按一次 Enter 也一樣不送出
+    await u.keyboard("{Enter}");
+    expect(submitted).not.toHaveBeenCalled();
+    // 有反白的建議時 Enter 是「選它」，同樣不送出
+    await u.clear(box());
+    await u.keyboard("{ArrowDown}{Enter}");
+    expect(box().value).toBe("F3");
+    expect(submitted).not.toHaveBeenCalled();
   });
 
   it("Esc 收合、Tab 離開收合；點選項不會讓輸入框失焦", async () => {

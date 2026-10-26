@@ -24,12 +24,25 @@ describe("urlQuery: parseRecordFilter", () => {
   });
 
   it("無法辨識的值直接忽略，不丟錯", () => {
-    const f = parse("severity=超嚴重&status=done&from=yesterday&to=2026/10/26&equipment=&equipment=%20");
+    const f = parse("severity=超嚴重&status=done&from=yesterday&to=2026/10/26&equipment=%20&from=2026-13-45&to=2026-02-30");
     expect(f).toEqual(emptyFilter());
   });
 
-  it("陣列去重、略過空值；值前後的空白保留（紀錄裡存 \"F3 \" 就要篩得到它），只有關鍵字 q 會 trim", () => {
-    expect(parse("equipment=F3&equipment=F3&equipment=&equipment=%20F4%20").equipment).toEqual(["F3", " F4 "]);
+  it("不存在的日期（2026-13-45、2026-02-30）直接忽略，不會產生壞掉的日期 chip", () => {
+    expect(parse("from=2026-13-45&to=2026-10-26")).toMatchObject({ from: "", to: "2026-10-26" });
+    expect(parse("from=2026-02-30")).toMatchObject({ from: "" });
+    expect(parse("from=2026-02-28&to=2026-03-01")).toMatchObject({ from: "2026-02-28", to: "2026-03-01" });
+  });
+
+  it("剛好是空字串的設備／分類保留（「（未填）」的精確篩選）；來回網址不變", () => {
+    const f = parse("equipment=&category=");
+    expect(f.equipment).toEqual([""]);
+    expect(f.category).toEqual([""]);
+    expect(recordFilterToParams(f).toString()).toBe("equipment=&category=");
+  });
+
+  it("陣列去重、略過空白值；值前後的空白保留（紀錄裡存 \"F3 \" 就要篩得到它），只有關鍵字 q 會 trim", () => {
+    expect(parse("equipment=F3&equipment=F3&equipment=%20&equipment=%20F4%20").equipment).toEqual(["F3", " F4 "]);
     expect(parse("category=%E5%8F%96%E6%96%99%20").category).toEqual(["取料 "]);
     expect(parse("q=%20%E5%8D%A1%E6%96%99%20").query).toBe("卡料");
   });
