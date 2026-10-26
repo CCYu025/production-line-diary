@@ -82,6 +82,17 @@ function MoreRow({ entry, onDone }: { entry: NavEntry; onDone: () => void }) {
 export function MobileTabBar() {
   const [moreOpen, setMoreOpen] = React.useState(false);
   const { pathname } = useLocation();
+  const moreButtonRef = React.useRef<HTMLButtonElement>(null);
+  const listRef = React.useRef<HTMLUListElement>(null);
+  // 開啟當下的路徑；關閉時若路徑變了（選了連結、或按瀏覽器上一頁），焦點交給 AppShell 的「換頁後聚焦主內容」，不要搶回「更多」。
+  const openedAtRef = React.useRef(pathname);
+  const pathnameRef = React.useRef(pathname);
+  pathnameRef.current = pathname;
+
+  // 換頁（含瀏覽器上一頁／下一頁）時關掉「更多」面板
+  React.useEffect(() => {
+    setMoreOpen(false);
+  }, [pathname]);
   const moreActive = MORE_PATHS.some((p) => pathname.startsWith(p));
   const trashCount = useTrashCount();
 
@@ -110,8 +121,12 @@ export function MobileTabBar() {
           <Tab to="/calendar" label="日曆" icon={CalendarDays} />
 
           <button
+            ref={moreButtonRef}
             type="button"
-            onClick={() => setMoreOpen(true)}
+            onClick={() => {
+              openedAtRef.current = pathname;
+              setMoreOpen(true);
+            }}
             aria-haspopup="dialog"
             aria-expanded={moreOpen}
             className={cn(tabClass, "relative", moreActive && "font-bold text-accent-text")}
@@ -129,12 +144,24 @@ export function MobileTabBar() {
       </nav>
 
       <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
-        <SheetContent side="bottom" className="gap-2 pb-4">
+        <SheetContent
+          side="bottom"
+          className="gap-2 pb-4"
+          // 受控、沒有 Trigger：自己決定開啟時焦點在第一個項目、關閉後焦點回到「更多」按鈕
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            listRef.current?.querySelector<HTMLElement>("a, button")?.focus();
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (pathnameRef.current === openedAtRef.current) moreButtonRef.current?.focus();
+          }}
+        >
           <SheetHeader>
             <SheetTitle>更多</SheetTitle>
             <SheetDescription className="sr-only">報表、匯出、設定與回收桶</SheetDescription>
           </SheetHeader>
-          <ul className="flex flex-col gap-1 px-3 pb-2">
+          <ul ref={listRef} className="flex flex-col gap-1 px-3 pb-2">
             {MORE_ITEMS.map((entry) => (
               <li key={entry.label}>
                 <MoreRow entry={entry} onDone={() => setMoreOpen(false)} />

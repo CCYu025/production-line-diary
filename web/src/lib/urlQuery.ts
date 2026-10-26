@@ -70,16 +70,21 @@ export function useRecordFilterParams() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = React.useMemo(() => parseRecordFilter(searchParams), [searchParams]);
 
+  // react-router 的 setSearchParams(fn) 讀的是「這次 render 的」網址，不像 setState 會排隊——
+  // 同一個 tick 連呼叫兩次會互相覆蓋。所以自己記住「最新、尚未 render 出來」的 query，
+  // 每次更新都以它為基底；網址真正更新後再跟著網址同步。
+  const latest = React.useRef(searchParams);
+  React.useEffect(() => {
+    latest.current = searchParams;
+  }, [searchParams]);
+
   const setFilter = React.useCallback(
     (update: FilterUpdate, opts?: { replace?: boolean }) => {
-      setSearchParams(
-        (prev) => {
-          const current = parseRecordFilter(prev);
-          const nextFilter = typeof update === "function" ? update(current) : update;
-          return applyRecordFilter(prev, nextFilter);
-        },
-        { replace: opts?.replace ?? false },
-      );
+      const base = latest.current;
+      const nextFilter = typeof update === "function" ? update(parseRecordFilter(base)) : update;
+      const next = applyRecordFilter(base, nextFilter);
+      latest.current = next;
+      setSearchParams(next, { replace: opts?.replace ?? false });
     },
     [setSearchParams],
   );

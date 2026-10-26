@@ -6,7 +6,6 @@ import { RecordsPage } from "@/features/records/RecordsPage";
 import { ReportPage } from "@/features/report/ReportPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { TrashPage } from "@/features/trash/TrashPage";
-import { UiPreviewPage } from "@/features/ui-preview/UiPreviewPage";
 import { AppShell, type RouteHandle } from "./AppShell";
 import { PAGE_TITLES } from "./nav";
 
@@ -30,7 +29,16 @@ export const routes = [
       { path: "report", element: <ReportPage />, handle: handle(PAGE_TITLES.report) },
       { path: "trash", element: <TrashPage />, handle: handle(PAGE_TITLES.trash) },
       { path: "settings", element: <SettingsPage />, handle: handle(PAGE_TITLES.settings) },
-      { path: "_ui", element: <UiPreviewPage />, handle: handle(PAGE_TITLES.uiPreview) },
+      // 元件預覽只在開發模式（npm run dev:web）存在；正式建置時整段（含頁面程式碼）會被移除。
+      ...(import.meta.env.DEV
+        ? [
+            {
+              path: "_ui",
+              lazy: async () => ({ Component: (await import("@/features/ui-preview/UiPreviewPage")).UiPreviewPage }),
+              handle: handle(PAGE_TITLES.uiPreview),
+            },
+          ]
+        : []),
       // 不認得的網址一律回儀表板
       { path: "*", element: <Navigate to="/dashboard" replace /> },
     ],

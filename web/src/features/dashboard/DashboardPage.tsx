@@ -68,7 +68,7 @@ export function DashboardPage() {
           </p>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="累計事件數" value={summary?.totalEvents ?? 0} unit="筆" />
-            <Stat label="累計停機時間" value={summary?.totalMinutes ?? 0} unit="分鐘" />
+            <Stat label="累計時間" value={summary?.totalMinutes ?? 0} unit="分鐘" />
             <Stat
               label="設備種類"
               value={meta.data.equipment.length}

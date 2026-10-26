@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { toast, type ExternalToast } from "sonner";
 import { errorMessage } from "./api";
 
@@ -16,7 +17,8 @@ export const notify = {
   /** 傳 Error（含 ApiError）會取它的訊息，伺服器回的 errors[] 會用「、」接起來。 */
   error(messageOrError: unknown, opts?: ExternalToast) {
     const message = typeof messageOrError === "string" ? messageOrError : errorMessage(messageOrError, "操作失敗");
-    return toast.error(message, { duration: ERROR_DURATION, ...opts });
+    // 容器是 aria-live="polite"（成功、進行中夠用）；錯誤要立刻被唸出來，所以訊息本身用 role="alert"（assertive）。
+    return toast.error(createElement("span", { role: "alert" }, message), { duration: ERROR_DURATION, ...opts });
   },
   info(message: string, opts?: ExternalToast) {
     return toast.info(message, { duration: SUCCESS_DURATION, ...opts });

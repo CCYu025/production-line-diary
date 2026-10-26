@@ -23,8 +23,8 @@ export function AlertDialogContent({
         className={cn(
           "fixed left-1/2 top-1/2 z-50 grid w-[calc(100vw-32px)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-4",
           "rounded-lg border border-line bg-surface-raised p-6 shadow-pop",
-          "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
-          "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          // 只淡入淡出、不縮放：縮放動畫期間量到的按鈕高度會小於 44px（0.95 倍），也比較不晃眼
+          "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
           className,
         )}
         {...props}

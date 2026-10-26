@@ -253,14 +253,43 @@
   --error-border: var(--critical);
   --border-radius: var(--radius-md);
 }
-/* sonner 的樣式是執行時才插入、順序在我們後面，所以選擇器要多一層才蓋得過去 */
-[data-sonner-toaster] [data-sonner-toast] [data-button] {
+/* sonner 的樣式是執行時才插入、順序在我們後面，所以選擇器要比它的更具體（它用 [data-styled=true]）才蓋得過去 */
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button] {
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 700;
 }
-[data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button] {
   background: var(--surface-raised);
   color: var(--ink-2);
   border-color: var(--line-strong);
+}
+
+/* 手機（< 768px）toast 上的按鈕：觸控目標至少 44×44px（〔復原〕、關閉鈕）。 */
+@media (max-width: 767px) {
+  [data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
+    padding-right: 52px;
+  }
+  [data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button] {
+    min-width: 44px;
+    height: 44px;
+    padding: 0 16px;
+    font-size: 14px;
+  }
+  /* 關閉鈕：從左上角的小圓鈕改成放進 toast 右上角的 44px 透明按鈕 */
+  [data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button] {
+    top: 0;
+    right: 0;
+    left: auto;
+    width: 44px;
+    height: 44px;
+    transform: none;
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+  }
+  [data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button] svg {
+    width: 16px;
+    height: 16px;
+  }
 }

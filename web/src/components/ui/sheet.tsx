@@ -6,7 +6,9 @@ import { cn } from "@/lib/utils";
 
 /**
  * 側邊／底部滑出面板（shadcn Sheet，底層是 Radix Dialog：焦點鎖定、Esc 關閉、
- * 關閉後焦點回到觸發元素）。詳情面板（右側 480px）與手機「更多」選單共用。
+ * 有 <SheetTrigger> 時關閉後焦點會自動回到觸發元素）。詳情面板（右側 480px）與手機「更多」選單共用。
+ * 注意：用 open／onOpenChange 受控、沒有 <SheetTrigger> 的用法，Radix 不知道焦點該還給誰（會掉到 body），
+ * 呼叫端要自己在 SheetContent 傳 onCloseAutoFocus，把焦點移回觸發按鈕（例如 MobileChrome 的「更多」）。
  */
 export const Sheet = SheetPrimitive.Root;
 export const SheetTrigger = SheetPrimitive.Trigger;
