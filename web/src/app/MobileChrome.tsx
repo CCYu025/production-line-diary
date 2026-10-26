@@ -11,7 +11,7 @@ import { useExportAction } from "./useExportAction";
 /** 手機（< 768px）頂部標題列：只放頁面標題（品牌字不換行成直排）。 */
 export function MobileTopBar({ title }: { title: string }) {
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center border-b border-line bg-page px-4 pt-[env(safe-area-inset-top)] md:hidden">
+    <header className="sticky top-0 z-30 flex h-14 items-center border-b border-line bg-page px-4 pt-[env(safe-area-inset-top)] md:hidden print:hidden">
       {/* 視覺標題；頁面真正的 <h1> 在 PageHeader（手機版僅供輔助科技讀取），避免標題重複 */}
       <p aria-hidden="true" className="truncate text-lg font-bold">
         {title}
@@ -100,7 +100,7 @@ export function MobileTabBar() {
     <>
       <nav
         aria-label="底部導覽"
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface-raised pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface-raised pb-[env(safe-area-inset-bottom)] md:hidden print:hidden"
       >
         <div className="mx-auto grid max-w-lg grid-cols-5">
           <Tab to="/dashboard" label="儀表板" icon={LayoutDashboard} />

@@ -42,10 +42,10 @@ export function AppShell() {
   }, [pathname]);
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-[1320px]">
+    <div className="mx-auto flex min-h-dvh max-w-[1320px] print:block print:min-h-0 print:max-w-none">
       <button
         type="button"
-        className="sr-only z-[60] rounded-md bg-accent px-4 py-2 font-bold text-accent-ink focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
+        className="sr-only z-[60] rounded-md bg-accent px-4 py-2 font-bold text-accent-ink focus:not-sr-only focus:fixed focus:left-3 focus:top-3 print:hidden"
         onClick={() => mainRef.current?.focus()}
       >
         跳到主要內容
@@ -57,7 +57,7 @@ export function AppShell() {
           id="main"
           ref={mainRef}
           tabIndex={-1}
-          className="min-w-0 flex-1 px-4 pb-28 pt-5 focus:outline-none md:px-7 md:pb-16 md:pt-6"
+          className="min-w-0 flex-1 px-4 pb-28 pt-5 focus:outline-none md:px-7 md:pb-16 md:pt-6 print:p-0"
         >
           <Outlet />
         </main>

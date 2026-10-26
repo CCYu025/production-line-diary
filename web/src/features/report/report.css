@@ -1,0 +1,546 @@
+/*
+ * 列印報表（#report-output）的版面。從舊 UI（frontend/index.html 的 Report 區段）忠實移植——
+ * 「報紙式」是使用者逐項選定過的設計，畫面必須與舊報表一致，只換實作方式。
+ *
+ * 為什麼是一份獨立的純 CSS、不寫成 Tailwind utility：
+ *   1. 「開新視窗」要把報表搬到另一個視窗，靠的是「報表 HTML ＋ 同一份樣式表」，class 名稱必須穩定。
+ *   2. 報紙風格是把語意 token（--ink-1 / --line / --accent…）在 #report-output 內「重新定義」成紙本配色達成的，
+ *      不是逐一覆寫每個元件（見 CLAUDE.md 的「報紙式排版」那條）。
+ *   3. 這份 CSS 沒有放進 @layer，所以一律壓過 Tailwind 的 preflight 與 utility，不會被它們改到。
+ *
+ * 容器查詢（@container）：排行表的窄版面看「報表內容寬度」，不是視窗寬度。
+ *   內容寬度 < 660px（App 內視窗縮小、手機）兩張表上下排；< 380px 連細條也省掉。
+ *   A4 列印的內容寬度約 688px（210mm − 14mm×2），剛好夠並排。
+ */
+
+/* ---------- 紙張容器：色彩 token 在這裡重新定義成紙本配色 ---------- */
+#report-output {
+  --page: #fbfaf6;
+  --surface: #fbfaf6;
+  --surface-raised: #fbfaf6;
+  --ink-1: #1a1a17;
+  --ink-2: #3c3b36;
+  --ink-muted: #6b6a61;
+  --line: #1a1a17;
+  --line-strong: #1a1a17;
+  --accent: #1a1a17;
+  background: var(--page);
+  color: var(--ink-1);
+  font-family: "Noto Serif TC", serif;
+  /* 舊 UI 的 body 沒有設行高與字級（瀏覽器預設 16px／normal）；新 App 的 body 是 15px／1.6，這裡明確還原，版面才會一樣 */
+  font-size: 16px;
+  line-height: normal;
+  padding: 34px 40px;
+  border: 1px solid var(--line-strong);
+  /* 紙張寬度固定置中。960 = 舊 App 的 max-width 1240 − 側邊欄 224 − main 左右 padding 56，
+     也就是 App 內報表本來就最寬的寬度；「開新視窗」沒有側邊欄，不鎖寬度的話會被拉滿
+     整個視窗，排版（尤其刊頭條與邊欄／主欄的比例）就跟 App 內不一樣了 */
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  container-type: inline-size;
+}
+#report-output *,
+#report-output *::before,
+#report-output *::after {
+  box-sizing: border-box;
+}
+
+.report-header {
+  border-bottom: 4px double var(--line-strong);
+  padding-bottom: 16px;
+  margin-bottom: 22px;
+}
+.report-header h2 {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+.report-header .meta {
+  font-size: 13.5px;
+  color: var(--ink-muted);
+  margin-top: 8px;
+  font-family: "IBM Plex Mono", monospace;
+  letter-spacing: 0.02em;
+}
+.report-empty {
+  color: var(--ink-muted);
+  font-size: 14px;
+  padding: 24px 0;
+  font-family: "Noto Sans TC", sans-serif;
+}
+
+/* ---------- KPI 卡片（事件數／累計時間／平均耗時／追蹤中） ---------- */
+.report-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+  margin: 22px 0 30px;
+}
+.report-summary .kpi-card {
+  background: var(--surface-raised);
+  border: none;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 16px 18px;
+}
+.report-summary .kpi-card:first-child {
+  border-left: none;
+}
+.report-summary .kpi-label {
+  font-family: "Noto Sans TC", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+.report-summary .kpi-value {
+  font-family: "IBM Plex Mono", "Noto Sans TC", monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 26px;
+  font-weight: 900;
+  margin-top: 6px;
+  line-height: 1;
+}
+.report-summary .kpi-value .unit {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-left: 3px;
+}
+.report-summary .kpi-sub {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  margin-top: 6px;
+}
+
+/* ---------- 統計區：兩張「排行表」（問題分類／設備） ----------
+   只列前 5 名、其餘併成「其他 n 項」，高度固定；多了「占比」「累計耗時」，
+   單日報表（每項都是 1 次）也不會像橫條圖那樣全部拉滿。 */
+.report-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 36px;
+  margin-bottom: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line-strong);
+}
+.rank-blk {
+  min-width: 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.rank-blk h4 {
+  margin: 0 0 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 2px solid var(--line-strong);
+  padding-bottom: 5px;
+  font-family: "Noto Sans TC", sans-serif;
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+}
+.rank-blk h4 em {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 500;
+  font-size: 11.5px;
+  font-style: normal;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}
+/* 排行表用 grid 排版而不是 <table>：數字欄寬度固定、「項目」欄（minmax(0,1fr)）吃剩下的寬度並用刪節號截斷，
+   名稱再長也不會把整張表撐出欄位外（<table> 的 width:100% 在這個容器查詢的容器裡會被算成紙張最大寬度，實測撐爆過）。 */
+.rank-tb {
+  font-family: "Noto Sans TC", sans-serif;
+}
+.rank-tb .rr {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 36px 46px 38px 62px;
+  column-gap: 6px;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px solid #e1dfd3;
+  font-size: 13px;
+}
+.rank-tb .rr.hd {
+  padding: 4px 0;
+  border-bottom: 1px solid #c9c7bb;
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--ink-muted);
+}
+.rank-tb .rk {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11.5px;
+  color: var(--ink-muted);
+}
+.rank-tb .nm {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rank-tb .bar i {
+  display: block;
+  height: 6px;
+  background: var(--ink-1);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.rank-tb .n,
+.rank-tb .p,
+.rank-tb .mn {
+  text-align: right;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.rank-tb .hd .n,
+.rank-tb .hd .p,
+.rank-tb .hd .mn {
+  font-family: "Noto Sans TC", sans-serif;
+  font-size: 10.5px;
+}
+.rank-tb .n {
+  font-weight: 600;
+}
+.rank-tb .p,
+.rank-tb .mn {
+  color: var(--ink-2);
+}
+.rank-tb small {
+  font-family: "Noto Sans TC", sans-serif;
+  font-weight: 500;
+  font-size: 10.5px;
+  margin-left: 1px;
+  color: var(--ink-muted);
+}
+.rank-tb .rr.rest {
+  color: var(--ink-muted);
+  font-style: italic;
+}
+.rank-tb .rr.rest .nm {
+  font-weight: 500;
+}
+@container (max-width: 659px) {
+  .report-stats {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+}
+@container (max-width: 380px) {
+  .rank-tb .rr {
+    grid-template-columns: 22px minmax(0, 1fr) 46px 38px 62px;
+  }
+  .rank-tb .bar {
+    display: none;
+  }
+}
+
+/* ---------- 紀錄明細 ----------
+   每筆是「邊欄式」版面：上方一條「刊頭條」（時間・設備・分類），下方左側窄邊欄放其餘「事實」
+   （班別、耗時、狀態、嚴重度、品號…），右側主欄依序是標題（＝問題）、處理、根本原因、照片格。
+   標題用「問題」而不是日期＋設備，因為讀報表的人要先知道「發生了什麼事」。 */
+.report-sec {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+  padding: 7px 0;
+  margin-top: 6px;
+  font-family: "Noto Sans TC", sans-serif;
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+.report-sec span:last-child {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}
+.report-day {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 26px 0 4px;
+  padding-bottom: 5px;
+  border-bottom: 2px solid var(--line-strong);
+  break-after: avoid;
+  page-break-after: avoid;
+}
+.report-day .dd {
+  font-weight: 900;
+  font-size: 19px;
+}
+.report-day .dm {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.report-record {
+  padding: 18px 0 22px;
+  border-bottom: 1px solid var(--line-strong);
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.report-day + .report-record,
+.report-sec + .report-record {
+  padding-top: 14px;
+}
+/* 刊頭條：時間、設備、分類是每筆紀錄最重要的辨識資訊，放在標題上方一條橫跨全寬、三格並排的資訊條，
+   用大字粗體（不再是標題上方一行灰色小字，掃讀時會被漏掉）。 */
+.rr-strip {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 1fr;
+  border-top: 2px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+  margin-bottom: 16px;
+}
+.rr-strip > div {
+  padding: 8px 16px;
+  border-left: 1px solid #c9c7bb;
+  min-width: 0;
+}
+.rr-strip > div:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+.rr-strip .v {
+  font-weight: 900;
+  font-size: 21px;
+  line-height: 1.25;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+.rr-strip .v.t {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+  font-size: 22px;
+}
+.rr-strip .v.t span {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--ink-muted);
+  margin-right: 8px;
+}
+.rr-cols {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: 26px;
+}
+.report-record .rr-side {
+  border-right: 1px solid var(--line-strong);
+  padding-right: 16px;
+}
+.report-record .rr-side .f {
+  padding: 9px 0;
+  border-bottom: 1px solid #c9c7bb;
+}
+.report-record .rr-side .f:first-child {
+  padding-top: 0;
+}
+.report-record .rr-side .f:last-child {
+  border-bottom: none;
+}
+.report-record .k {
+  color: var(--ink-muted);
+  font-family: "Noto Sans TC", sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+.report-record .rr-side .v {
+  font-family: "Noto Sans TC", sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+.report-record .rr-side .v.m {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+  font-size: 22px;
+}
+.report-record .rr-side .v.m small {
+  font-family: "Noto Sans TC", sans-serif;
+  font-weight: 500;
+  font-size: 11px;
+  margin-left: 2px;
+}
+.rr-sev {
+  font-family: "Noto Sans TC", sans-serif;
+  font-weight: 700;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+/* 嚴重度方塊的顏色：用 data-sev 對到語意 token（輕微綠、一般黃、嚴重橘、重大紅），不寫行內 style */
+.rr-sev i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  background: var(--ink-muted);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.rr-sev i[data-sev="輕微"] {
+  background: var(--good);
+}
+.rr-sev i[data-sev="一般"] {
+  background: var(--warning);
+}
+.rr-sev i[data-sev="嚴重"] {
+  background: var(--serious);
+}
+.rr-sev i[data-sev="重大"] {
+  background: var(--critical);
+}
+.report-record .rr-main {
+  min-width: 0;
+}
+.report-record .rr-head {
+  margin: 0 0 12px;
+  font-weight: 900;
+  font-size: 25px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.report-record .rr-block + .rr-block {
+  margin-top: 10px;
+}
+/* 「處理」「根本原因」可能是多行／條列（1. 2. 3.）：資料本身存著換行字元，顯示端必須 pre-wrap */
+.report-record .rr-block .txt {
+  margin: 3px 0 0;
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.report-record .rr-block .txt.none {
+  color: var(--ink-muted);
+}
+/* 照片依張數排成 1／2／3 欄的格子（n1…n6），圖說前面一律有「圖N」編號 */
+.rr-photos {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.rr-photos.n1 {
+  grid-template-columns: minmax(0, 400px);
+}
+.rr-photos.n2,
+.rr-photos.n4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.rr-photos.n3,
+.rr-photos.n5,
+.rr-photos.n6 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.rr-photos .rp-item {
+  margin: 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.rr-photos img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: 1px solid var(--line-strong);
+}
+.rr-photos .rp-cap {
+  margin-top: 5px;
+  font-family: "Noto Sans TC", sans-serif;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.rr-photos .rp-cap .fn {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--ink-1);
+  margin-right: 7px;
+  letter-spacing: 0.02em;
+}
+@media (max-width: 560px) {
+  .rr-cols {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .rr-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+  .rr-strip > div:first-child {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid #c9c7bb;
+  }
+  .rr-strip > div:nth-child(2) {
+    padding-left: 0;
+    border-left: none;
+  }
+  .report-record .rr-side {
+    border-right: none;
+    padding-right: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 22px;
+  }
+  .report-record .rr-side .f {
+    border-bottom: none;
+    padding: 0;
+  }
+  .rr-photos.n3,
+  .rr-photos.n5,
+  .rr-photos.n6 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---------- 列印 ----------
+   只有報表會印出來：App 外殼（側欄、手機頂欄／底部分頁列）在各自的元件上加了 print:hidden；
+   這裡負責「所有浮層」——position:fixed 的東西平常收在畫面外，但列印時每一頁都會重複
+   （曾經詳情面板左邊的 1px 邊線就印在每頁右緣，變成貫穿整頁的直線）。
+   **之後新增任何 fixed 浮層都要確認列印時是隱藏的**：portal 到 <body> 的（Radix Dialog/Sheet/Popover/燈箱）
+   由 `body > :not(#root)` 一次涵蓋；留在 #root 內的由 `.fixed` 與 sonner 的選擇器涵蓋。 */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  body > :not(#root),
+  #root .fixed,
+  [data-sonner-toaster],
+  [role="dialog"],
+  [role="alertdialog"],
+  [data-radix-popper-content-wrapper] {
+    display: none !important;
+  }
+  #report-output {
+    border: none;
+    padding: 0;
+    max-width: none;
+  }
+  .report-record {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

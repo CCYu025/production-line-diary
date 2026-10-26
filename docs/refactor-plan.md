@@ -220,4 +220,4 @@ App 每天在用，重構期間舊 UI 仍是正式版，所以 bug 先修在現�
 | WP3a 儀表板／列表／詳情 | `feat/web-dashboard-records` | #36 | 已完成 |
 | WP3b 紀錄表單 | `feat/web-record-form` | #35 | 已完成 |
 | WP3c 日曆／回收桶／設定 | `feat/web-calendar-trash-settings` | #34 | 已完成 |
-| WP3d 報表＋切換 | `feat/web-report-cutover` | — | 未開始 |
+| WP3d 報表＋切換 | `feat/web-report-cutover` | #37 | Phase A 已完成，Phase B 進行中 |
