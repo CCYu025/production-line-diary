@@ -1,0 +1,81 @@
+import { emptyFilter } from "@shared/aggregate";
+import { describe, expect, it } from "vitest";
+import { applyRecordFilter, parseRecordFilter, recordFilterToParams } from "./urlQuery";
+
+const parse = (qs: string) => parseRecordFilter(new URLSearchParams(qs));
+
+describe("urlQuery: parseRecordFilter", () => {
+  it("沒有任何 query = 空的篩選條件", () => {
+    expect(parse("")).toEqual(emptyFilter());
+  });
+
+  it("讀取各維度；陣列用重複的 key", () => {
+    const f = parse("equipment=F3&equipment=F4&category=缺料&severity=嚴重&status=待處理&from=2026-10-01&to=2026-10-26&q=卡料&problem=取料失敗");
+    expect(f).toEqual({
+      equipment: ["F3", "F4"],
+      category: ["缺料"],
+      severity: "嚴重",
+      status: "待處理",
+      problem: "取料失敗",
+      from: "2026-10-01",
+      to: "2026-10-26",
+      query: "卡料",
+    });
+  });
+
+  it("無法辨識的值直接忽略，不丟錯", () => {
+    const f = parse("severity=超嚴重&status=done&from=yesterday&to=2026/10/26&equipment=&equipment=%20");
+    expect(f).toEqual(emptyFilter());
+  });
+
+  it("陣列去重、去空白", () => {
+    expect(parse("equipment=F3&equipment=F3&equipment=%20F4%20").equipment).toEqual(["F3", "F4"]);
+  });
+
+  it("名稱含逗號、& 、空白的設備可以來回而不被拆開", () => {
+    const f = { ...emptyFilter(), equipment: ["F3,F4", "A&B", "原材區 1"] };
+    expect(parseRecordFilter(recordFilterToParams(f))).toEqual(f);
+  });
+});
+
+describe("urlQuery: 寫回網址", () => {
+  it("預設值（空）不會寫進網址", () => {
+    expect(recordFilterToParams(emptyFilter()).toString()).toBe("");
+  });
+
+  it("只寫有值的欄位", () => {
+    const f = { ...emptyFilter(), status: "追蹤中" as const, query: "卡料" };
+    const params = recordFilterToParams(f);
+    expect([...params.keys()].sort()).toEqual(["q", "status"]);
+    expect(params.get("status")).toBe("追蹤中");
+  });
+
+  it("parse(write(f)) 還原原本的條件", () => {
+    const f = {
+      equipment: ["F3", "RB2"],
+      category: ["取料異常"],
+      severity: "重大" as const,
+      status: "已解決" as const,
+      problem: "吸嘴堵塞",
+      from: "2026-10-01",
+      to: "2026-10-31",
+      query: "a b",
+    };
+    expect(parseRecordFilter(recordFilterToParams(f))).toEqual(f);
+  });
+
+  it("applyRecordFilter 保留不相關的 query，並且會清掉舊的篩選值", () => {
+    const base = new URLSearchParams("open=12&status=待處理&equipment=F3");
+    const next = applyRecordFilter(base, { ...emptyFilter(), severity: "嚴重" });
+    expect(next.get("open")).toBe("12");
+    expect(next.get("severity")).toBe("嚴重");
+    expect(next.has("status")).toBe(false);
+    expect(next.has("equipment")).toBe(false);
+  });
+
+  it("不會改動傳入的 base", () => {
+    const base = new URLSearchParams("status=待處理");
+    applyRecordFilter(base, emptyFilter());
+    expect(base.get("status")).toBe("待處理");
+  });
+});
