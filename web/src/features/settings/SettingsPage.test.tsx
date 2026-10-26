@@ -147,30 +147,47 @@ describe("設備對照設定：編輯與儲存", () => {
 });
 
 describe("設備對照設定：未儲存變更提示", () => {
-  it("沒動時顯示「所有變更都已儲存」；改了顯示「有未儲存的變更」；存檔後恢復", async () => {
+  it("第一次打開：預設機台列還沒存，如實說明（不說「所有變更都已儲存」）；改了顯示「有未儲存的變更」；存檔後恢復", async () => {
     const user = userEvent.setup();
     setup();
     await screen.findByRole("button", { name: "儲存對照表" });
-    expect(screen.getByText("所有變更都已儲存")).toBeInTheDocument();
+    expect(screen.getByText(/預設機台列尚未儲存/)).toBeInTheDocument();
+    expect(screen.queryByText("所有變更都已儲存")).toBeNull();
 
     await user.type(screen.getAllByPlaceholderText("品號")[0]!, "P-1");
     expect(screen.getByText("有未儲存的變更")).toBeInTheDocument();
+    expect(screen.queryByText(/預設機台列尚未儲存/)).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "儲存對照表" }));
     expect(await screen.findByText("所有變更都已儲存")).toBeInTheDocument();
   });
 
-  it("只新增還沒填的空白列，不算變更", async () => {
+  it("已儲存的對照表已含六台預設機台：一開始就是「所有變更都已儲存」", async () => {
+    setup(
+      meta({
+        equipmentMap: ["F3", "F4", "G5", "G6", "F7", "F8"].map((equipment) => ({
+          equipment,
+          productCode: null,
+          materialCategory: null,
+        })),
+      }),
+    );
+    await screen.findByRole("button", { name: "儲存對照表" });
+    expect(screen.getByText("所有變更都已儲存")).toBeInTheDocument();
+  });
+
+  it("只新增還沒填的空白列，不算變更（仍是預設列尚未儲存的提示）", async () => {
     const user = userEvent.setup();
     setup();
     await screen.findByRole("button", { name: "儲存對照表" });
     await user.click(screen.getByRole("button", { name: "新增一列" }));
-    expect(screen.getByText("所有變更都已儲存")).toBeInTheDocument();
+    expect(screen.queryByText("有未儲存的變更")).toBeNull();
+    expect(screen.getByText(/預設機台列尚未儲存/)).toBeInTheDocument();
   });
 });
 
 describe("設備對照設定：離開頁面前的確認", () => {
-  it("沒有變更：直接離開，不問", async () => {
+  it("沒有變更（只有尚未儲存的預設機台列）：直接離開，不問", async () => {
     const user = userEvent.setup();
     setup();
     await screen.findByRole("button", { name: "儲存對照表" });

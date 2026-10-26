@@ -121,17 +121,18 @@ export function CalendarPage() {
                       if (!cell) return <td key={di} aria-hidden="true" />;
                       const count = countByDate.get(cell.date) ?? 0;
                       const isToday = cell.date === today;
-                      const todayRing = isToday && "ring-2 ring-inset ring-accent-text";
+                      // 今天：日期數字加粗＋底線（不用外框——外框會跟鍵盤焦點環混在一起）
+                      const todayNum = isToday && "font-bold underline decoration-2 underline-offset-2";
                       const dayLabel = `${month.month} 月 ${cell.day} 日${isToday ? "（今天）" : ""}`;
                       if (count === 0) {
                         return (
                           <td key={di} className="p-0 align-top">
                             <div
-                              className={cn(cellBase, "border border-line bg-surface text-ink-2", todayRing)}
+                              className={cn(cellBase, "border border-line bg-surface text-ink-2")}
                               aria-current={isToday ? "date" : undefined}
                               aria-label={`${dayLabel}，無紀錄`}
                             >
-                              <span className="num text-xs md:text-sm">{cell.day}</span>
+                              <span className={cn("num text-xs md:text-sm", todayNum)}>{cell.day}</span>
                             </div>
                           </td>
                         );
@@ -147,13 +148,12 @@ export function CalendarPage() {
                               cellBase,
                               "cursor-pointer transition-[filter] hover:brightness-110",
                               STEP_CLASS[step],
-                              todayRing,
                             )}
                             aria-current={isToday ? "date" : undefined}
                             aria-label={`${dayLabel}，${count} 筆紀錄，查看當日紀錄`}
                             onClick={() => drillTo(cell.date)}
                           >
-                            <span className="num text-xs opacity-90 md:text-sm" aria-hidden="true">
+                            <span className={cn("num text-xs opacity-90 md:text-sm", todayNum)} aria-hidden="true">
                               {cell.day}
                             </span>
                             <span
@@ -177,7 +177,7 @@ export function CalendarPage() {
             <span>事件次數：</span>
             <Swatch className="border border-line bg-surface" label="無紀錄" />
             <Swatch className="bg-seq-300" label="較少" />
-            <Swatch className="bg-seq-600" label="較多" />
+            <Swatch className="bg-seq-700" label="較多" />
           </div>
         </div>
       )}

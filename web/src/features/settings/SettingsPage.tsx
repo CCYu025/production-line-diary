@@ -49,10 +49,16 @@ function EquipmentMapForm({ meta }: { meta: Meta }) {
   const nextKey = React.useCallback(() => ++keyRef.current, []);
 
   const [rows, setRows] = React.useState<DraftRow[]>(() => composeDraft(meta.equipmentMap, nextKey));
-  // 「已儲存的基準」：第一次打開時是組好的草稿（沒動就不算變更）；存檔成功後換成伺服器回傳的內容。
+  // 兩個基準：
+  //  - baseline：使用者「開始編輯前」的樣子（第一次打開是組好的草稿）。跟它不同 = 使用者動過 = 離開前要確認。
+  //  - savedSig：伺服器上「真的存著」的內容。第一次打開時草稿多出來的預設機台列還沒存，跟它不同但使用者沒動過，
+  //    只提示、不攔截離開。存檔成功後兩者都換成伺服器回傳的內容。
   const [baseline, setBaseline] = React.useState(() => draftSignature(rows));
+  const [savedSig, setSavedSig] = React.useState(() => draftSignature(draftFromSaved(meta.equipmentMap, nextKey)));
   const [errors, setErrors] = React.useState<string[]>([]);
-  const dirty = draftSignature(rows) !== baseline;
+  const signature = draftSignature(rows);
+  const dirty = signature !== baseline;
+  const defaultsNotSaved = !dirty && signature !== savedSig;
   const pendingFocus = React.useRef<string | null>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
 
@@ -116,6 +122,7 @@ function EquipmentMapForm({ meta }: { meta: Meta }) {
       const next = draftFromSaved(saved, nextKey);
       setRows(next);
       setBaseline(draftSignature(next));
+      setSavedSig(draftSignature(next));
       notify.success("已儲存對照表");
     } catch (err) {
       // 伺服器的驗證訊息（400）留在表單上不會消失；其他（斷線、500）用錯誤 toast
@@ -256,6 +263,8 @@ function EquipmentMapForm({ meta }: { meta: Meta }) {
               <span aria-hidden="true" className="size-2 rounded-full bg-warning" />
               有未儲存的變更
             </span>
+          ) : defaultsNotSaved ? (
+            <span className="text-ink-2">預設機台列尚未儲存，按「儲存對照表」才會寫入</span>
           ) : (
             <span className="text-ink-muted">所有變更都已儲存</span>
           )}

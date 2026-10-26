@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { ErrorState } from "@/components/ErrorState";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -5,6 +6,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { notify } from "@/lib/feedback";
+import { invalidateRecordData } from "@/lib/queryKeys";
 import { usePurgeRecord, useRecords, useRestoreRecord } from "@/lib/queries";
 import type { DiaryRecord } from "@/lib/types";
 import { useMediaQuery } from "@/lib/useMediaQuery";
@@ -19,6 +21,7 @@ export function TrashPage() {
   const restore = useRestoreRecord();
   const purge = usePurgeRecord();
   const confirm = useConfirm();
+  const queryClient = useQueryClient();
   const isWide = useMediaQuery("(min-width: 768px)");
   const [busyId, setBusyId] = React.useState<number | null>(null);
   const regionRef = React.useRef<HTMLDivElement>(null);
@@ -43,6 +46,8 @@ export function TrashPage() {
       refocusRegion();
     } catch (err) {
       notify.error(err);
+      // 失敗常見原因是畫面已經過期（別處已復原／已永久刪除）：重抓，過期的那一列才會消失
+      void invalidateRecordData(queryClient);
     } finally {
       setBusyId(null);
     }
@@ -71,6 +76,8 @@ export function TrashPage() {
       refocusRegion();
     } catch (err) {
       notify.error(err);
+      // 失敗常見原因是畫面已經過期（別處已復原／已永久刪除）：重抓，過期的那一列才會消失
+      void invalidateRecordData(queryClient);
     } finally {
       setBusyId(null);
     }

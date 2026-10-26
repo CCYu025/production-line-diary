@@ -76,15 +76,17 @@ export function colorStep(count: number, max: number): ColorStep {
 }
 
 /**
- * 每個色階的底色與文字色。文字色用「會跟著淺／深色主題翻轉」的 token，兩套主題對比度都 ≥ 4.5:1：
- *   淺色 seq-300 配 ink-1（黑）；seq-450／600 配 accent-ink（白）
- *   深色 seq-300（深藍）配 ink-1（白）；seq-450／600（亮藍）配 accent-ink（黑）
+ * 每個色階的底色與文字色。文字色用「會跟著淺／深色主題翻轉」的 token，兩套主題的對比度都 ≥ 4.5:1
+ * （web/src/test/contrast.test.ts 直接檢查這張表，調色票或改這裡時會把關）：
+ *   淺色 seq-300（淺藍）配 ink-1（黑）；seq-500／700（深藍）配 accent-ink（白）
+ *   深色 seq-300（深藍）配 ink-1（白）；seq-500／700（亮藍）配 accent-ink（黑）
+ * 中間色階用 seq-500 而不是 seq-450：淺色 seq-450 配白字只有 4.42:1。
  * Tailwind 要在原始碼看得到完整 class 名稱，所以是對照表。
  */
 export const STEP_CLASS: Record<ColorStep, string> = {
   1: "bg-seq-300 text-ink-1",
-  2: "bg-seq-450 text-accent-ink",
-  3: "bg-seq-600 text-accent-ink",
+  2: "bg-seq-500 text-accent-ink",
+  3: "bg-seq-700 text-accent-ink",
 };
 
 export function todayIso(now = new Date()): string {

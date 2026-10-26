@@ -58,8 +58,8 @@ describe("colorStep（與舊 UI 同樣的門檻：> 0.7、> 0.4、其餘）", ()
   it("每個色階都有底色與會翻轉的文字色 token", () => {
     expect(STEP_CLASS[1]).toContain("bg-seq-300");
     expect(STEP_CLASS[1]).toContain("text-ink-1");
-    expect(STEP_CLASS[2]).toContain("bg-seq-450");
-    expect(STEP_CLASS[3]).toContain("bg-seq-600");
+    expect(STEP_CLASS[2]).toContain("bg-seq-500");
+    expect(STEP_CLASS[3]).toContain("bg-seq-700");
     expect(STEP_CLASS[2]).toContain("text-accent-ink");
     expect(STEP_CLASS[3]).toContain("text-accent-ink");
   });

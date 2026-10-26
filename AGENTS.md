@@ -367,7 +367,7 @@ npm run dev:web         # 開發新介面：Vite 熱更新（見下方）
 npm run check      # 後端 node --check 語法檢查
 npm test           # 後端 node:test（test/**/*.test.js），目前 156 個測試
 npm run typecheck  # 新前端 tsc --noEmit（strict）
-npm run test:web   # 新前端 Vitest（jsdom + Testing Library），目前 70 個測試（9 個檔案）
+npm run test:web   # 新前端 Vitest（jsdom + Testing Library），目前 134 個測試（14 個檔案）
 npm run build      # 新前端 vite build → web/dist
 ```
 

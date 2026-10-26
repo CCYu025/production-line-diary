@@ -102,7 +102,7 @@ describe("日曆：次數與顏色", () => {
     expect(b14).toHaveAttribute("data-step", "3");
     expect(b6).toHaveAttribute("data-step", "3");
     expect(b6).toHaveTextContent("5");
-    expect(b6.className).toContain("bg-seq-600");
+    expect(b6.className).toContain("bg-seq-700");
     expect(b6.className).toContain("text-accent-ink");
     expect(b5.className).toContain("bg-seq-300");
     expect(b5.className).toContain("text-ink-1");

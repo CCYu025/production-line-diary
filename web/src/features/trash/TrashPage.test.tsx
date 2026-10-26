@@ -72,7 +72,7 @@ function setup(initial: DiaryRecord[], opts: { wide?: boolean } = {}) {
       </MemoryRouter>
     </Providers>,
   );
-  return { restoreSpy, purgeSpy };
+  return { restoreSpy, purgeSpy, store };
 }
 
 afterEach(() => {
@@ -150,6 +150,36 @@ describe("回收桶：復原", () => {
     await user.click(screen.getByRole("button", { name: /^復原：.*第一筆/ }));
     expect(await screen.findByRole("alert")).toHaveTextContent("找不到這筆紀錄");
     expect(screen.getByText("第一筆")).toBeInTheDocument();
+  });
+});
+
+describe("回收桶：失敗時重抓（畫面過期）", () => {
+  it("復原時紀錄其實已被別處永久刪除（404）：錯誤 toast ＋ 過期的那一列消失、徽章更新", async () => {
+    const user = userEvent.setup();
+    const { restoreSpy, store } = setup(THREE());
+    restoreSpy.mockImplementationOnce(async (id) => {
+      store.splice(store.findIndex((x) => x.id === id), 1); // 別處已永久刪除
+      throw new ApiError({ status: 404, errors: ["找不到這筆紀錄"], kind: "http" });
+    });
+    await screen.findAllByRole("listitem");
+    await user.click(screen.getByRole("button", { name: /^復原：.*第一筆/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("找不到這筆紀錄");
+    await waitFor(() => expect(screen.queryByText("第一筆")).toBeNull());
+    expect(screen.getByLabelText("回收桶筆數")).toHaveTextContent("2");
+  });
+
+  it("永久刪除時紀錄已被別處復原（409）：錯誤 toast ＋ 那一列消失", async () => {
+    const user = userEvent.setup();
+    const { purgeSpy, store } = setup(THREE());
+    purgeSpy.mockImplementationOnce(async (id) => {
+      store.find((x) => x.id === id)!.deleted = false; // 別處已復原
+      throw new ApiError({ status: 409, errors: ["只有回收桶裡的紀錄可以永久刪除"], kind: "http" });
+    });
+    await screen.findAllByRole("listitem");
+    await user.click(screen.getByRole("button", { name: /^永久刪除：.*第二筆/ }));
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "永久刪除" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("只有回收桶裡的紀錄可以永久刪除");
+    await waitFor(() => expect(screen.queryByText("第二筆")).toBeNull());
   });
 });
 
