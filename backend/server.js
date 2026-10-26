@@ -79,6 +79,9 @@ app.use("/api", (req, res, next) => {
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "..", "frontend")));
+// 新 UI（web/ 以 Vite 建置出 web/dist）暫時掛在 /next/，`/` 仍是舊 UI，直到切換（見 docs/refactor-plan.md）。
+// express.static 每次請求才解析路徑，所以 web/dist 還不存在也能掛上去、之後建置完不用重啟。
+app.use("/next", express.static(path.join(__dirname, "..", "web", "dist")));
 app.use("/lib", express.static(path.join(__dirname, "lib")));
 // 這個 static middleware 在啟動當下就算資料夾還不存在也能掛上去——
 // express.static 是在「每次收到請求」時才去解析檔案路徑，不是啟動當下就掃描整個資料夾，

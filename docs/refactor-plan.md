@@ -216,7 +216,7 @@ App 每天在用，重構期間舊 UI 仍是正式版，所以 bug 先修在現�
 | 計畫書 | `docs/refactor-plan` | — | 已完成 |
 | WP1a 正確性修正 | `fix/correctness` | #31 | 已完成 |
 | WP1b 後端強化 | `fix/backend-hardening` | #32 | 已完成 |
-| WP2 新前端基礎 | `feat/web-foundation` | — | 未開始 |
+| WP2 新前端基礎 | `feat/web-foundation` | #PRNUM | 進行中 |
 | WP3a 儀表板／列表／詳情 | `feat/web-dashboard-records` | — | 未開始 |
 | WP3b 紀錄表單 | `feat/web-record-form` | — | 未開始 |
 | WP3c 日曆／回收桶／設定 | `feat/web-calendar-trash-settings` | — | 未開始 |

@@ -20,6 +20,14 @@ jobs:
 
       - run: npm ci
 
+      # 後端
       - run: npm run check
 
       - run: npm test
+
+      # 新前端（web/）
+      - run: npm run typecheck
+
+      - run: npm run test:web
+
+      - run: npm run build

@@ -22,3 +22,6 @@ coverage/
 
 # 用範例資料夾當 DATA_DIR 時自動產生的每日備份
 backend/data/example/backups/
+
+# 新前端建置輸出（npm run build / npm start 會自動產生）
+web/dist/
