@@ -1,34 +1,65 @@
 import { ExternalLink, FileText, Printer } from "lucide-react";
 import * as React from "react";
+import { useSearchParams } from "react-router-dom";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { notify } from "@/lib/feedback";
 import { useRecords } from "@/lib/queries";
+import type { DiaryRecord } from "@/lib/types";
 import { ReportDocument, type ReportData } from "./ReportDocument";
 import {
   defaultReportRange,
   formatGeneratedAt,
+  parseReportRangeParams,
   selectReportRecords,
   validateReportRange,
+  type ReportRange,
 } from "./reportModel";
 import { openReportWindow } from "./reportWindow";
 
 const dateInputClass =
   "num h-11 w-full min-w-0 rounded-md border border-line-strong bg-surface-raised px-3 text-sm text-ink-1 md:h-10";
 
+function snapshot(records: readonly DiaryRecord[], range: ReportRange): ReportData {
+  return { ...range, records: selectReportRecords(records, range), generatedAt: formatGeneratedAt(new Date()) };
+}
+
 /**
  * 列印報表（docs/refactor-plan.md §4 U9）：選日期範圍 → 產生報表 → 列印／另存 PDF 或開新視窗。
  * 列印走瀏覽器內建的 window.print()（不裝 PDF／canvas 函式庫，理由見 CLAUDE.md）；
  * 列印時整個 App 外殼與所有浮層都隱藏，只印 #report-output（見 report.css 的 @media print）。
- * 報表是「按下產生當下」的快照——之後資料變動不會自己改，要重新按「產生報表」（與舊 UI 相同）。
+ *
+ * 範圍放在網址（`#/report?from=…&to=…`）：按「產生報表」會把範圍寫進網址（push，上一頁可回到上一份報表），
+ * 網址上有合法的範圍就自動產生——所以離開再回來、上一頁／下一頁、重新整理、書籤都還原得了報表（舊 UI 切頁後還在）。
+ * 報表仍是「產生當下」的快照：資料之後變動不會自己改（還原時等於重新按一次「產生報表」，產出時間會更新）。
  */
 export function ReportPage() {
   const { data: records, isPending, isError, error, refetch, isRefetching } = useRecords();
-  // 預設日期＝今天的本地日期（不是 UTC）
-  const [range, setRange] = React.useState(() => defaultReportRange());
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlRange = parseReportRangeParams(searchParams);
+  // 輸入框的值：網址有範圍就用網址的，否則預設今天的本地日期（不是 UTC）
+  const [range, setRange] = React.useState<ReportRange>(() => urlRange ?? defaultReportRange());
   const [report, setReport] = React.useState<ReportData | null>(null);
   const reportRef = React.useRef<HTMLDivElement>(null);
+  const recordsRef = React.useRef(records);
+  recordsRef.current = records;
+  const hasRecords = records !== undefined;
+  const urlStart = urlRange?.start;
+  const urlEnd = urlRange?.end;
+
+  // 網址 → 輸入框＋報表。只在「網址的範圍」或「資料第一次載入完成」時跑，資料之後重抓不會讓報表自己改。
+  // 自己按「產生報表」造成的網址變動，報表已經是那個範圍，不會重複產生。
+  React.useEffect(() => {
+    if (urlStart === undefined || urlEnd === undefined) {
+      setReport(null);
+      return;
+    }
+    setRange((r) => (r.start === urlStart && r.end === urlEnd ? r : { start: urlStart, end: urlEnd }));
+    const all = recordsRef.current;
+    if (!all) return;
+    setReport((cur) => (cur && cur.start === urlStart && cur.end === urlEnd ? cur : snapshot(all, { start: urlStart, end: urlEnd })));
+  }, [urlStart, urlEnd, hasRecords]);
 
   function generate() {
     if (!records) return;
@@ -37,11 +68,11 @@ export function ReportPage() {
       notify.error(problem);
       return;
     }
-    setReport({
-      ...range,
-      records: selectReportRecords(records, range),
-      generatedAt: formatGeneratedAt(new Date()),
-    });
+    // 重新按同一個範圍＝重新產生（更新資料與產出時間）；換範圍就寫進網址，effect 會接手顯示
+    setReport(snapshot(records, range));
+    if (urlStart !== range.start || urlEnd !== range.end) {
+      setSearchParams({ from: range.start, to: range.end });
+    }
   }
 
   const printable = report !== null && report.records.length > 0;

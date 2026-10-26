@@ -30,6 +30,19 @@ export function defaultReportRange(now: Date = new Date()): ReportRange {
   return { start: today, end: today };
 }
 
+const DATE_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+
+/**
+ * 網址上的 `?from=YYYY-MM-DD&to=YYYY-MM-DD`：兩個都有、格式正確、起 <= 迄才算（否則 null，不自動產生）。
+ * 報表的範圍放在網址上，瀏覽器上一頁／下一頁、離開再回來才能還原報表（舊 UI 切頁後還在）。
+ */
+export function parseReportRangeParams(params: URLSearchParams): ReportRange | null {
+  const start = params.get("from") ?? "";
+  const end = params.get("to") ?? "";
+  if (!DATE_RE.test(start) || !DATE_RE.test(end) || start > end) return null;
+  return { start, end };
+}
+
 /** 起訖驗證；回傳要顯示給使用者的錯誤訊息，沒問題回 null（訊息與舊 UI 相同）。 */
 export function validateReportRange({ start, end }: ReportRange): string | null {
   if (!start || !end) return "請選擇起訖日期";

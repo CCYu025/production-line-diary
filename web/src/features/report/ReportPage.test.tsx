@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers } from "@/app/Providers";
 import { api } from "@/lib/api";
@@ -9,14 +9,28 @@ import { makeRecord } from "@/test/recordsHarness";
 import type { DiaryRecord } from "@/lib/types";
 import { ReportPage } from "./ReportPage";
 
-function setup(records: DiaryRecord[]) {
+function Probe() {
+  const loc = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output data-testid="loc">{loc.pathname + loc.search}</output>
+      <button type="button" onClick={() => navigate(-1)}>
+        back
+      </button>
+    </>
+  );
+}
+
+function setup(records: DiaryRecord[], entries: string[] = ["/report"]) {
   vi.spyOn(api, "listRecords").mockResolvedValue(records);
   const client = createQueryClient();
   client.setDefaultOptions({ queries: { retry: false } });
   return render(
     <Providers client={client}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
         <ReportPage />
+        <Probe />
       </MemoryRouter>
     </Providers>,
   );
@@ -137,5 +151,66 @@ describe("ReportPage", () => {
 
     await user.click(screen.getByRole("button", { name: "開新視窗（方便截圖）" }));
     expect(await screen.findByText("瀏覽器擋住了新視窗，請允許彈出視窗後再試一次")).toBeInTheDocument();
+  });
+
+  describe("範圍放在網址（離開再回來、上一頁都還原得了報表）", () => {
+    const loc = () => screen.getByTestId("loc").textContent;
+
+    it("網址有合法範圍：自動產生報表、輸入框跟著網址", async () => {
+      setup(recs, ["/report?from=2026-10-25&to=2026-10-26"]);
+      await waitFor(() => expect(document.querySelector("#report-output")).not.toBeNull());
+      expect(startInput().value).toBe("2026-10-25");
+      expect(endInput().value).toBe("2026-10-26");
+      const out = document.querySelector("#report-output") as HTMLElement;
+      expect(out.textContent).toContain("今天的問題");
+      expect(out.textContent).toContain("昨天的問題");
+      expect(screen.getByRole("button", { name: "列印／另存 PDF" })).toBeEnabled();
+    });
+
+    it("按「產生報表」把範圍寫進網址（push）；上一頁回到沒有報表的狀態", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      setup(recs);
+      await ready();
+      await user.click(generateBtn());
+      expect(loc()).toBe("/report?from=2026-10-26&to=2026-10-26");
+      expect(document.querySelector("#report-output")).not.toBeNull();
+      await user.click(screen.getByRole("button", { name: "back" }));
+      expect(loc()).toBe("/report");
+      expect(document.querySelector("#report-output")).toBeNull();
+    });
+
+    it("產生兩份不同範圍後上一頁，還原前一份報表", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      setup(recs);
+      await ready();
+      await user.click(generateBtn()); // 10/26
+      await user.clear(startInput());
+      await user.type(startInput(), "2026-10-25");
+      await user.click(generateBtn()); // 10/25 ～ 10/26
+      expect((document.querySelector("#report-output") as HTMLElement).textContent).toContain("昨天的問題");
+      await user.click(screen.getByRole("button", { name: "back" }));
+      await waitFor(() => expect(startInput().value).toBe("2026-10-26"));
+      const out = document.querySelector("#report-output") as HTMLElement;
+      expect(out.textContent).toContain("今天的問題");
+      expect(out.textContent).not.toContain("昨天的問題");
+    });
+
+    it("網址範圍不合法（起 > 迄、格式錯）：不自動產生", async () => {
+      setup(recs, ["/report?from=2026-10-26&to=2026-10-20"]);
+      await ready();
+      expect(document.querySelector("#report-output")).toBeNull();
+      expect(startInput().value).toBe("2026-10-26"); // 預設值（網址不合法就不採用）
+    });
+
+    it("重新按同一個範圍：重新產生但不新增瀏覽歷史", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      setup(recs, ["/report?from=2026-10-26&to=2026-10-26"]);
+      await waitFor(() => expect(document.querySelector("#report-output")).not.toBeNull());
+      await user.click(generateBtn());
+      expect(loc()).toBe("/report?from=2026-10-26&to=2026-10-26");
+      await user.click(screen.getByRole("button", { name: "back" }));
+      // 只有一筆歷史（MemoryRouter 的 -1 到頭），網址不變
+      expect(loc()).toBe("/report?from=2026-10-26&to=2026-10-26");
+    });
   });
 });

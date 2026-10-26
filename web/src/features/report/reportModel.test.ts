@@ -11,6 +11,7 @@ import {
   dayHeader,
   defaultReportRange,
   formatGeneratedAt,
+  parseReportRangeParams,
   groupByDay,
   photoGridClass,
   rangeLabel,
@@ -40,6 +41,22 @@ describe("validateReportRange", () => {
     expect(validateReportRange({ start: "2026-10-26", end: "" })).toBe("請選擇起訖日期");
     expect(validateReportRange({ start: "2026-10-27", end: "2026-10-26" })).toBe("起始日期不能晚於結束日期");
     expect(validateReportRange({ start: "2026-10-26", end: "2026-10-26" })).toBeNull();
+  });
+});
+
+describe("parseReportRangeParams（網址上的範圍）", () => {
+  const p = (q: string) => parseReportRangeParams(new URLSearchParams(q));
+  it("兩個都有、格式正確、起 <= 迄才算", () => {
+    expect(p("from=2026-10-20&to=2026-10-26")).toEqual({ start: "2026-10-20", end: "2026-10-26" });
+    expect(p("from=2026-10-26&to=2026-10-26")).toEqual({ start: "2026-10-26", end: "2026-10-26" });
+  });
+  it("缺一個、格式錯、起 > 迄都是 null", () => {
+    expect(p("")).toBeNull();
+    expect(p("from=2026-10-20")).toBeNull();
+    expect(p("to=2026-10-20")).toBeNull();
+    expect(p("from=2026-1-2&to=2026-10-26")).toBeNull();
+    expect(p("from=abc&to=2026-10-26")).toBeNull();
+    expect(p("from=2026-10-27&to=2026-10-26")).toBeNull();
   });
 });
 
