@@ -13,6 +13,28 @@ import { existsSync } from "node:fs";
 import { rm, mkdir, rename, readdir, stat } from "node:fs/promises";
 import { dateToPhotoFolder } from "./store.js";
 
+/**
+ * 縱深防禦：把 (base, ...parts) 解析成絕對路徑，並確認結果仍在 base 底下。
+ * 任何一段含有 ".." 或絕對路徑而跑出去，就丟錯，不做任何檔案操作。
+ */
+export function resolveInside(base, ...parts) {
+  const root = path.resolve(base);
+  const target = path.resolve(root, ...parts);
+  if (target === root || !target.startsWith(root + path.sep)) {
+    throw new Error("不合法的照片路徑");
+  }
+  return target;
+}
+
+/** 照片檔案是否存在於 <photosDir>/<date 去掉 "-">/<filename>。路徑不合法一律視為不存在。 */
+export function photoFileExists(photosDir, date, filename) {
+  try {
+    return existsSync(resolveInside(photosDir, dateToPhotoFolder(date), filename));
+  } catch {
+    return false;
+  }
+}
+
 export function isPhotoReferenced(records, date, filename) {
   return records.some((r) => r.date === date && (r.photos || []).includes(filename));
 }
@@ -23,7 +45,7 @@ export function isPhotoReferenced(records, date, filename) {
  */
 export async function deleteUnreferencedPhoto(photosDir, records, date, filename) {
   if (isPhotoReferenced(records, date, filename)) return false;
-  const file = path.join(photosDir, dateToPhotoFolder(date), filename);
+  const file = resolveInside(photosDir, dateToPhotoFolder(date), filename);
   if (existsSync(file)) {
     await rm(file, { force: true });
     return true;
@@ -37,8 +59,13 @@ export async function deleteUnreferencedPhoto(photosDir, records, date, filename
  */
 export async function movePhotosForDateChange(photosDir, oldDate, newDate, filenames) {
   if (oldDate === newDate || !filenames.length) return;
-  const oldDir = path.join(photosDir, dateToPhotoFolder(oldDate));
-  const newDir = path.join(photosDir, dateToPhotoFolder(newDate));
+  const oldDir = resolveInside(photosDir, dateToPhotoFolder(oldDate));
+  const newDir = resolveInside(photosDir, dateToPhotoFolder(newDate));
+  for (const filename of filenames) {
+    // 先把所有路徑驗證完，才開始動檔案
+    resolveInside(oldDir, filename);
+    resolveInside(newDir, filename);
+  }
   await mkdir(newDir, { recursive: true });
   for (const filename of filenames) {
     const from = path.join(oldDir, filename);

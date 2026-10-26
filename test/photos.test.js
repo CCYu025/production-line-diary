@@ -168,3 +168,95 @@ test("sweepOrphanedPhotos：軟刪除的紀錄仍然算「有參照」，回收�
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ───────────────────────── WP1b：V3 路徑縱深防禦 ─────────────────────────
+
+import { resolveInside, photoFileExists } from "../backend/lib/photos.js";
+
+// 結構：<root>/secret.txt（資料夾外的檔案）、<root>/照片/（photosDir）
+function tmpRootWithSecret() {
+  const root = mkdtempSync(path.join(os.tmpdir(), "pld-photos-trav-"));
+  const photosDir = path.join(root, "照片");
+  mkdirSync(photosDir, { recursive: true });
+  writeFileSync(path.join(root, "secret.txt"), "不可被刪掉或搬走");
+  return { root, photosDir };
+}
+
+test("V3 resolveInside：資料夾內的路徑通過；跑出去、絕對路徑、等於根目錄本身都丟錯", () => {
+  const base = path.join(os.tmpdir(), "pld-resolve-base");
+  assert.equal(resolveInside(base, "20260922", "a.jpg"), path.join(base, "20260922", "a.jpg"));
+  assert.throws(() => resolveInside(base, "20260922", "../../x"));
+  assert.throws(() => resolveInside(base, ".."));
+  assert.throws(() => resolveInside(base, "20260922", path.resolve("/etc/passwd")));
+  assert.throws(() => resolveInside(base));
+  assert.throws(() => resolveInside(base, "..", "pld-resolve-base-evil", "x"), "前綴相同的兄弟資料夾也不算在裡面");
+});
+
+test("V3 deleteUnreferencedPhoto：檔名帶 ../ 想刪資料夾外的檔案 → 丟錯、檔案還在", async () => {
+  const { root, photosDir } = tmpRootWithSecret();
+  try {
+    mkdirSync(path.join(photosDir, "20260922"), { recursive: true });
+    // 反斜線只有在 Windows 上才是路徑分隔符號；其他平台上它只是檔名的一部分（API 層的 isSafeFilename 一律擋掉）
+    const evilNames = ["../../secret.txt", "../../../secret.txt"];
+    if (process.platform === "win32") evilNames.push("..\\..\\secret.txt");
+    for (const evil of evilNames) {
+      await assert.rejects(deleteUnreferencedPhoto(photosDir, [], "2026-09-22", evil), /不合法的照片路徑/);
+    }
+    assert.ok(existsSync(path.join(root, "secret.txt")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("V3 deleteUnreferencedPhoto：date 帶路徑也擋下", async () => {
+  const { root, photosDir } = tmpRootWithSecret();
+  try {
+    await assert.rejects(deleteUnreferencedPhoto(photosDir, [], "../..", "secret.txt"));
+    await assert.rejects(deleteUnreferencedPhoto(photosDir, [], "../../..", "secret.txt"));
+    assert.ok(existsSync(path.join(root, "secret.txt")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("V3 movePhotosForDateChange：清單裡有一個跑出去的檔名 → 整批不動（包含其他合法的）", async () => {
+  const { root, photosDir } = tmpRootWithSecret();
+  try {
+    putFile(photosDir, "2026-09-22", "ok.jpg");
+    await assert.rejects(
+      movePhotosForDateChange(photosDir, "2026-09-22", "2026-09-23", ["ok.jpg", "../../secret.txt"]),
+      /不合法的照片路徑/,
+    );
+    assert.ok(existsSync(path.join(photosDir, "20260922", "ok.jpg")), "合法的檔案也不該被搬");
+    assert.ok(!existsSync(path.join(photosDir, "20260923", "ok.jpg")));
+    assert.ok(existsSync(path.join(root, "secret.txt")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("V3 photoFileExists：真的存在才 true；路徑跳脫一律當作不存在（不丟錯）", () => {
+  const { root, photosDir } = tmpRootWithSecret();
+  try {
+    putFile(photosDir, "2026-09-22", "real.jpg");
+    assert.equal(photoFileExists(photosDir, "2026-09-22", "real.jpg"), true);
+    assert.equal(photoFileExists(photosDir, "2026-09-22", "nope.jpg"), false);
+    assert.equal(photoFileExists(photosDir, "2026-09-23", "real.jpg"), false, "日期不同就是不同資料夾");
+    assert.equal(photoFileExists(photosDir, "2026-09-22", "../../secret.txt"), false, "secret.txt 真的存在，但在資料夾外");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("V3 既有行為不變：合法檔名照常刪除／搬移", async () => {
+  const dir = tmpPhotosDir();
+  try {
+    putFile(dir, "2026-09-22", "a.jpg");
+    putFile(dir, "2026-09-22", "b.jpg");
+    await movePhotosForDateChange(dir, "2026-09-22", "2026-09-23", ["a.jpg"]);
+    assert.ok(existsSync(path.join(dir, "20260923", "a.jpg")));
+    assert.equal(await deleteUnreferencedPhoto(dir, [], "2026-09-22", "b.jpg"), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

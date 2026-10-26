@@ -55,11 +55,12 @@ npm start
 
 ```
 backend/
-  server.js          Express app：靜態檔案 + REST API，啟動時／每小時跑一次孤兒照片清理
+  server.js          Express 5 app：Host 允許清單與 X-Requested-With 檢查（本機安全）→ 靜態檔案 + REST API → JSON 404 與統一錯誤處理；啟動時／每小時跑一次孤兒照片清理
   lib/
     aggregate.js      彙總邏輯（純函式，前後端共用──frontend/index.html 直接 import 這支檔案）
-    store.js          data.json 的讀寫
-    photos.js          照片檔案生命週期（刪孤兒檔、換日期時搬檔、定期稽核）
+    store.js          data.json 的讀寫：withStore 寫入鎖、原子寫入（rename 重試）、每日備份、壞檔不覆寫
+    validate.js       輸入驗證（欄位白名單、日期／時間／耗時／檔名規則；POST 全驗、PUT 只驗有帶的欄位）
+    photos.js          照片檔案生命週期（刪孤兒檔、換日期時搬檔、定期稽核），所有路徑操作都限制在照片資料夾內
     photoCaptions.js   圖片說明（photoCaptions）的清理（只留還有參照的檔名、限制長度）
     xlsx.js            舊版 Excel 讀取 / 匯出快照寫入
     migrateLogic.js    搬遷規則（分類對照表、追蹤中/已解決判斷）
@@ -106,3 +107,14 @@ exceljs 把 Excel 的日期/時間格子讀成「UTC 錨定」的 `Date` 物件�
 真實資料**不在**這個 git repo 裡（見 `.gitignore`）：`data.json`、`工作日誌.xlsx`、
 照片都留在 `DATA_DIR` 指定的資料夾（你自己電腦上的 OneDrive 同步資料夾），
 只有程式碼進版控。
+
+程式每天第一次寫入前，會自動把當時的 `data.json` 備份到 `DATA_DIR/backups/data-YYYYMMDD.json`（保留最近 14 份）；
+`data.json` 如果被改壞（不是合法 JSON），App 會回報錯誤並拒絕寫入，絕不會覆蓋原檔。
+
+## 安全性
+
+- 伺服器只綁 `127.0.0.1`，不對區網或外網開放；沒有帳號系統。
+- 每個請求的 `Host` 必須是 `localhost`／`127.0.0.1`／`[::1]`，否則回 403（擋 DNS rebinding）。
+- 所有會寫入的 API（非 GET 的 `/api/*`）都必須帶 `X-Requested-With: production-line-diary` 標頭，否則回 403（擋別的網站偷偷送請求）。
+  **用 `curl` 或自己寫腳本呼叫寫入 API 時別忘了加**，例如：
+  `curl -X POST localhost:3000/api/records/1/delete -H 'X-Requested-With: production-line-diary'`。

@@ -32,7 +32,7 @@ npm start               # 或雙擊 start.bat
 | 層 | 技術 |
 |---|---|
 | 前端 | 純 HTML/CSS/JS，無框架，單一檔案 `frontend/index.html` |
-| 後端 | Node.js（ESM）+ Express |
+| 後端 | Node.js（ESM）+ Express 5 |
 | 資料庫 | JSON 檔（`DATA_DIR/data.json`），**不在這個 repo 裡** |
 | 照片 | 檔案系統（`DATA_DIR/照片/`），不是塞進資料庫的 blob |
 | 測試 | Node 內建 `node:test`，沒有額外裝框架 |
@@ -42,11 +42,12 @@ npm start               # 或雙擊 start.bat
 
 | 檔案 | 職責 |
 |---|---|
-| `backend/server.js` | Express app、REST API、multer 照片上傳 |
+| `backend/server.js` | Express 5 app、REST API、multer 照片上傳。**中介層順序有意義**：先 Host 允許清單（S2）、再 `/api` 非 GET 的 `X-Requested-With` 檢查（S1）、再 `express.json()`，之後才是靜態檔與路由；所有寫入都走 `withStore()`；未知的 `/api/*` 回 JSON 404；最後一層統一錯誤中介層（async 的 rejection 只會回 JSON `{errors}`，不會讓程序結束）。啟動時、之後每小時跑一次孤兒照片清理 |
 | `backend/lib/aggregate.js` | 彙總邏輯（純函式）；**前端直接 import 這支檔案**（`/lib` 有 static mount），前後端共用同一套統計邏輯。也放「複製既有紀錄」的 `pickCopyFields()`（複製欄位白名單）與 `commonProblems()`（常見問題歸併），以及紀錄列表的篩選（`emptyFilter()` / `filterRecords()` / `facetCounts()` / `sortByDate()` / `datePresets()`）；另外匯出 `toISODate()`（本地日期字串，報表預設日期用它） |
-| `backend/lib/store.js` | `data.json` 讀寫，原子性寫入（先寫暫存檔再 rename） |
-| `backend/lib/photos.js` | 照片檔案生命週期（刪孤兒檔、換日期時搬檔） |
+| `backend/lib/store.js` | `data.json` 讀寫：原子性寫入（先寫暫存檔，再 `renameWithRetry()` rename；遇 EPERM/EBUSY/EACCES 退避重試）；`withStore(dataDir, fn)` 每個資料夾一把 promise 鎖，包住「讀 → 改 → 寫」；每天第一次寫入前自動備份到 `DATA_DIR/backups/data-YYYYMMDD.json`（保留最近 14 份）；讀到壞掉的 JSON 丟 `StoreCorruptError`（絕不覆寫原檔）；容忍開頭的 UTF-8 BOM |
+| `backend/lib/photos.js` | 照片檔案生命週期（刪孤兒檔、換日期時搬檔）；所有路徑操作一律經 `resolveInside()`（解析後必須仍在照片資料夾內，否則丟錯），`photoFileExists()` 檢查照片是否在某日期的資料夾裡 |
 | `backend/lib/photoCaptions.js` | 圖片說明（`photoCaptions`）的清理：只留 `photos` 還有的檔名、文字去空白並限制 100 字、空白不存 |
+| `backend/lib/validate.js` | 輸入驗證（純函式）：`RECORD_FIELDS`（欄位白名單）、`pickRecordFields()`、`validateRecord(rec, supplied, { full })`、`normalizeRecordFields()`，以及 `isRealDate()`／`isValidTime()`／`parseDuration()`／`parseId()`／`isSafeFilename()`。POST 用 `full: true` 全部驗證，PUT 只驗證 body 有帶的欄位 |
 | `backend/lib/xlsx.js` | 舊版 Excel 讀取／匯出快照寫入——**注意 UTC getter**，見下方核心不變量 |
 | `backend/lib/migrateLogic.js` | 搬遷規則（問題分類對照表、「追蹤中/已解決」判斷） |
 | `backend/data/schema.md` | 資料結構完整說明（資料契約） |
@@ -292,12 +293,58 @@ npm start               # 或雙擊 start.bat
   `#e9e7df`，不能吃 App 的 `--page`（暗色模式下會變黑底）。列印時 `max-width:none`，
   不要拿掉，不然列印寬度會被 960 卡住。改 `.app` 的 `max-width` 或側邊欄寬度時，記得一起
   檢查這個 960。同一套做法也用在 `personal-work-diary` 專案，兩邊要保持一致。
+- **所有會寫入 `data.json` 的路由，一律走 `withStore(dataDir, async (store) => …)`（`backend/lib/store.js`），
+  不要自己手寫 `loadStore → 改 → saveStore`**。`withStore` 是每個資料夾一條 promise 鎖，把「讀 → 改 → 寫」
+  包成不能被插隊的一個單位。沒有鎖時，兩個同時進來的請求會讀到同一份舊資料、後寫的蓋掉先寫的（紀錄遺失），
+  而且 `nextId()` 會算出重複的 id（`test/api.test.js` 有 20 個並發 POST 的迴歸測試）。所以 `nextId()` 一定要在
+  鎖內算；要寫入時在回呼裡呼叫 `store.save()`；回呼丟例外（例如 `HttpError` 的 404／400）就不會寫入，也不會
+  卡住排在後面的請求。**搬照片、刪孤兒檔這類檔案動作放在鎖內、`store.save()` 成功「之後」做**，而且只記 log
+  （`bestEffort()`）、不重丟錯誤——資料都已經存好了，不要把這個請求變成 500 害使用者重送。純讀取（GET）
+  可以直接用 `loadStore()`，不必排隊（`saveStore` 是原子 rename，讀到的永遠是完整的一份）。
+- **`data.json` 讀不懂時絕對不能被覆寫；寫入失敗要有退路**。`loadStore()` 遇到不是合法 JSON 的檔案會丟
+  `StoreCorruptError`，路由回 500、檔案位元組完全不動、也不留 `.tmp`（因為「讀」就失敗了，永遠走不到「寫」）；
+  回給前端的訊息是固定的中文，不含伺服器上的絕對路徑（路徑與原因只進伺服器 log）。**`renameWithRetry()`
+  的退避重試（`EPERM`/`EBUSY`/`EACCES`，50→800ms 共 5 次）不要拿掉**：`DATA_DIR` 在 OneDrive 同步資料夾裡，
+  同步、防毒、檔案總管預覽都會短暫鎖住檔案，Windows 的 `rename` 因此偶發失敗。開頭有 UTF-8 BOM 的
+  `data.json`（用記事本等工具另存時常見）讀得進來，存回去時不帶 BOM。**每天（電腦本地日期，不是 UTC）第一次
+  寫入前**，現有的 `data.json` 會原樣複製到 `DATA_DIR/backups/data-YYYYMMDD.json`，只保留最新 14 份；
+  備份失敗只記 log、不擋住這次寫入（`backupBeforeFirstSaveOfDay()`）。
+- **輸入驗證集中在 `backend/lib/validate.js`；POST 與 PUT 的驗證範圍「刻意不同」，不要把 PUT 改成驗證整筆紀錄**。
+  POST 是全新的資料，`validateRecord(..., { full: true })` 全部必填欄位都檢查；PUT 只驗證「這次 body 有帶的欄位」，
+  也只寫入那些欄位（`normalizeRecordFields()` 只處理有帶的 key）。原因：舊資料裡有「讀得出來但現在不合法」的值
+  （搬遷寫入的 `duration` 0、`"9:30"` 這種沒補零的時間、空的 `equipment`／`problem`），詳情面板的「快速切換狀態」
+  與「快速填寫根本原因」送的只有 `{status}`／`{rootCause}`，若連沒碰的欄位也驗證，這些舊紀錄就永遠改不了狀態；
+  整筆編輯表單會送全部欄位，所以使用者存檔時仍會被要求修正壞值。規則：`shift` ∈ 早／中／晚、`severity` ∈
+  `SEVERITY_ORDER`、`status` ∈ `STATUS_ORDER`（缺省才套預設，帶了就必須合法）；`date` 是真實存在的日期且年份 ≥ 1900
+  （`2026-02-30`、`0000-01-01` 都不行）；`time` 是補零的 `HH:MM`（00:00–23:59）；`duration` 是正整數（數字或純數字字串，
+  小數、布林、陣列、0 都不行）；`photos[]` 每個都是安全檔名、重複的只留第一個；路由的 `:id` 只收十進位正整數
+  （`0x1`、`1e0`、` 1` 不會命中紀錄 1，一律 404）。**PUT 只取 `RECORD_FIELDS` 白名單欄位**，body 裡的
+  `id`／`deleted`／`deletedAt`／`updatedAt` 與任意欄位一律忽略；設備對照表的欄位只接受文字或空值。
+- **照片檔名必須是單純、安全的檔名，所有照片路徑操作一律經 `resolveInside()`／`photoFileExists()`
+  （`backend/lib/photos.js`），不要在別處臨時 `path.join(photosDir, …)`**。`isSafeFilename()` 擋掉含 `/`、`\`、`:`、
+  `..`、控制字元的名稱（`photos[]` 與 `DELETE /api/photos/:date/:filename` 都驗證）；`resolveInside()` 是第二道、
+  縱深防禦：把路徑解析成絕對路徑後，確認仍在照片資料夾裡，否則丟錯、不做任何檔案動作。上傳時檔名裡連續的 `..`
+  會先收成單一個 `.`，避免出現「上傳成功卻存不進紀錄」的檔名。
+- **V4：新加入紀錄的照片，必須已經存在於「該紀錄日期」的照片資料夾（`assertPhotosExist()`），否則回 400
+  「照片與日期不一致」**——POST 檢查全部照片，PUT 只檢查不在舊紀錄裡的（原本就有的照片會跟著換日期搬檔）。
+  這是前端「有照片就鎖日期欄」的**伺服器端後盾**：照片是依選檔當下的日期存進資料夾的，日期後來被改掉卻照常存檔
+  就會破圖、1 小時後還會被孤兒清理刪掉。**前後兩層都要留著**，不要因為其中一層存在就拿掉另一層。
+- **S1（本機 CSRF 防護）：所有非 GET 的 `/api/*` 請求都必須帶 `X-Requested-With: production-line-diary`，
+  否則 403**。理由：自訂 header 會讓瀏覽器對跨站請求先送 CORS preflight，而這個伺服器永遠不回應 preflight，
+  所以別的網站（即使使用者正好開著）送不出會改資料的請求；沒有它，任何網頁都能用不需 preflight 的簡單請求（例如表單 POST 到 `/api/records/:id/delete`）偷偷改資料。
+  **前端的 api 層必須永遠帶這個 header，含 multipart 照片上傳與 DELETE**：目前是 `frontend/index.html` 的
+  `CSRF` 常數；新 React 前端的 `web/src/lib/api.ts` 也一樣。用 `curl` 手動呼叫寫入 API 時也要加
+  `-H 'X-Requested-With: production-line-diary'`。
+- **S2（擋 DNS rebinding）：每個請求的 `Host` 主機名稱必須是 `localhost`／`127.0.0.1`／`[::1]`，否則 403，
+  不要放寬**。惡意網站可以把自己的網域解析成 127.0.0.1，讓瀏覽器把本機服務當成同源讀取；這種請求的 Host 會是
+  惡意網域。**只檢查主機名稱、不檢查 port**——測試與 `PORT` 環境變數會換 port，而 rebinding 攻擊靠的是換主機名稱，
+  port 不是防線。這層中介層掛在最前面，連靜態檔與照片都受它保護，不只 `/api`。
 
 ## 測試方法
 
 ```bash
 npm run check   # node --check 語法檢查
-npm test        # node --test，目前 79 個測試
+npm test        # node --test，目前 156 個測試
 ```
 
 CI（`.github/workflows/ci.yml`）在每次 push/PR 到 `main` 時自動跑這兩步。
@@ -329,7 +376,19 @@ CI（`.github/workflows/ci.yml`）在每次 push/PR 到 `main` 時自動跑這�
    下方左邊欄右主欄、跨多天時有日期分組標題、根本原因／照片都有出來且圖說前有「圖N」、有說明的照片下方
    有圖片說明、沒設定品號的設備不顯示品號/原料類別；「列印／另存 PDF」預覽的頁面右緣不能有貫穿整頁的直線；按「開新視窗」（瀏覽器若擋彈出視窗要先允許），新視窗要是灰底置中的
    紙張，排版跟 App 內一樣
-8. 瀏覽器 console 應該沒有錯誤
+8. 後端防護與驗證（改動 `backend/server.js`、`store.js`、`validate.js`、`photos.js` 之後必跑；一律用範例資料的複本當
+   `DATA_DIR`，埠號設成 3000 以外）：
+   - 舊資料寬容：在 `data.json` 放一筆 `duration: 0`、`time: "9:30"`、`equipment: ""` 的紀錄，詳情面板的「快速切換狀態」與
+     「快速填寫根本原因」都能成功、其他欄位原封不動；但按「編輯紀錄」整筆存檔會被擋下並顯示清楚的錯誤訊息，改正後才存得進去
+   - 本機 CSRF：`curl -i -X POST localhost:3102/api/records -H 'Content-Type: application/json' -d '{}'`（沒帶
+     `X-Requested-With`）回 403；加上 `-H 'X-Requested-With: production-line-diary'` 後才進到驗證（400）
+   - DNS rebinding：`curl -i localhost:3102/api/records -H 'Host: evil.com'` 回 403
+   - 未知路由：`curl -i localhost:3102/api/xxx` 回 JSON 404（`{"errors":[…]}`），不是 HTML 錯誤頁
+   - 壞檔不覆寫：把 `data.json` 截斷成一半的 JSON，所有 `/api` 都回 500 與固定的中文訊息（不含路徑），
+     `data.json` 位元組完全沒變、資料夾裡沒有 `.tmp` 檔；修復後恢復正常
+   - 每日備份：當天第一次寫入後出現 `backups/data-YYYYMMDD.json`（內容是寫入前的版本），同一天再寫不會覆蓋它
+   - 並發寫入：同時送多筆新增（例如 `for i in $(seq 20); do curl … & done`），全部成功、id 不重複、沒有遺失
+9. 瀏覽器 console 應該沒有錯誤
 
 ## 敏感檔案清單
 

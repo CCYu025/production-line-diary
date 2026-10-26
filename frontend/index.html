@@ -1160,6 +1160,8 @@ import { aggregate, toISODate, severityFromDuration, commonProblems, pickCopyFie
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]; }); }
 
   /* ---------------- API ---------------- */
+  /* 伺服器要求所有非 GET 的 /api 請求帶這個標頭（本機 CSRF 防護） */
+  var CSRF = { "X-Requested-With": "production-line-diary" };
   var api = {
     async meta(){
       var res = await fetch("/api/meta");
@@ -1171,51 +1173,51 @@ import { aggregate, toISODate, severityFromDuration, commonProblems, pickCopyFie
       return body.records;
     },
     async create(payload){
-      var res = await fetch("/api/records", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
+      var res = await fetch("/api/records", { method:"POST", headers:Object.assign({"Content-Type":"application/json"}, CSRF), body:JSON.stringify(payload) });
       var body = await res.json();
       if(!res.ok) throw new Error((body.errors||["新增失敗"]).join("、"));
       return body.record;
     },
     async update(id, payload){
-      var res = await fetch("/api/records/"+id, { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
+      var res = await fetch("/api/records/"+id, { method:"PUT", headers:Object.assign({"Content-Type":"application/json"}, CSRF), body:JSON.stringify(payload) });
       var body = await res.json();
       if(!res.ok) throw new Error((body.errors||["更新失敗"]).join("、"));
       return body.record;
     },
     async softDelete(id){
-      var res = await fetch("/api/records/"+id+"/delete", { method:"POST" });
+      var res = await fetch("/api/records/"+id+"/delete", { method:"POST", headers:CSRF });
       if(!res.ok) throw new Error("刪除失敗");
       return (await res.json()).record;
     },
     async restore(id){
-      var res = await fetch("/api/records/"+id+"/restore", { method:"POST" });
+      var res = await fetch("/api/records/"+id+"/restore", { method:"POST", headers:CSRF });
       if(!res.ok) throw new Error("復原失敗");
       return (await res.json()).record;
     },
     async purge(id){
-      var res = await fetch("/api/records/"+id, { method:"DELETE" });
+      var res = await fetch("/api/records/"+id, { method:"DELETE", headers:CSRF });
       if(!res.ok && res.status!==204) throw new Error("永久刪除失敗");
     },
     async uploadPhoto(dateStr, file){
       var form = new FormData();
       form.append("date", dateStr);
       form.append("photo", file);
-      var res = await fetch("/api/photos", { method:"POST", body:form });
+      var res = await fetch("/api/photos", { method:"POST", headers:CSRF, body:form });
       var body = await res.json();
       if(!res.ok) throw new Error((body.errors||["照片上傳失敗"]).join("、"));
       return body.filename;
     },
     async deletePhoto(dateStr, filename){
-      try{ await fetch("/api/photos/"+encodeURIComponent(dateStr)+"/"+encodeURIComponent(filename), { method:"DELETE" }); }
+      try{ await fetch("/api/photos/"+encodeURIComponent(dateStr)+"/"+encodeURIComponent(filename), { method:"DELETE", headers:CSRF }); }
       catch(err){ /* 最多留下一個沒人用的孤兒檔案，不影響功能，不值得因此擋住使用者 */ }
     },
     async exportXlsx(){
-      var res = await fetch("/api/export-xlsx", { method:"POST" });
+      var res = await fetch("/api/export-xlsx", { method:"POST", headers:CSRF });
       if(!res.ok) throw new Error("匯出失敗");
       return res.json();
     },
     async saveEquipmentMap(list){
-      var res = await fetch("/api/equipment-map", { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(list) });
+      var res = await fetch("/api/equipment-map", { method:"PUT", headers:Object.assign({"Content-Type":"application/json"}, CSRF), body:JSON.stringify(list) });
       var body = await res.json();
       if(!res.ok) throw new Error((body.errors||["儲存失敗"]).join("、"));
       return body.equipmentMap;
