@@ -6,15 +6,17 @@ import { usePhotoUploads } from "./usePhotoUploads";
 
 const DATE = "2026-10-26";
 
-/** 每一次 uploadPhoto 都回一個要手動 resolve 的 Promise（模擬慢速網路）；可選擇要不要理會 AbortSignal。 */
-function slowUploads({ honorAbort }: { honorAbort: boolean }) {
-  const calls: Array<{ name: string; date: string; signal: AbortSignal | undefined; d: ReturnType<typeof deferred<string>> }> = [];
-  vi.spyOn(api, "uploadPhoto").mockImplementation((date, file, signal) => {
+/**
+ * 每一次 uploadPhoto 都回一個要手動 resolve 的 Promise（模擬慢速網路）。
+ * 重點：hook 絕對不可以中止上傳（中止可能讓伺服器已存好的檔案變成孤兒），所以 mock 不接受 signal，
+ * 並記下呼叫時有沒有帶第三個參數。
+ */
+function slowUploads() {
+  const calls: Array<{ name: string; date: string; argCount: number; d: ReturnType<typeof deferred<string>> }> = [];
+  vi.spyOn(api, "uploadPhoto").mockImplementation((...args: unknown[]) => {
+    const [date, file] = args as [string, File];
     const d = deferred<string>();
-    calls.push({ name: (file as File).name, date, signal, d });
-    if (honorAbort && signal) {
-      signal.addEventListener("abort", () => d.reject(new DOMException("aborted", "AbortError")));
-    }
+    calls.push({ name: file.name, date, argCount: args.length, d });
     return d.promise;
   });
   return calls;
@@ -56,7 +58,7 @@ describe("usePhotoUploads", () => {
   });
 
   it("上傳中：鎖日期、不能送出（uploading = true）", async () => {
-    const calls = slowUploads({ honorAbort: true });
+    const calls = slowUploads();
     const { result } = renderHook(() => usePhotoUploads());
     act(() => {
       void result.current.addFiles([fileOf("a.jpg")], DATE);
@@ -71,8 +73,8 @@ describe("usePhotoUploads", () => {
   });
 
   describe("放棄（清除／離開頁面）", () => {
-    it("一次選 3 張、第 1 張還在上傳時放棄：只發出 1 次請求、請求被中止、沒有殘留縮圖、日期解鎖", async () => {
-      const calls = slowUploads({ honorAbort: true });
+    it("一次選 3 張、第 1 張還在上傳時放棄：只發出 1 次請求、不中止請求、沒有殘留縮圖、日期立刻解鎖", async () => {
+      const calls = slowUploads();
       const { result } = renderHook(() => usePhotoUploads());
       act(() => {
         void result.current.addFiles([fileOf("a.jpg"), fileOf("b.jpg"), fileOf("c.jpg")], DATE);
@@ -82,15 +84,15 @@ describe("usePhotoUploads", () => {
       await flush();
 
       expect(calls).toHaveLength(1);
-      expect(calls[0]!.signal?.aborted).toBe(true);
+      expect(calls[0]!.argCount).toBe(2); // 沒有帶 AbortSignal：不中止上傳（中止可能留下伺服器已存好的孤兒檔）
       expect(result.current.items).toEqual([]);
       expect(result.current.hasLive).toBe(false);
       expect(result.current.uploading).toBe(false);
-      expect(deletePhoto).not.toHaveBeenCalled(); // 被中止的請求沒有檔名可刪（若伺服器已存好，由每小時孤兒掃描收）
+      expect(deletePhoto).not.toHaveBeenCalled(); // 回應還沒回來，還沒有檔名可刪
     });
 
-    it("伺服器的回應還是來了（沒理會 abort）：回來之後補刪，不再上傳剩下的、不會跑回畫面", async () => {
-      const calls = slowUploads({ honorAbort: false });
+    it("伺服器已存好檔案、回應在放棄之後才到：用回傳的檔名 DELETE，不再上傳剩下的、不會跑回畫面", async () => {
+      const calls = slowUploads();
       const { result } = renderHook(() => usePhotoUploads());
       act(() => {
         void result.current.addFiles([fileOf("a.jpg"), fileOf("b.jpg"), fileOf("c.jpg")], DATE);
@@ -125,7 +127,7 @@ describe("usePhotoUploads", () => {
     });
 
     it("放棄之後馬上開始的新一批不會被舊的迴圈干擾（不會有舊的檔案推進新的 session）", async () => {
-      const calls = slowUploads({ honorAbort: false });
+      const calls = slowUploads();
       const { result } = renderHook(() => usePhotoUploads());
       act(() => {
         void result.current.addFiles([fileOf("old1.jpg"), fileOf("old2.jpg")], DATE);
@@ -151,8 +153,8 @@ describe("usePhotoUploads", () => {
       expect(deletePhoto).toHaveBeenCalledTimes(1);
     });
 
-    it("元件卸載（離開路由）＝放棄：已上傳的刪掉、上傳中的中止", async () => {
-      const calls = slowUploads({ honorAbort: true });
+    it("元件卸載（離開路由）＝放棄：已上傳的刪掉、上傳中的標記放棄", async () => {
+      const calls = slowUploads();
       const { result, unmount } = renderHook(() => usePhotoUploads());
       act(() => {
         void result.current.addFiles([fileOf("a.jpg"), fileOf("b.jpg")], DATE);
@@ -165,11 +167,15 @@ describe("usePhotoUploads", () => {
       unmount();
       await flush();
       expect(deletePhoto).toHaveBeenCalledWith(DATE, "a.jpg");
-      expect(calls[1]!.signal?.aborted).toBe(true);
+      expect(calls[1]!.argCount).toBe(2);
+      await act(async () => {
+        calls[1]!.d.resolve("b.jpg"); // 卸載後回應才到：補刪
+      });
+      expect(deletePhoto).toHaveBeenCalledWith(DATE, "b.jpg");
     });
 
     it("卸載時，上傳中的回應晚到也會補刪", async () => {
-      const calls = slowUploads({ honorAbort: false });
+      const calls = slowUploads();
       const { result, unmount } = renderHook(() => usePhotoUploads());
       act(() => {
         void result.current.addFiles([fileOf("a.jpg")], DATE);
@@ -196,15 +202,15 @@ describe("usePhotoUploads", () => {
       expect(result.current.hasLive).toBe(false);
     });
 
-    it("移除「上傳中」的縮圖：中止請求、這批剩下的不再上傳、晚到的回應補刪", async () => {
-      const calls = slowUploads({ honorAbort: false });
+    it("移除「上傳中」的縮圖：縮圖立刻消失、不中止請求、這批剩下的不再上傳、回應到了補刪", async () => {
+      const calls = slowUploads();
       const { result } = renderHook(() => usePhotoUploads());
       act(() => {
         void result.current.addFiles([fileOf("a.jpg"), fileOf("b.jpg"), fileOf("c.jpg")], DATE);
       });
       act(() => result.current.remove(result.current.items[0]!.id));
       expect(result.current.items).toEqual([]);
-      expect(calls[0]!.signal?.aborted).toBe(true);
+      expect(calls[0]!.argCount).toBe(2);
 
       await act(async () => {
         calls[0]!.d.resolve("a.jpg");
@@ -216,7 +222,7 @@ describe("usePhotoUploads", () => {
     });
 
     it("上傳中途移除第 1 張之後，使用者另外再選的新檔案仍可正常上傳", async () => {
-      const calls = slowUploads({ honorAbort: true });
+      const calls = slowUploads();
       const { result } = renderHook(() => usePhotoUploads());
       act(() => {
         void result.current.addFiles([fileOf("a.jpg")], DATE);

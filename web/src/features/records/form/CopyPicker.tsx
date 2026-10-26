@@ -63,7 +63,7 @@ export function CopyPicker({ records, onPick }: CopyPickerProps) {
   const [tab, setTab] = React.useState<Tab>("recent");
   const [open, setOpen] = React.useState(false);
   const [active, setActive] = React.useState(0);
-  const rootRef = React.useRef<HTMLDivElement>(null);
+  const rootRef = React.useRef<HTMLDivElement>(null); // 輸入框＋下拉清單
 
   const items = React.useMemo(() => buildPickerItems(records, tab, query), [records, tab, query]);
   const chips = React.useMemo(() => commonProblems(records.filter((r) => !r.deleted)).slice(0, 4), [records]);
@@ -84,13 +84,8 @@ export function CopyPicker({ records, onPick }: CopyPickerProps) {
 
   return (
     <section
-      ref={rootRef}
       aria-labelledby="cp-title"
-      className="relative flex flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 md:p-4"
-      // 焦點整個離開選擇器（含分頁鈕、清單）才收起；焦點在內部移動（Tab 到分頁鈕）不收
-      onBlur={(e) => {
-        if (!rootRef.current?.contains(e.relatedTarget as Node | null)) setOpen(false);
-      }}
+      className="flex flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 md:p-4"
     >
       <div className="flex flex-wrap items-baseline gap-x-2">
         <h2 id="cp-title" className="text-sm font-bold">
@@ -99,7 +94,15 @@ export function CopyPicker({ records, onPick }: CopyPickerProps) {
         <span className="text-xs text-ink-muted">選一筆，只需再改日期／時間／設備</span>
       </div>
 
-      <div className="relative">
+      <div
+        ref={rootRef}
+        className="relative"
+        // 焦點離開「輸入框＋下拉清單（含分頁鈕）」才收起——Tab 到下方的「常見」chips 就會收起；
+        // 焦點在輸入框與分頁鈕之間移動不收
+        onBlur={(e) => {
+          if (!rootRef.current?.contains(e.relatedTarget as Node | null)) setOpen(false);
+        }}
+      >
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-muted" aria-hidden="true" />
         <input
           type="text"
@@ -174,7 +177,7 @@ export function CopyPicker({ records, onPick }: CopyPickerProps) {
                 </button>
               ))}
             </div>
-            <ul id={LISTBOX_ID} role="listbox" aria-label={tab === "recent" ? "最近紀錄" : "常見問題"} className="max-h-72 overflow-auto py-1">
+            <ul id={LISTBOX_ID} role="listbox" tabIndex={-1} aria-label={tab === "recent" ? "最近紀錄" : "常見問題"} className="max-h-72 overflow-auto py-1">
               {items.length ? (
                 items.map((it, i) => (
                   <li
@@ -215,7 +218,7 @@ export function CopyPicker({ records, onPick }: CopyPickerProps) {
               onClick={() => pick(g.record)}
               className="inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border border-line-strong bg-surface-raised px-3 text-sm text-ink-1 hover:bg-accent-wash md:min-h-9"
             >
-              <span className="truncate">{g.problem}</span>
+              <span className="min-w-0 truncate">{g.problem}</span>
               <span className="num shrink-0 text-xs text-ink-muted">×{g.count}</span>
             </button>
           ))}

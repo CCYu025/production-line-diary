@@ -167,6 +167,24 @@ describe("驗證與欄位錯誤", () => {
     await u.click(submitButton());
     await waitFor(() => expect(mocks.createRecord).toHaveBeenCalledTimes(2));
   });
+
+  it("每次送出一開始就清掉上一次的欄位錯誤與整體錯誤，舊錯誤不會和新錯誤混在一起", async () => {
+    const u = user();
+    mocks.createRecord
+      .mockRejectedValueOnce(new ApiError({ status: 400, kind: "http", errors: ["duration 須為正整數（分鐘）", "第一次的整體錯誤"] }))
+      .mockRejectedValueOnce(new ApiError({ status: 400, kind: "http", errors: ["problem 為必填"] }));
+    renderForm();
+    await waitForNewForm();
+    await fillMinimum(u);
+    await u.click(submitButton());
+    expect(await screen.findByText("耗時 須為正整數（分鐘）")).toBeInTheDocument();
+    expect(screen.getByText("第一次的整體錯誤")).toBeInTheDocument();
+
+    await u.click(submitButton());
+    expect(await screen.findByText("問題 為必填")).toBeInTheDocument();
+    expect(screen.queryByText("耗時 須為正整數（分鐘）")).toBeNull();
+    expect(screen.queryByText("第一次的整體錯誤")).toBeNull();
+  });
 });
 
 describe("嚴重度建議", () => {
@@ -500,6 +518,25 @@ describe("複製既有紀錄", () => {
       expect(await screen.findByTestId("copy-banner")).toHaveTextContent("10/20 F3");
     });
 
+    it("Tab 離開輸入框與分頁鈕、到下方「常見」chips 時下拉收起；清單本身不是 Tab 停靠點", async () => {
+      const u = user();
+      renderForm();
+      await waitForNewForm();
+      await waitForHistory();
+      await u.click(screen.getByRole("combobox", { name: "搜尋過去紀錄" }));
+      const listbox = screen.getByRole("listbox", { name: "最近紀錄" });
+      expect(listbox).toHaveAttribute("tabindex", "-1");
+      await u.tab(); // 最近紀錄 分頁鈕
+      expect(screen.getByRole("tab", { name: "最近紀錄" })).toHaveFocus();
+      expect(screen.queryByRole("listbox")).not.toBeNull(); // 還在選擇器內，不收
+      await u.tab(); // 常見問題 分頁鈕
+      expect(screen.getByRole("tab", { name: "常見問題" })).toHaveFocus();
+      await u.tab(); // 下方的 chip：已離開選擇器
+      expect(document.activeElement).not.toBe(listbox);
+      expect(document.activeElement).toHaveTextContent("×");
+      expect(screen.queryByRole("listbox")).toBeNull();
+    });
+
     it("已上傳照片時套用複製：日期／時間／班別不變（照片依當時日期存放）", async () => {
       const u = user();
       const { container } = renderForm();
@@ -511,7 +548,7 @@ describe("複製既有紀錄", () => {
       await u.selectOptions(shiftSelect(), "中");
       await u.upload(fileInput(container), fileOf("a.jpg"));
       await waitFor(() => expect(dateInput()).toBeDisabled());
-      expect(mocks.uploadPhoto).toHaveBeenCalledWith("2026-10-20", expect.any(File), expect.anything());
+      expect(mocks.uploadPhoto).toHaveBeenCalledWith("2026-10-20", expect.any(File));
 
       await u.click(screen.getByRole("combobox", { name: "搜尋過去紀錄" }));
       await u.click(screen.getAllByRole("option")[1]!);
@@ -530,12 +567,12 @@ describe("複製既有紀錄", () => {
 });
 
 describe("照片：選檔立刻上傳、鎖日期、放棄清理", () => {
-  async function selectSlowFiles(u: ReturnType<typeof userEvent.setup>, container: HTMLElement, names: string[], honorAbort = false) {
-    const calls: Array<{ name: string; date: string; signal: AbortSignal | undefined; d: ReturnType<typeof deferred<string>> }> = [];
-    mocks.uploadPhoto.mockImplementation((date: string, file: File | Blob, signal?: AbortSignal) => {
+  async function selectSlowFiles(u: ReturnType<typeof userEvent.setup>, container: HTMLElement, names: string[]) {
+    const calls: Array<{ name: string; date: string; argCount: number; d: ReturnType<typeof deferred<string>> }> = [];
+    mocks.uploadPhoto.mockImplementation((...args: unknown[]) => {
+      const [date, file] = args as [string, File];
       const d = deferred<string>();
-      calls.push({ name: (file as File).name, date, signal, d });
-      if (honorAbort) signal?.addEventListener("abort", () => d.reject(new DOMException("x", "AbortError")));
+      calls.push({ name: file.name, date, argCount: args.length, d });
       return d.promise;
     });
     await u.upload(fileInput(container), names.map((n) => fileOf(n)));
@@ -623,16 +660,16 @@ describe("照片：選檔立刻上傳、鎖日期、放棄清理", () => {
     expect(cap).toHaveAttribute("maxlength", "100");
   });
 
-  it("一次選 3 張、第 1 張還在上傳時按「清除」：只發出 1 次請求、請求被中止、沒有殘留縮圖、日期解鎖", async () => {
+  it("一次選 3 張、第 1 張還在上傳時按「清除」：只發出 1 次請求、不中止、沒有殘留縮圖、日期立刻解鎖", async () => {
     const u = user();
     const { container } = renderForm();
     await waitForNewForm();
-    const calls = await selectSlowFiles(u, container, ["a.jpg", "b.jpg", "c.jpg"], true);
+    const calls = await selectSlowFiles(u, container, ["a.jpg", "b.jpg", "c.jpg"]);
     expect(dateInput()).toBeDisabled();
     await u.click(screen.getByRole("button", { name: "清除" }));
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.signal?.aborted).toBe(true);
+    expect(calls[0]!.argCount).toBe(2); // 不帶 AbortSignal
     expect(screen.queryByRole("list", { name: "已加入的照片" })).toBeNull();
     expect(screen.queryByRole("img")).toBeNull();
     expect(dateInput()).not.toBeDisabled();
@@ -641,7 +678,7 @@ describe("照片：選檔立刻上傳、鎖日期、放棄清理", () => {
     expect(calls).toHaveLength(1);
   });
 
-  it("「清除」時伺服器的回應晚到（沒被中止成功）：補刪那個檔案，畫面上不再出現", async () => {
+  it("「清除」時伺服器已存好、回應在清除之後才到：用回傳的檔名補刪那個檔案，畫面上不再出現", async () => {
     const u = user();
     const { container } = renderForm();
     await waitForNewForm();
@@ -667,13 +704,13 @@ describe("照片：選檔立刻上傳、鎖日期、放棄清理", () => {
     ]);
   });
 
-  it("移除「上傳中」的縮圖：中止、剩下的不再上傳、晚到的回應補刪", async () => {
+  it("移除「上傳中」的縮圖：立刻消失、不中止、剩下的不再上傳、回應到了補刪", async () => {
     const u = user();
     const { container } = renderForm();
     await waitForNewForm();
     const calls = await selectSlowFiles(u, container, ["a.jpg", "b.jpg"]);
     await u.click(screen.getByRole("button", { name: /移除新照片 a\.jpg/ }));
-    expect(calls[0]!.signal?.aborted).toBe(true);
+    expect(calls[0]!.argCount).toBe(2);
     expect(screen.queryByRole("list", { name: "已加入的照片" })).toBeNull();
     expect(dateInput()).not.toBeDisabled();
     await act(async () => calls[0]!.d.resolve("a.jpg"));
@@ -682,7 +719,7 @@ describe("照片：選檔立刻上傳、鎖日期、放棄清理", () => {
   });
 
   describe("離開頁面", () => {
-    it("有未送出的內容：先問；選「離開」才離開，並清掉已上傳的照片、中止上傳中的", async () => {
+    it("有未送出的內容：先問；選「離開」才離開，並清掉已上傳的照片、上傳中的回應到了補刪", async () => {
       const u = user();
       const { container, router } = renderForm();
       await waitForNewForm();
@@ -701,7 +738,7 @@ describe("照片：選檔立刻上傳、鎖日期、放棄清理", () => {
       await u.click(within(dialog).getByRole("button", { name: "離開" }));
       await waitFor(() => expect(router.state.location.pathname).toBe("/dashboard"));
       await waitFor(() => expect(mocks.deletePhoto).toHaveBeenCalledWith("2026-10-26", "a.jpg"));
-      expect(calls[1]!.signal?.aborted).toBe(true);
+      expect(calls[1]!.argCount).toBe(2);
       // b 的回應晚到也補刪
       await act(async () => calls[1]!.d.resolve("b.jpg"));
       expect(mocks.deletePhoto).toHaveBeenCalledWith("2026-10-26", "b.jpg");
@@ -722,6 +759,20 @@ describe("照片：選檔立刻上傳、鎖日期、放棄清理", () => {
       expect(router.state.location.pathname).toBe("/records/new");
       expect(problemInput().value).toBe("卡料");
       expect(mocks.deletePhoto).not.toHaveBeenCalled();
+    });
+
+    it("選「繼續填寫」後，焦點回到原本在填的欄位（不是留在觸發離開的連結上）", async () => {
+      const u = user();
+      const { router } = renderForm();
+      await waitForNewForm();
+      await u.type(problemInput(), "卡料");
+      (document.activeElement as HTMLElement).blur(); // 模擬點了側欄連結：焦點已不在表單裡
+      await act(async () => {
+        void router.navigate("/dashboard");
+      });
+      await u.click(await screen.findByRole("button", { name: "繼續填寫" }));
+      await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+      await waitFor(() => expect(problemInput()).toHaveFocus());
     });
 
     it("什麼都沒動就離開：不問", async () => {
@@ -846,7 +897,7 @@ describe("編輯模式", () => {
     await u.click(screen.getByRole("button", { name: "修改" }));
     fireEvent.change(dateInput(), { target: { value: "2026-10-25" } });
     await u.upload(fileInput(container), fileOf("n.jpg"));
-    await waitFor(() => expect(mocks.uploadPhoto).toHaveBeenCalledWith("2026-10-25", expect.any(File), expect.anything()));
+    await waitFor(() => expect(mocks.uploadPhoto).toHaveBeenCalledWith("2026-10-25", expect.any(File)));
     await waitFor(() => expect(dateInput()).toBeDisabled());
     await u.click(submitButton());
     await waitFor(() => expect(mocks.updateRecord).toHaveBeenCalled());

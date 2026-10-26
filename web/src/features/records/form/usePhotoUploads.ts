@@ -1,5 +1,5 @@
 import * as React from "react";
-import { api, errorMessage, isAbortError } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 import { notify } from "@/lib/feedback";
 
 /*
@@ -9,8 +9,8 @@ import { notify } from "@/lib/feedback";
  *  1. 選到檔案就上傳（multipart，date 欄位在 photo 之前），不是送出時才上傳——送出永遠只是拿檔名去建立紀錄。
  *  2. 「放棄」（清除／取消／離開頁面／元件卸載，統一走 `abandonAll()`）：
  *       - 已上傳未送出的檔案：DELETE /api/photos 實體刪除；
- *       - 上傳中的：AbortController 中止請求，而且 entry 標記 abandoned——萬一伺服器的回應還是來了
- *         （或中止太晚、檔案其實已存好），await 收尾時看到旗標就自己補刪，不能假設「清掉陣列」就等於沒有孤兒。
+ *       - 上傳中的：**不中止請求**（中止可能讓伺服器已存好的檔案變成沒人知道檔名的孤兒），entry 標記 abandoned，
+ *         等請求自己結束；回應回來後看到旗標就用回傳的檔名補刪。不能假設「清掉陣列」就等於沒有孤兒。
  *  3. 一次選多張：迴圈屬於「這一次的 session」。session 被換掉（放棄／送出成功）或上一張已被放棄
  *     （使用者在上傳途中按了它的移除鈕），就停止處理剩下的檔案，不可把它們推進新的（下一次）表單。
  *  4. 有「上傳中」或「已上傳未送出」的照片就鎖住日期（`hasLive`）：照片依選檔當下的日期存放，之後改日期
@@ -46,7 +46,6 @@ interface Entry {
   error: string | null;
   caption: string;
   abandoned: boolean;
-  controller: AbortController;
 }
 
 interface Session {
@@ -104,7 +103,7 @@ export interface PhotoUploads {
   /** 使用者按縮圖的移除鈕 */
   remove: (id: string) => void;
   setCaption: (id: string, caption: string) => void;
-  /** 放棄全部（清除／取消／離開頁面）：中止上傳中的、刪除已上傳未送出的，並開一個全新的 session */
+  /** 放棄全部（清除／取消／離開頁面）：刪除已上傳未送出的；上傳中的標記放棄（不中止，回應回來後補刪）；並開一個全新的 session */
   abandonAll: () => void;
   /** 送出成功：已上傳的檔案現在被紀錄參照了，只忘掉它們（不刪檔），並開新的 session */
   commit: () => void;
@@ -136,23 +135,18 @@ export function usePhotoUploads(): PhotoUploads {
           error: null,
           caption: "",
           abandoned: false,
-          controller: new AbortController(),
         };
         prev = entry;
         session.entries.push(entry);
         sync(session);
 
         try {
-          entry.filename = await api.uploadPhoto(date, file, entry.controller.signal);
+          entry.filename = await api.uploadPhoto(date, file);
           entry.status = "uploaded";
         } catch (err) {
           entry.status = "error";
-          if (isAbortError(err)) {
-            entry.error = "已取消";
-          } else {
-            entry.error = errorMessage(err, "上傳失敗");
-            if (!entry.abandoned) notify.error(`照片上傳失敗：${entry.error}`);
-          }
+          entry.error = errorMessage(err, "上傳失敗");
+          if (!entry.abandoned) notify.error(`照片上傳失敗：${entry.error}`);
         }
 
         // 上傳這段 await 期間可能已被放棄（清除／離開頁面／移除這張）：
@@ -176,7 +170,6 @@ export function usePhotoUploads(): PhotoUploads {
       const entry = session.entries[idx]!;
       // 上傳還沒回來也要標記：讓 addFiles 的 await 收尾時補刪，並讓它停止處理這批剩下的檔案
       entry.abandoned = true;
-      entry.controller.abort();
       session.entries.splice(idx, 1);
       sync(session);
       if (entry.filename) deleteQuietly(entry.date, entry.filename);
@@ -203,7 +196,6 @@ export function usePhotoUploads(): PhotoUploads {
     sessionRef.current = { entries: [] };
     for (const entry of old.entries) {
       entry.abandoned = true;
-      entry.controller.abort();
       if (entry.filename) deleteQuietly(entry.date, entry.filename);
       if (entry.status !== "uploading") revoke(entry.previewUrl);
     }

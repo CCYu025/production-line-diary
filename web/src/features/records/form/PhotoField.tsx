@@ -4,6 +4,7 @@ import { inputClass } from "@/components/Combobox";
 import { PhotoThumb } from "@/components/PhotoThumb";
 import { Button } from "@/components/ui/button";
 import { photoUrl } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { Field } from "./fields";
 import { MAX_CAPTION_LENGTH } from "./model";
 import type { PhotoItem } from "./usePhotoUploads";
@@ -87,7 +88,7 @@ function PhotoRow({
           </Button>
         </div>
         {statusText ? (
-          <p className={statusTone === "error" ? "text-sm font-medium text-critical" : "text-xs text-ink-muted"}>{statusText}</p>
+          <p className={cn("[overflow-wrap:anywhere]", statusTone === "error" ? "text-sm font-medium text-critical" : "text-xs text-ink-muted")}>{statusText}</p>
         ) : null}
         {caption}
       </div>

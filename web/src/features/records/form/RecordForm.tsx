@@ -110,6 +110,8 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
   const dirtyRef = React.useRef(dirty);
   dirtyRef.current = dirty;
   const allowLeaveRef = React.useRef(false);
+  // 離開確認選「繼續填寫」時，焦點要回到原本在填的欄位——點了側欄連結後 activeElement 已經是那個連結
+  const lastFieldFocusRef = React.useRef<HTMLElement | null>(null);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       dirtyRef.current && !allowLeaveRef.current && currentLocation.pathname !== nextLocation.pathname,
@@ -124,6 +126,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
       confirmLabel: "離開",
       cancelLabel: isEdit ? "繼續編輯" : "繼續填寫",
       destructive: true,
+      returnFocusTo: lastFieldFocusRef.current,
     }).then((ok) => {
       if (ok) blocker.proceed();
       else blocker.reset();
@@ -239,6 +242,9 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submittingRef.current) return;
+    // 每次送出都先清掉上一次的欄位錯誤（含伺服器回的），免得舊錯誤和新錯誤混在一起
+    dispatch({ type: "setErrors", errors: {} });
+    setFormErrors([]);
     if (photos.uploading) {
       notify.error("照片還在上傳中，請稍候");
       return;
@@ -322,7 +328,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
           data-testid="copy-banner"
         >
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="min-w-0">
+            <span className="min-w-0 [overflow-wrap:anywhere]">
               已帶入自{" "}
               <b>
                 {copy.dateLabel} {copy.equipment}・{copy.problem}
@@ -332,11 +338,16 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
               清除帶入
             </Button>
           </div>
-          <p className="text-xs text-ink-2">處理與根本原因是沿用舊紀錄的內容，請確認是否適用這次事件</p>
+          <p className="text-xs text-ink-2 [overflow-wrap:anywhere]">處理與根本原因是沿用舊紀錄的內容，請確認是否適用這次事件</p>
         </div>
       ) : null}
 
-      <form noValidate onSubmit={(e) => void onSubmit(e)} aria-label={isEdit ? "編輯紀錄" : "新增紀錄"} className="flex flex-col gap-5">
+      <form
+        noValidate
+        onFocus={(e) => {
+          lastFieldFocusRef.current = e.target instanceof HTMLElement ? e.target : null;
+        }}
+        onSubmit={(e) => void onSubmit(e)} aria-label={isEdit ? "編輯紀錄" : "新增紀錄"} className="flex flex-col gap-5">
         <DateTimeFields
           values={values}
           errors={errors}

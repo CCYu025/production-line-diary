@@ -44,7 +44,7 @@ export function Field({ name, label, hint, error, review, className, children }:
       </label>
       {children({ id, "aria-invalid": !!error, "aria-describedby": describedBy })}
       {hint ? (
-        <p id={hintId} className="text-xs text-ink-muted">
+        <p id={hintId} className="text-xs text-ink-muted [overflow-wrap:anywhere]">
           {hint}
         </p>
       ) : null}
@@ -57,7 +57,7 @@ export function FieldError({ id, children }: { id?: string; children: React.Reac
   return (
     <p id={id} role="alert" className="flex items-start gap-1.5 text-sm font-medium text-critical">
       <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-      <span>{children}</span>
+      <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
     </p>
   );
 }
