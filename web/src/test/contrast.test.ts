@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { STEP_CLASS } from "@/features/calendar/calendarModel";
 
 /*
  * 對比度守門：直接讀 styles/index.css 裡的色票，確認文字色在各底色上 ≥ 4.5:1（WCAG AA）。
@@ -69,4 +70,16 @@ describe("設計 token 對比度（WCAG AA 文字 ≥ 4.5:1）", () => {
     expect(contrast("#898781", light.page!)).toBeLessThan(4.5);
     expect(contrast(light["ink-muted"]!, light.page!)).toBeGreaterThan(5);
   });
+});
+
+describe("日曆格（STEP_CLASS）的文字在底色上 ≥ 4.5:1（12px 的日期數字也要達標）", () => {
+  for (const [name, t] of Object.entries(THEMES)) {
+    for (const [step, classes] of Object.entries(STEP_CLASS)) {
+      it(`${name}：色階 ${step}（${classes}）`, () => {
+        const bg = /bg-([\w-]+)/.exec(classes)![1]!;
+        const fg = /text-([\w-]+)/.exec(classes)![1]!;
+        expect(contrast(t[fg]!, t[bg]!)).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
 });
