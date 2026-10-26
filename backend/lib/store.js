@@ -38,7 +38,9 @@ export function emptyStore() {
 export async function loadStore(dataDir) {
   const file = dataFilePath(dataDir);
   if (!existsSync(file)) return emptyStore();
-  const raw = await readFile(file, "utf8");
+  let raw = await readFile(file, "utf8");
+  // 用記事本等工具存檔時可能在開頭加上 UTF-8 BOM（U+FEFF），JSON.parse 會直接失敗
+  if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
   let parsed;
   try {
     parsed = JSON.parse(raw);

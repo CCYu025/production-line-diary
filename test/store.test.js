@@ -385,3 +385,38 @@ test("H4：備份失敗（backups 被一個同名檔案擋住）只記 log，不
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---- L4：UTF-8 BOM ----
+
+test("L4 loadStore：開頭有 UTF-8 BOM 照樣讀得進來；BOM 後面不是合法 JSON 仍然是 StoreCorruptError", async () => {
+  const dir = tmpDir();
+  try {
+    const file = path.join(dir, "data.json");
+    writeFileSync(file, "\uFEFF" + JSON.stringify({ _meta: {}, records: [rec(1)], equipmentMap: [] }));
+    const store = await loadStore(dir);
+    assert.equal(store.records.length, 1);
+
+    writeFileSync(file, "\uFEFF{ broken");
+    await assert.rejects(loadStore(dir), StoreCorruptError);
+    assert.equal(readFileSync(file, "utf8"), "\uFEFF{ broken", "損毀的檔案不動");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("L4 withStore：讀到帶 BOM 的檔案再存回去，內容是乾淨的 JSON（沒有 BOM）", async () => {
+  const dir = tmpDir();
+  try {
+    const file = path.join(dir, "data.json");
+    writeFileSync(file, "\uFEFF" + JSON.stringify({ _meta: {}, records: [rec(1)], equipmentMap: [] }));
+    await withStore(dir, async (store) => {
+      store.records.push(rec(2));
+      await store.save();
+    });
+    const raw = readFileSync(file, "utf8");
+    assert.notEqual(raw.charCodeAt(0), 0xfeff);
+    assert.equal(JSON.parse(raw).records.length, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

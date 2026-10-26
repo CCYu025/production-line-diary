@@ -22,7 +22,14 @@ import {
   photoFileExists,
 } from "./lib/photos.js";
 import { sanitizePhotoCaptions } from "./lib/photoCaptions.js";
-import { isRealDate, isSafeFilename, pickRecordFields, validateRecord } from "./lib/validate.js";
+import {
+  isRealDate,
+  isSafeFilename,
+  normalizeRecordFields,
+  parseId,
+  pickRecordFields,
+  validateRecord,
+} from "./lib/validate.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -162,41 +169,35 @@ app.post("/api/records", async (req, res) => {
   for (const key of ["shift", "severity", "status"]) {
     if (fields[key] === null) delete fields[key];
   }
-  const durationNum = Number(fields.duration);
-  const candidate = {
-    ...fields,
-    shift: fields.shift ?? "早",
-    status: fields.status ?? "待處理",
-    severity:
-      fields.severity ?? (Number.isFinite(durationNum) && durationNum > 0 ? severityFromDuration(durationNum) : undefined),
-    photos: fields.photos ?? [],
-  };
-  const errors = validateRecord(candidate, Object.keys(fields));
+  // 新增是整筆全新的資料，所有必填欄位都要驗證（PUT 才只驗證有帶的欄位）
+  const errors = validateRecord(fields, Object.keys(fields), { full: true });
   if (errors.length) return res.status(400).json({ errors });
-  assertPhotosExist(candidate.date, candidate.photos);
+  const norm = normalizeRecordFields(fields);
+  const photos = norm.photos ?? [];
+  assertPhotosExist(norm.date, photos);
 
   const record = await withStore(DATA_DIR, async (store) => {
     const rec = {
       id: nextId(store.records),
-      date: candidate.date,
-      shift: candidate.shift,
-      time: candidate.time,
-      duration: durationNum,
-      equipment: String(candidate.equipment).trim(),
-      category: String(candidate.category || "其他").trim(),
-      problem: String(candidate.problem).trim(),
-      severity: candidate.severity,
-      action: String(candidate.action || "").trim(),
-      rootCause: candidate.rootCause ? String(candidate.rootCause).trim() : null,
-      status: candidate.status,
-      productCode: candidate.productCode ? String(candidate.productCode).trim() : null,
-      materialCategory: candidate.materialCategory ? String(candidate.materialCategory).trim() : null,
-      photos: candidate.photos,
+      date: norm.date,
+      shift: norm.shift ?? "早",
+      time: norm.time,
+      duration: norm.duration,
+      equipment: norm.equipment,
+      category: norm.category ?? "其他",
+      problem: norm.problem,
+      severity: norm.severity ?? severityFromDuration(norm.duration),
+      action: norm.action ?? "",
+      rootCause: norm.rootCause ?? null,
+      status: norm.status ?? "待處理",
+      productCode: norm.productCode ?? null,
+      materialCategory: norm.materialCategory ?? null,
+      photos,
       updatedAt: null,
       deleted: false,
       deletedAt: null,
     };
-    rec.photoCaptions = sanitizePhotoCaptions(candidate.photoCaptions, rec.photos);
+    rec.photoCaptions = sanitizePhotoCaptions(norm.photoCaptions, rec.photos);
     store.records.push(rec);
     await store.save();
     return rec;
@@ -205,21 +206,23 @@ app.post("/api/records", async (req, res) => {
 });
 
 app.put("/api/records/:id", async (req, res) => {
-  const id = Number(req.params.id);
+  const id = parseId(req.params.id);
   const picked = pickRecordFields(req.body); // 白名單：body 裡的 id / deleted / updatedAt… 一律忽略
 
   const record = await withStore(DATA_DIR, async (store) => {
-    const record = store.records.find((r) => r.id === id);
+    const record = id === null ? undefined : store.records.find((r) => r.id === id);
     if (!record) throw new HttpError(404, "找不到這筆紀錄");
 
-    const merged = { ...record, ...picked };
-    const errors = validateRecord(merged, Object.keys(picked));
+    // 只驗證 body 有帶的欄位：舊資料裡的怪值（duration 0、時間 "9:30"、空設備…）
+    // 不該擋住「只改狀態／只填根本原因」這類請求；整筆編輯表單會帶全部欄位，所以仍會被要求修正。
+    const errors = validateRecord(picked, Object.keys(picked));
     if (errors.length) throw new HttpError(400, errors);
+    const norm = normalizeRecordFields(picked);
 
     const oldDate = record.date;
     const oldPhotos = record.photos || [];
-    const newPhotos = Array.isArray(merged.photos) ? merged.photos : oldPhotos;
-    const newDate = merged.date;
+    const newPhotos = norm.photos ?? oldPhotos;
+    const newDate = norm.date ?? oldDate;
 
     // V4：這次新加入的照片必須已經在「新日期」的資料夾裡；原本就有的照片稍後會跟著搬過去
     assertPhotosExist(
@@ -227,24 +230,11 @@ app.put("/api/records/:id", async (req, res) => {
       newPhotos.filter((fn) => !oldPhotos.includes(fn)),
     );
 
-    Object.assign(record, {
-      date: newDate,
-      shift: merged.shift,
-      time: merged.time,
-      duration: Number(merged.duration),
-      equipment: String(merged.equipment).trim(),
-      category: String(merged.category || "其他").trim(),
-      problem: String(merged.problem).trim(),
-      severity: merged.severity,
-      action: String(merged.action || "").trim(),
-      rootCause: merged.rootCause ? String(merged.rootCause).trim() : null,
-      status: merged.status,
-      productCode: merged.productCode ? String(merged.productCode).trim() : null,
-      materialCategory: merged.materialCategory ? String(merged.materialCategory).trim() : null,
-      photos: newPhotos,
-      photoCaptions: sanitizePhotoCaptions(merged.photoCaptions, newPhotos),
-      updatedAt: new Date().toISOString(),
-    });
+    const updates = { ...norm, updatedAt: new Date().toISOString() };
+    if ("photos" in norm || "photoCaptions" in norm) {
+      updates.photoCaptions = sanitizePhotoCaptions("photoCaptions" in norm ? norm.photoCaptions : record.photoCaptions, newPhotos);
+    }
+    Object.assign(record, updates);
     await store.save();
 
     // 以下的檔案動作都在鎖內、存檔成功之後才做（失敗只記 log，資料已經存好了）
@@ -266,7 +256,7 @@ app.put("/api/records/:id", async (req, res) => {
 });
 
 app.post("/api/records/:id/delete", async (req, res) => {
-  const id = Number(req.params.id);
+  const id = parseId(req.params.id);
   const record = await withStore(DATA_DIR, async (store) => {
     const rec = store.records.find((r) => r.id === id);
     if (!rec) throw new HttpError(404, "找不到這筆紀錄");
@@ -279,7 +269,7 @@ app.post("/api/records/:id/delete", async (req, res) => {
 });
 
 app.post("/api/records/:id/restore", async (req, res) => {
-  const id = Number(req.params.id);
+  const id = parseId(req.params.id);
   const record = await withStore(DATA_DIR, async (store) => {
     const rec = store.records.find((r) => r.id === id);
     if (!rec) throw new HttpError(404, "找不到這筆紀錄");
@@ -292,7 +282,7 @@ app.post("/api/records/:id/restore", async (req, res) => {
 });
 
 app.delete("/api/records/:id", async (req, res) => {
-  const id = Number(req.params.id);
+  const id = parseId(req.params.id);
   await withStore(DATA_DIR, async (store) => {
     const record = store.records.find((r) => r.id === id);
     if (!record) throw new HttpError(404, "找不到這筆紀錄");
@@ -317,6 +307,13 @@ app.put("/api/equipment-map", async (req, res) => {
   const cleaned = [];
   for (const entry of req.body) {
     if (!entry || typeof entry !== "object") continue;
+    // 欄位只能是文字（或空值）；物件／陣列／數字會被 String() 變成 "[object Object]" 之類的垃圾，直接拒絕
+    for (const key of ["equipment", "productCode", "materialCategory"]) {
+      const v = entry[key];
+      if (v !== undefined && v !== null && typeof v !== "string") {
+        return res.status(400).json({ errors: [`設備對照表的 ${key} 必須是文字`] });
+      }
+    }
     const equipment = String(entry.equipment || "").trim();
     if (!equipment) continue;
     cleaned.push({
@@ -362,6 +359,11 @@ app.delete("/api/photos/:date/:filename", async (req, res) => {
   // 放在鎖內：「確認沒有紀錄參照」到「刪檔」之間，不能有新增紀錄剛好插進來參照這個檔案
   const deleted = await withStore(DATA_DIR, (store) => deleteUnreferencedPhoto(PHOTOS_DIR, store.records, date, filename));
   res.json({ deleted });
+});
+
+// 未知的 /api 路徑一律回 JSON 404（不要落到 Express 預設的 HTML 錯誤頁）
+app.use("/api", (req, res) => {
+  res.status(404).json({ errors: ["找不到這個 API 路徑"] });
 });
 
 // H1：統一的錯誤中介層。Express 5 會把 async handler 的 rejection 送到這裡，

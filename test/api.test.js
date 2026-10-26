@@ -844,3 +844,208 @@ test("V4：PUT 不碰照片時（舊資料的照片檔案就算不在硬碟上�
   });
   assert.equal(res.status, 200);
 });
+
+// ───────────────────────── PR #32 驗證後的修正：M1 / L1–L4 ─────────────────────────
+
+function putJson(id, payload) {
+  return fetch(`${base}/api/records/${id}`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(payload) });
+}
+
+function addLegacyRecord(extra = {}) {
+  const file = path.join(dataDir, "data.json");
+  const store = JSON.parse(readFileSync(file, "utf8"));
+  const id = Math.max(0, ...store.records.map((r) => r.id)) + 1;
+  const record = {
+    id, date: "2026-10-10", shift: "早", time: "9:30", duration: 0, equipment: "", category: "",
+    problem: "舊紀錄（搬遷來的怪值）", severity: "輕微", action: "", rootCause: null, status: "待處理",
+    productCode: null, materialCategory: null, photos: [], updatedAt: null, deleted: false, deletedAt: null,
+    ...extra,
+  };
+  store.records.push(record);
+  writeFileSync(file, JSON.stringify(store));
+  return record;
+}
+
+async function getRecord(id) {
+  const { records } = await (await fetch(`${base}/api/records`)).json();
+  return records.find((r) => r.id === id);
+}
+
+// ---- M1 ----
+
+test("M1：舊紀錄（duration 0、time \"9:30\"、空設備）只改狀態／只填根本原因 → 成功，其他欄位原封不動", async () => {
+  const legacy = addLegacyRecord();
+  let res = await putJson(legacy.id, { status: "已解決" });
+  assert.equal(res.status, 200);
+  res = await putJson(legacy.id, { rootCause: "補填的根本原因" });
+  assert.equal(res.status, 200);
+
+  const saved = await getRecord(legacy.id);
+  assert.equal(saved.status, "已解決");
+  assert.equal(saved.rootCause, "補填的根本原因");
+  assert.equal(saved.duration, 0, "沒碰的 duration 不變");
+  assert.equal(saved.time, "9:30");
+  assert.equal(saved.equipment, "");
+  assert.equal(saved.category, "", "沒碰的 category 不會被改成「其他」");
+  assert.equal(saved.problem, legacy.problem);
+  assert.ok(saved.updatedAt);
+});
+
+test("M1：同一筆舊紀錄，只要 body 帶了有問題的欄位（duration 0／time 9:30／空設備）仍然 400", async () => {
+  const legacy = addLegacyRecord();
+  for (const bad of [{ duration: 0 }, { time: "9:30" }, { equipment: "" }, { equipment: "   " }, { problem: "" }, { date: "2026-02-30" }]) {
+    const res = await putJson(legacy.id, bad);
+    assert.equal(res.status, 400, `${JSON.stringify(bad)} 應該被拒絕`);
+  }
+  // 整筆編輯表單送全部欄位：壞的欄位會被要求修正
+  const full = await putJson(legacy.id, {
+    date: legacy.date, shift: "早", time: legacy.time, duration: legacy.duration, equipment: legacy.equipment,
+    category: "其他", problem: legacy.problem, severity: "輕微", action: "", status: "待處理",
+  });
+  assert.equal(full.status, 400);
+  // 修正之後就能存
+  const fixed = await putJson(legacy.id, { time: "09:30", duration: 5, equipment: "F3" });
+  assert.equal(fixed.status, 200);
+  const saved = await getRecord(legacy.id);
+  assert.equal(saved.duration, 5);
+  assert.equal(saved.equipment, "F3");
+});
+
+test("M1：POST 仍然驗證全部必填欄位", async () => {
+  assert.equal((await fetch(`${base}/api/records`, { method: "POST", headers: JSON_HEADERS, body: "{}" })).status, 400);
+  assert.equal((await postRecord({ equipment: "" })).status, 400);
+  assert.equal((await postRecord({ duration: 0 })).status, 400);
+});
+
+// ---- L1 ----
+
+test("L1：:id 只接受十進位整數；0x1、1e0、前後空白、前導 0、小數 都是 404，不會命中真正的紀錄", async () => {
+  const { record } = await (await postRecord({ problem: "L1 id 測試" })).json();
+  const id = record.id;
+  const variants = [`0x${id.toString(16)}`, `${id}e0`, `%20${id}`, `${id}%20`, `0${id}`, `${id}.0`, `+${id}`, `${id}abc`];
+  for (const v of variants) {
+    for (const [method, suffix] of [["PUT", ""], ["POST", "/delete"], ["POST", "/restore"], ["DELETE", ""]]) {
+      const res = await fetch(`${base}/api/records/${v}${suffix}`, {
+        method, headers: JSON_HEADERS, body: method === "PUT" ? JSON.stringify({ status: "已解決" }) : undefined,
+      });
+      assert.equal(res.status, 404, `${method} /api/records/${v}${suffix} 應該 404，實際 ${res.status}`);
+    }
+  }
+  const saved = await getRecord(id);
+  assert.equal(saved.status, "待處理");
+  assert.equal(saved.deleted, false);
+  assert.equal(saved.updatedAt, null);
+});
+
+// ---- L2 ----
+
+test("L2：duration 必須是正整數（數字或純數字字串）——POST", async () => {
+  for (const bad of [1.5, true, false, [10], ["10"], "abc", "10.5", "1e1", "", " 10", 0, -1, {}, null]) {
+    assert.equal((await postRecord({ duration: bad })).status, 400, `duration ${JSON.stringify(bad)} 應該被拒絕`);
+  }
+  const res = await postRecord({ duration: "12" });
+  assert.equal(res.status, 201);
+  assert.equal((await res.json()).record.duration, 12, "數字字串存成數字");
+});
+
+test("L2：PUT 帶了 duration 才檢查，且同樣必須是正整數", async () => {
+  const { record } = await (await postRecord({ duration: 10 })).json();
+  for (const bad of [1.5, true, [5], "x", 0, -3]) {
+    assert.equal((await putJson(record.id, { duration: bad })).status, 400, `${JSON.stringify(bad)}`);
+  }
+  const ok = await putJson(record.id, { duration: "20" });
+  assert.equal(ok.status, 200);
+  assert.equal((await ok.json()).record.duration, 20);
+});
+
+test("L2：設備對照表的欄位必須是文字（或空值），物件／陣列／數字一律 400，且不會動到原本的對照表", async () => {
+  const good = [{ equipment: "F3", productCode: "PC-9", materialCategory: null }];
+  assert.equal((await fetch(`${base}/api/equipment-map`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(good) })).status, 200);
+  for (const bad of [
+    [{ equipment: { a: 1 } }],
+    [{ equipment: "F3", productCode: {} }],
+    [{ equipment: "F3", materialCategory: ["x"] }],
+    [{ equipment: 5 }],
+    [{ equipment: "F3", productCode: 123 }],
+    [{ equipment: "F3", productCode: true }],
+  ]) {
+    const res = await fetch(`${base}/api/equipment-map`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(bad) });
+    assert.equal(res.status, 400, JSON.stringify(bad));
+  }
+  const meta = await (await fetch(`${base}/api/meta`)).json();
+  assert.deepEqual(meta.equipmentMap, good);
+  // 空字串／null／省略仍然可以
+  const lenient = [{ equipment: "F4", productCode: "", materialCategory: null }, { equipment: "F5" }];
+  assert.equal((await fetch(`${base}/api/equipment-map`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(lenient) })).status, 200);
+});
+
+test("L2：photos[] 裡重複的檔名只存一份（POST 與 PUT）", async () => {
+  const name = await uploadPhoto("2026-10-11", "dup.jpg");
+  const res = await postRecord({ date: "2026-10-11", photos: [name, name, name] });
+  assert.equal(res.status, 201);
+  const { record } = await res.json();
+  assert.deepEqual(record.photos, [name]);
+
+  const second = await uploadPhoto("2026-10-11", "dup2.jpg");
+  const put = await putJson(record.id, { photos: [name, second, name, second] });
+  assert.equal(put.status, 200);
+  assert.deepEqual((await put.json()).record.photos, [name, second]);
+});
+
+test("L2：1900 年以前的日期（0000-01-01、1899-12-31）→ 400", async () => {
+  for (const date of ["0000-01-01", "1899-12-31"]) {
+    assert.equal((await postRecord({ date })).status, 400, date);
+  }
+  assert.equal((await postRecord({ date: "1900-01-01" })).status, 201);
+});
+
+// ---- L3 ----
+
+test("L3：未知的 /api 路徑回 JSON 404 {errors}", async () => {
+  for (const [method, url] of [
+    ["GET", "/api/nope"],
+    ["GET", "/api/records/1/unknown"],
+    ["POST", "/api/nope"],
+    ["PUT", "/api/records"],
+    ["DELETE", "/api/aggregate-x"],
+  ]) {
+    const res = await fetch(`${base}${url}`, { method });
+    assert.equal(res.status, 404, `${method} ${url}`);
+    assert.match(res.headers.get("content-type"), /application\/json/);
+    assert.ok(Array.isArray((await res.json()).errors));
+  }
+  assert.equal((await fetch(`${base}/not-an-api-path.txt`)).status, 404);
+});
+
+// ---- L4 ----
+
+test("L4：data.json 開頭有 UTF-8 BOM 也讀得進來；寫入後正常，之後的讀取不受影響", async () => {
+  const file = path.join(dataDir, "data.json");
+  const original = readFileSync(file, "utf8");
+  writeFileSync(file, "﻿" + original);
+  try {
+    const res = await fetch(`${base}/api/records`);
+    assert.equal(res.status, 200);
+    const before = (await res.json()).records.length;
+    assert.ok(before > 0);
+    const created = await postRecord({ problem: "BOM 之後的寫入" });
+    assert.equal(created.status, 201);
+    assert.equal((await (await fetch(`${base}/api/records`)).json()).records.length, before + 1);
+  } finally {
+    // 其餘測試照常用這個資料夾
+  }
+});
+
+test("L4：BOM 後面接著無法解析的內容 → 仍然 500 且原檔不被覆寫", async () => {
+  const file = path.join(dataDir, "data.json");
+  const original = readFileSync(file, "utf8");
+  const broken = "﻿{ not json";
+  writeFileSync(file, broken);
+  try {
+    assert.equal((await fetch(`${base}/api/records`)).status, 500);
+    assert.equal((await postRecord({})).status, 500);
+    assert.equal(readFileSync(file, "utf8"), broken);
+  } finally {
+    writeFileSync(file, original);
+  }
+});
