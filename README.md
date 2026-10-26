@@ -53,18 +53,21 @@ npm start              # 或雙擊 start.bat
 啟動後會自動開瀏覽器到 `http://localhost:3000`。沒有設定 `.env` 時，
 會用 `backend/data/example/` 底下的範例資料開機，方便先看看畫面長怎樣。
 
-**新介面預覽版**：專案正在把前端改寫成 React（`web/`），先放在 `http://localhost:3000/next/` 試用，
-`/` 仍是目前每天在用的舊介面。`npm start` 會在 `web/dist` 不存在或過期時自動建置（失敗只警告、舊介面照常啟動）。
-要改新介面：先照上面啟動後端，另開一個終端機執行 `npm run dev:web`（Vite 熱更新，預設 `http://localhost:5173/next/`，
-自動代理 `/api` 與 `/photos`；後端不在 3000 埠時用 `BACKEND_PORT=xxxx npm run dev:web`）。重構進度見 [`docs/refactor-plan.md`](docs/refactor-plan.md)。
+**前端（`web/`，React）**：`npm start` 會在 `web/dist` 不存在或過期時自動建置（所以 clone 下來雙擊 `start.bat` 就能直接用，第一次會比較久）。
+**建置失敗時**：主控台會印出明確的錯誤、錯誤摘要寫進專案根目錄的 `.web-build-error.log`（不進版控），瀏覽器打開會看到
+「介面建置失敗」頁（說明怎麼處理）而不是空白頁；你的資料與照片不受影響。處理方式：`npm install` 再 `npm run build`，然後重新整理瀏覽器（不用重啟）。
+舊的 `/next/…` 網址（切換前的預覽網址）會自動轉址到 `/…`。
+要改前端：先照上面啟動後端，另開一個終端機執行 `npm run dev:web`（Vite 熱更新，預設 `http://localhost:5173/`，
+自動代理 `/api` 與 `/photos`；後端不在 3000 埠時用 `BACKEND_PORT=xxxx npm run dev:web`）。前端重構的歷程見 [`docs/refactor-plan.md`](docs/refactor-plan.md)。
 
 ## 專案結構
 
 ```
 backend/
-  server.js          Express 5 app：Host 允許清單與 X-Requested-With 檢查（本機安全）→ 靜態檔案 + REST API → JSON 404 與統一錯誤處理；啟動時／每小時跑一次孤兒照片清理
+  server.js          Express 5 app：Host 允許清單與 X-Requested-With 檢查（本機安全）→ 照片與前端 + REST API → JSON 404 與統一錯誤處理；啟動時／每小時跑一次孤兒照片清理
   lib/
-    aggregate.js      彙總邏輯（純函式，前後端共用──舊介面經 /lib 直接 import，新介面經 @shared alias import，不複製）
+    aggregate.js      彙總邏輯（純函式，前後端共用──前端經 @shared alias 直接 import，不複製）
+    webUi.js          前端怎麼送出去：web/dist 在 /、舊的 /next/ 網址轉址、沒有建置產物時的「介面建置失敗」頁
     aggregate.d.ts    aggregate.js 的 TypeScript 型別宣告（改 aggregate.js 要同步改）
     types.d.ts        DiaryRecord / Meta / RecordInput…型別（依 schema.md）
     store.js          data.json 的讀寫：withStore 寫入鎖、原子寫入（rename 重試）、每日備份、壞檔不覆寫
@@ -76,33 +79,31 @@ backend/
   data/
     schema.md          資料結構說明（資料契約）
     example/           範例資料，clone 下來就能直接跑
-frontend/
-  index.html           舊介面（正式版，網址 /）：全部畫面（儀表板/列表/日曆/新增/設定/報表/回收桶），fetch 這個 repo 的 API
-web/                   新介面（預覽版，網址 /next/）：React 18 + Vite + TypeScript + Tailwind CSS + shadcn/ui
+web/                   前端（網址 /）：React 18 + Vite + TypeScript + Tailwind CSS + shadcn/ui
   src/app/             外殼（側欄／底部分頁列）、hash 路由
   src/components/      共用元件（ui/ 是 shadcn 風格元件）
-  src/features/        各頁面（儀表板／紀錄列表／詳情面板（WP3a）、日曆／回收桶／設備對照設定（WP3c）、新增／編輯紀錄表單（WP3b）已實作；只有列印報表（WP3d）仍是空殼）
+  src/features/        各頁面：dashboard（儀表板）、records（列表／篩選／詳情面板／新增與編輯表單 form/）、calendar、trash、settings（設備對照）、report（列印報表；report.css 是報紙式排版與列印規則）
   src/lib/             api.ts（型別化 API client）、TanStack Query、URL query helper、toast
   src/styles/          設計 token（淺色／深色）
 docs/
   refactor-plan.md      重構計畫書（分階段工作包、必須保留的行為、進度表）
 scripts/
   migrate.js            一次性搬遷腳本
-  ensure-web-build.js   npm start 前置：web/dist 不存在或過期時自動建置（失敗只警告，不擋舊介面）
+  ensure-web-build.js   npm start 前置：web/dist 不存在或過期時自動建置（失敗時印錯誤並留下 .web-build-error.log，伺服器仍啟動並顯示「介面建置失敗」頁）
 test/                   後端 node:test，見下方
 .github/workflows/ci.yml
 ```
 
 ## 測試
 
-後端用 Node 內建的 test runner，沒有額外裝測試框架；新前端用 Vitest：
+後端用 Node 內建的 test runner，沒有額外裝測試框架；前端用 Vitest：
 
 ```bash
 npm run check      # 後端語法檢查（node --check）
 npm test           # 後端 node:test（test/**/*.test.js）
-npm run typecheck  # 新前端 tsc --noEmit
-npm run test:web   # 新前端 Vitest
-npm run build      # 新前端 vite build
+npm run typecheck  # 前端 tsc --noEmit
+npm run test:web   # 前端 Vitest
+npm run build      # 前端 vite build → web/dist
 ```
 
 CI（`.github/workflows/ci.yml`）在每次 push / PR 到 `main` 時自動跑這五步；`main` 分支

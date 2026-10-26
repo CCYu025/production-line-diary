@@ -21,6 +21,16 @@ import { openReportWindow } from "./reportWindow";
 const dateInputClass =
   "num h-11 w-full min-w-0 rounded-md border border-line-strong bg-surface-raised px-3 text-sm text-ink-1 md:h-10";
 
+/**
+ * 這次開啟 App 之後最近一次產生的範圍（只存在記憶體，重新整理就沒了）。
+ * 側欄的「列印報表」連結沒有帶範圍，離開再從側欄回來時靠它還原（舊 UI 切頁後報表還在）。
+ */
+let lastRange: ReportRange | null = null;
+/** 測試用：清掉記憶的範圍 */
+export function resetLastReportRange() {
+  lastRange = null;
+}
+
 function snapshot(records: readonly DiaryRecord[], range: ReportRange): ReportData {
   return { ...range, records: selectReportRecords(records, range), generatedAt: formatGeneratedAt(new Date()) };
 }
@@ -31,7 +41,8 @@ function snapshot(records: readonly DiaryRecord[], range: ReportRange): ReportDa
  * 列印時整個 App 外殼與所有浮層都隱藏，只印 #report-output（見 report.css 的 @media print）。
  *
  * 範圍放在網址（`#/report?from=…&to=…`）：按「產生報表」會把範圍寫進網址（push，上一頁可回到上一份報表），
- * 網址上有合法的範圍就自動產生——所以離開再回來、上一頁／下一頁、重新整理、書籤都還原得了報表（舊 UI 切頁後還在）。
+ * 網址上有合法的範圍就自動產生——所以上一頁／下一頁、重新整理、書籤都還原得了報表。
+ * 從側欄（沒帶範圍的連結）重新進入這一頁時，用這次開啟 App 後最近一次的範圍補回網址（replace，不卡住上一頁）。
  * 報表仍是「產生當下」的快照：資料之後變動不會自己改（還原時等於重新按一次「產生報表」，產出時間會更新）。
  */
 export function ReportPage() {
@@ -48,6 +59,14 @@ export function ReportPage() {
   const urlStart = urlRange?.start;
   const urlEnd = urlRange?.end;
 
+  // 剛進入這一頁、網址沒有範圍：沿用最近一次的範圍（只在進入當下做一次；之後上一頁退回沒有範圍的網址，就是空的）
+  const restoredOnMount = React.useRef(false);
+  React.useEffect(() => {
+    if (restoredOnMount.current) return;
+    restoredOnMount.current = true;
+    if (!urlRange && lastRange) setSearchParams({ from: lastRange.start, to: lastRange.end }, { replace: true });
+  }, []);
+
   // 網址 → 輸入框＋報表。只在「網址的範圍」或「資料第一次載入完成」時跑，資料之後重抓不會讓報表自己改。
   // 自己按「產生報表」造成的網址變動，報表已經是那個範圍，不會重複產生。
   React.useEffect(() => {
@@ -55,6 +74,7 @@ export function ReportPage() {
       setReport(null);
       return;
     }
+    lastRange = { start: urlStart, end: urlEnd };
     setRange((r) => (r.start === urlStart && r.end === urlEnd ? r : { start: urlStart, end: urlEnd }));
     const all = recordsRef.current;
     if (!all) return;
@@ -70,6 +90,7 @@ export function ReportPage() {
     }
     // 重新按同一個範圍＝重新產生（更新資料與產出時間）；換範圍就寫進網址，effect 會接手顯示
     setReport(snapshot(records, range));
+    lastRange = range;
     if (urlStart !== range.start || urlEnd !== range.end) {
       setSearchParams({ from: range.start, to: range.end });
     }

@@ -1,13 +1,13 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers } from "@/app/Providers";
 import { api } from "@/lib/api";
 import { createQueryClient } from "@/lib/queryClient";
 import { makeRecord } from "@/test/recordsHarness";
 import type { DiaryRecord } from "@/lib/types";
-import { ReportPage } from "./ReportPage";
+import { ReportPage, resetLastReportRange } from "./ReportPage";
 
 function Probe() {
   const loc = useLocation();
@@ -17,6 +17,13 @@ function Probe() {
       <output data-testid="loc">{loc.pathname + loc.search}</output>
       <button type="button" onClick={() => navigate(-1)}>
         back
+      </button>
+      {/* 模擬側欄連結：不帶範圍 */}
+      <button type="button" onClick={() => navigate("/report")}>
+        to-report
+      </button>
+      <button type="button" onClick={() => navigate("/dashboard")}>
+        to-dashboard
       </button>
     </>
   );
@@ -29,7 +36,10 @@ function setup(records: DiaryRecord[], entries: string[] = ["/report"]) {
   return render(
     <Providers client={client}>
       <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
-        <ReportPage />
+        <Routes>
+          <Route path="/report" element={<ReportPage />} />
+          <Route path="*" element={<p>其他頁面</p>} />
+        </Routes>
         <Probe />
       </MemoryRouter>
     </Providers>,
@@ -51,6 +61,7 @@ async function ready() {
 }
 
 beforeEach(() => {
+  resetLastReportRange();
   // 只固定 Date（其餘計時器照常），今天 = 2026-10-26（台灣 00:30，UTC 還是 10/25——預設日期不能用 toISOString）
   vi.useFakeTimers({ toFake: ["Date"], now: new Date(2026, 9, 26, 0, 30) });
 });
@@ -193,6 +204,28 @@ describe("ReportPage", () => {
       const out = document.querySelector("#report-output") as HTMLElement;
       expect(out.textContent).toContain("今天的問題");
       expect(out.textContent).not.toContain("昨天的問題");
+    });
+
+    it("離開再從側欄（沒帶範圍的連結）回來：用最近一次的範圍還原報表，且不卡住上一頁", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      setup(recs, ["/dashboard"]);
+      // 第一次進來：產生一份 10/25～10/26
+      await user.click(screen.getByRole("button", { name: "to-report" }));
+      await ready();
+      await user.clear(startInput());
+      await user.type(startInput(), "2026-10-25");
+      await user.click(generateBtn());
+      expect(loc()).toBe("/report?from=2026-10-25&to=2026-10-26");
+      // 離開（側欄連結），再回來（沒帶範圍的連結）
+      await user.click(screen.getByRole("button", { name: "to-dashboard" }));
+      await waitFor(() => expect(loc()).toBe("/dashboard"));
+      await user.click(screen.getByRole("button", { name: "to-report" }));
+      await waitFor(() => expect(loc()).toBe("/report?from=2026-10-25&to=2026-10-26"));
+      await waitFor(() => expect(document.querySelector("#report-output")).not.toBeNull());
+      expect(startInput().value).toBe("2026-10-25");
+      // replace：上一頁直接回到儀表板，不是又回到沒有範圍的 /report
+      await user.click(screen.getByRole("button", { name: "back" }));
+      await waitFor(() => expect(loc()).toBe("/dashboard"));
     });
 
     it("網址範圍不合法（起 > 迄、格式錯）：不自動產生", async () => {
