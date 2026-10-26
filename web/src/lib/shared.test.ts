@@ -24,6 +24,7 @@ const declared: Record<keyof typeof shared, true> = {
   facetCounts: true,
   sortByDate: true,
   datePresets: true,
+  toISODate: true,
 };
 
 describe("@shared/aggregate（前後端共用邏輯）", () => {
@@ -34,6 +35,7 @@ describe("@shared/aggregate（前後端共用邏輯）", () => {
   it("可以在瀏覽器端直接使用", () => {
     expect(shared.severityFromDuration(12)).toBe("一般");
     expect(shared.aggregate([], "all").totalEvents).toBe(0);
+    expect(shared.toISODate(new Date(2026, 9, 26, 0, 30))).toBe("2026-10-26"); // 本地日期，不受 UTC 影響
     expect(SEVERITY_ORDER).toEqual(["輕微", "一般", "嚴重", "重大"]);
     expect(STATUS_ORDER).toEqual(["待處理", "追蹤中", "已解決"]);
   });

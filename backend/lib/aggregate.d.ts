@@ -52,3 +52,5 @@ export function filterRecords(records: readonly DiaryRecord[], f: RecordFilter):
 export function facetCounts(records: readonly DiaryRecord[], f: RecordFilter, key: FacetKey): Record<string, number>;
 export function sortByDate(records: readonly DiaryRecord[], desc?: boolean): DiaryRecord[];
 export function datePresets(now?: Date): DatePreset[];
+/** 本地日期的 YYYY-MM-DD（toISOString 是 UTC，台灣 00:00–08:00 會變成昨天，不可用來取「今天」）。 */
+export function toISODate(d: Date): string;
