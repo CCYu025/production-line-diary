@@ -287,6 +287,7 @@
   }
   .daterow input:focus{ border-color:var(--accent); }
   .daterow span{ color:var(--ink-muted); font-size:12px; }
+  .date-hint{ margin-top:8px; font-size:11.5px; color:var(--critical); }
   .sort-btn{ border:1px solid var(--line); background:var(--surface-raised); color:var(--ink-2); border-radius:9px; padding:7px 11px; font-size:12.5px; font-weight:600; cursor:pointer; }
   .sort-btn:hover{ border-color:var(--line-strong); }
   .applied-meta{ margin-left:auto; display:flex; gap:12px; align-items:center; font-size:12px; color:var(--ink-muted); }
@@ -847,6 +848,7 @@
             <div class="pop date" hidden>
               <div class="presets" id="date-presets"></div>
               <div class="daterow"><input type="date" id="date-from" aria-label="起始日期"><span>至</span><input type="date" id="date-to" aria-label="結束日期"></div>
+              <div class="date-hint" id="date-hint" hidden>起日晚於迄日，沒有符合的紀錄</div>
             </div>
           </div>
           <div class="dd" id="dd-equipment"><button class="dd-btn" type="button" aria-haspopup="true" aria-expanded="false"><span class="lbl">設備</span><svg class="icon chev" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button><div class="pop" hidden></div></div>
@@ -1466,9 +1468,12 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       var on = p.from===filterState.from && p.to===filterState.to;
       return '<button type="button" class="preset'+(on?" on":"")+'" data-id="'+p.id+'">'+p.label+'</button>';
     }).join("");
+    // 只在值真的不同時才寫回：在 Chrome 的日期框裡，改 value 或 min/max 都會重置打到一半的輸入
+    // （例如把月份打成 11，第二位數字會被吃掉），所以也不設 min/max
     var fi = $("#date-from"), ti = $("#date-to");
-    fi.value = filterState.from; ti.value = filterState.to;
-    fi.max = filterState.to; ti.min = filterState.from;
+    if(fi.value!==filterState.from) fi.value = filterState.from;
+    if(ti.value!==filterState.to) ti.value = filterState.to;
+    $("#date-hint").hidden = !(filterState.from && filterState.to && filterState.from>filterState.to);
   }
 
   function renderFilterBar(){
@@ -2480,21 +2485,17 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       var p = datePresets().find(function(x){ return x.id===b.getAttribute("data-id"); });
       filterState.from = p.from; filterState.to = p.to; renderList();
     };
-    // 起訖顛倒時，把另一端一起拉過來，不讓使用者卡在「起 > 迄」的空結果。
-    // 在已有完整日期的欄位逐位改年份時，瀏覽器每打一位就觸發一次 change（0002 → 0020 → 0202 → 2026），
-    // 中間值不是使用者要的日期，套用會把另一端誤拉到 0002 年，所以年份不到 1900 的先忽略。
+    // 逐位打字時，每一位都會觸發一次 change，中間值不是使用者要的日期：年份不到 1900 的直接忽略
+    // （0002 → 0020 → 0202 → 2026）。起 > 迄時不去動另一端（打到一半的月/日會被誤判成顛倒，
+    // 把使用者原本設好的另一端改掉），只顯示提示，列表為空。
     function plausibleDate(v){ return v==="" || Number(v.slice(0,4))>=1900; }
     $("#date-from").onchange = function(){
       if(!plausibleDate(this.value)) return;
-      filterState.from = this.value;
-      if(filterState.from && filterState.to && filterState.from>filterState.to) filterState.to = filterState.from;
-      renderList();
+      filterState.from = this.value; renderList();
     };
     $("#date-to").onchange = function(){
       if(!plausibleDate(this.value)) return;
-      filterState.to = this.value;
-      if(filterState.from && filterState.to && filterState.to<filterState.from) filterState.from = filterState.to;
-      renderList();
+      filterState.to = this.value; renderList();
     };
     // 點在下拉外面才收起。用 composedPath、不用 e.target.closest：選項被點下去會重畫清單，
     // 被點的元素當下已脫離 DOM（同 #copy-picker 的做法，見 CLAUDE.md）
@@ -2502,7 +2503,12 @@ import { aggregate, severityFromDuration, commonProblems, pickCopyFields, SEVERI
       if(!openDropdown) return;
       if(e.composedPath().indexOf($("#dd-"+openDropdown))===-1) setDropdown(null);
     });
-    document.addEventListener("keydown", function(e){ if(e.key==="Escape" && openDropdown) setDropdown(null); });
+    document.addEventListener("keydown", function(e){
+      if(e.key!=="Escape" || !openDropdown) return;
+      var btn = $(".dd-btn", $("#dd-"+openDropdown));
+      setDropdown(null);
+      btn.focus(); // 鍵盤使用者按 Esc 後焦點回到下拉按鈕，不用重新 Tab
+    });
     // 篩選列固定在頂端、浮在表格上方時，補一條底線把它跟表格分開
     window.addEventListener("scroll", function(){
       var lf = $("#list-filters");
