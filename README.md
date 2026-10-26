@@ -68,6 +68,8 @@ backend/
     example/           範例資料，clone 下來就能直接跑
 frontend/
   index.html           全部畫面（儀表板/列表/日曆/新增/設定/報表/回收桶），fetch 這個 repo 的 API
+docs/
+  refactor-plan.md      重構計畫書（分階段工作包、必須保留的行為、進度表）
 scripts/
   migrate.js            一次性搬遷腳本
 test/                   node:test，見下方
