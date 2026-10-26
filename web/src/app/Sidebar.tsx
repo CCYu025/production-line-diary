@@ -115,7 +115,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "sticky top-0 hidden h-dvh w-16 shrink-0 flex-col gap-4 border-r border-line px-2 py-5 md:flex lg:w-56 lg:px-3.5",
+        "sticky top-0 hidden h-dvh w-16 shrink-0 flex-col gap-4 border-r border-line px-2 py-5 md:flex lg:w-56 lg:px-3.5 print:hidden",
       )}
     >
       <Link
