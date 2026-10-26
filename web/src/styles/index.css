@@ -1,0 +1,266 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+ * 設計 token（docs/refactor-plan.md §4 U0）。
+ * 色票語意沿用舊 UI（frontend/index.html）的 CSS 變數，淺色／深色兩套、跟隨系統；
+ * 也可用 <html data-theme="light|dark"> 強制指定（跟舊 UI 一致）。
+ * 與舊 UI 不同之處（皆為了對比度 ≥ 4.5:1，量測值見 web/src/test/contrast.test.ts）：
+ *   - ink-muted：淺色 #898781(3.4:1) → #6b6a64；深色 #898781 → #9b9a93
+ *   - 淺色 accent #2a78d6 → #2468bd（白字／當文字用都 ≥ 4.5:1）；深色另有 accent-text
+ * 元件請只用語意 token（bg-surface-raised、text-ink-2…），不要寫死色碼，也不要用行內 style 寫視覺樣式。
+ */
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-raised: #ffffff;
+  --ink-1: #0b0b0b;
+  --ink-2: #52514e;
+  --ink-muted: #6b6a64;
+  --line: #e1e0d9;
+  --line-strong: #c3c2b7;
+  --accent: #2468bd;
+  --accent-ink: #ffffff;
+  --accent-text: #2468bd;
+  --accent-wash: #e9f1fb;
+  --accent-2: #eb6834;
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --serious-wash: #fdece3;
+  --critical: #d03b3b;
+  --critical-ink: #ffffff;
+  --shadow: 0 12px 32px -12px rgba(20, 20, 18, 0.18), 0 2px 8px -2px rgba(20, 20, 18, 0.1);
+  --ring: rgba(11, 11, 11, 0.1);
+  --overlay: rgba(11, 11, 11, 0.45);
+  --seq-100: #cde2fb;
+  --seq-200: #9ec5f4;
+  --seq-300: #6da7ec;
+  --seq-400: #3987e5;
+  --seq-450: #2a78d6;
+  --seq-500: #256abf;
+  --seq-600: #184f95;
+  --seq-700: #0d366b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-raised: #212120;
+    --ink-1: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-muted: #9b9a93;
+    --line: #2c2c2a;
+    --line-strong: #383835;
+    --accent: #3987e5;
+    --accent-ink: #0b0b0b;
+    --accent-text: #5598e7;
+    --accent-wash: #132538;
+    --accent-2: #d95926;
+    --serious-wash: #332018;
+    --critical: #e66767;
+    --critical-ink: #0b0b0b;
+    --ring: rgba(255, 255, 255, 0.12);
+    --overlay: rgba(0, 0, 0, 0.6);
+    --shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.6), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+    --seq-100: #132538;
+    --seq-200: #16324f;
+    --seq-300: #1c4576;
+    --seq-400: #2a78d6;
+    --seq-450: #3987e5;
+    --seq-500: #5598e7;
+    --seq-600: #86b6ef;
+    --seq-700: #b7d3f6;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-raised: #212120;
+  --ink-1: #ffffff;
+  --ink-2: #c3c2b7;
+  --ink-muted: #9b9a93;
+  --line: #2c2c2a;
+  --line-strong: #383835;
+  --accent: #3987e5;
+  --accent-ink: #0b0b0b;
+  --accent-text: #5598e7;
+  --accent-wash: #132538;
+  --accent-2: #d95926;
+  --serious-wash: #332018;
+  --critical: #e66767;
+  --critical-ink: #0b0b0b;
+  --ring: rgba(255, 255, 255, 0.12);
+  --overlay: rgba(0, 0, 0, 0.6);
+  --shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.6), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+  --seq-100: #132538;
+  --seq-200: #16324f;
+  --seq-300: #1c4576;
+  --seq-400: #2a78d6;
+  --seq-450: #3987e5;
+  --seq-500: #5598e7;
+  --seq-600: #86b6ef;
+  --seq-700: #b7d3f6;
+}
+
+/* 把上面的 CSS 變數註冊成 Tailwind 的語意 token：bg-page、text-ink-2、border-line… */
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-muted: var(--ink-muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-text: var(--accent-text);
+  --color-accent-wash: var(--accent-wash);
+  --color-accent-2: var(--accent-2);
+  --color-good: var(--good);
+  --color-warning: var(--warning);
+  --color-serious: var(--serious);
+  --color-serious-wash: var(--serious-wash);
+  --color-critical: var(--critical);
+  --color-critical-ink: var(--critical-ink);
+  --color-overlay: var(--overlay);
+  --color-seq-100: var(--seq-100);
+  --color-seq-200: var(--seq-200);
+  --color-seq-300: var(--seq-300);
+  --color-seq-400: var(--seq-400);
+  --color-seq-450: var(--seq-450);
+  --color-seq-500: var(--seq-500);
+  --color-seq-600: var(--seq-600);
+  --color-seq-700: var(--seq-700);
+
+  /* shadcn/ui 慣用名稱的別名，之後用 `shadcn add` 加元件時不用改 class。
+     （shadcn 的 accent 是 hover 底色，跟我們的品牌 accent 不同，所以不做 accent 別名。） */
+  --color-background: var(--page);
+  --color-foreground: var(--ink-1);
+  --color-card: var(--surface-raised);
+  --color-card-foreground: var(--ink-1);
+  --color-popover: var(--surface-raised);
+  --color-popover-foreground: var(--ink-1);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-ink);
+  --color-secondary: var(--surface);
+  --color-secondary-foreground: var(--ink-1);
+  --color-muted: var(--surface);
+  --color-muted-foreground: var(--ink-muted);
+  --color-destructive: var(--critical);
+  --color-destructive-foreground: var(--critical-ink);
+  --color-border: var(--line);
+  --color-input: var(--line-strong);
+  --color-ring: var(--accent-text);
+
+  /* 圓角尺度 sm 6 / md 10 / lg 14（其餘沿用 Tailwind 預設會讓尺度失控，所以先清掉） */
+  --radius-*: initial;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-full: 9999px;
+
+  --font-sans: "Noto Sans TC", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-serif: "Noto Serif TC", "Songti TC", serif;
+  --font-mono: "IBM Plex Mono", "Noto Sans TC", ui-monospace, monospace;
+
+  --shadow-pop: var(--shadow);
+
+  --animate-skeleton: skeleton-pulse 1.6s ease-in-out infinite;
+  @keyframes skeleton-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+}
+
+/* 數字：等寬字型＋tabular-nums（KPI、耗時、筆數、日期時間）。 */
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    background-color: var(--page);
+    color: var(--ink-1);
+    font-family: var(--font-sans);
+    font-size: 15px; /* 內文最小 14px */
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  *,
+  ::before,
+  ::after {
+    border-color: var(--line);
+  }
+  [hidden] {
+    display: none !important;
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  /* 鍵盤焦點環：所有可互動元素共用；滑鼠點擊不會出現。 */
+  :focus-visible {
+    outline: 2px solid var(--accent-text);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* sonner（toast）配色：對應語意 token，淺色／深色自動跟隨。 */
+[data-sonner-toaster] {
+  --normal-bg: var(--surface-raised);
+  --normal-text: var(--ink-1);
+  --normal-border: var(--line-strong);
+  --success-bg: var(--surface-raised);
+  --success-text: var(--ink-1);
+  --success-border: var(--good);
+  --error-bg: var(--surface-raised);
+  --error-text: var(--ink-1);
+  --error-border: var(--critical);
+  --border-radius: var(--radius-md);
+}
+/* sonner 的樣式是執行時才插入、順序在我們後面，所以選擇器要多一層才蓋得過去 */
+[data-sonner-toaster] [data-sonner-toast] [data-button] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+[data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+  background: var(--surface-raised);
+  color: var(--ink-2);
+  border-color: var(--line-strong);
+}
