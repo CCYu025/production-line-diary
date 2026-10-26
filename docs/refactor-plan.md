@@ -37,7 +37,7 @@
 
 ## 2. 不可破壞的既有決策（新 UI 必須保留）
 
-這些來自 `CLAUDE.md`〈核心不變量〉，改寫成 React 後**行為必須一致**。實作細節（例如 `.cp-chip`、`composedPath()`、`[hidden]` CSS）會隨舊檔案消失，但它們要解決的**行為**不能消失。
+這些來自 `CLAUDE.md`〈核心不變量〉，改寫成 React 後**行為必須一致**。實作細節（例如 `.cp-chip`、`composedPath()`）會隨舊檔案消失，但它們要解決的**行為**不能消失；`[hidden]` 規則已搬到 `web/src/styles/index.css`。
 
 **資料與檔案**
 - `data.json` 是唯一事實來源；`.xlsx` 只是匯出快照，從不回讀。
@@ -204,7 +204,7 @@ App 每天在用，重構期間舊 UI 仍是正式版，所以 bug 先修在現�
 | 風險 | 對策 |
 |---|---|
 | 改寫 React 時遺漏既有行為 | §2 清單逐項列入驗收條件；WP3d 切換前做一次完整的 `CLAUDE.md` 手動驗證清單 |
-| 新 UI 半成品影響每日使用 | 新 UI 只掛在 `/next/`，WP3d 才切換；任何時候 revert 單一 PR 即可回到前一狀態 |
+| 新 UI 半成品影響每日使用 | 新 UI 只掛在 `/next/`，WP3d 才切換（已於 WP3d 切換）；任何時候 revert 單一 PR 即可回到前一狀態 |
 | 建置步驟讓 `start.bat` 失效 | WP2 驗收條件：全新 clone → 雙擊 `start.bat` 可直接使用 |
 | 字型自託管體積大 | 只打包用到的字重；中文字型使用 @fontsource 的 unicode-range 分包 |
 | PR 之間文件衝突 | 序列合併；後合併者 rebase 解決 |
@@ -213,7 +213,7 @@ App 每天在用，重構期間舊 UI 仍是正式版，所以 bug 先修在現�
 
 | 工作包 | 分支 | PR | 狀態 |
 |---|---|---|---|
-| 計畫書 | `docs/refactor-plan` | — | 已完成 |
+| 計畫書 | `docs/refactor-plan` | #30 | 已完成 |
 | WP1a 正確性修正 | `fix/correctness` | #31 | 已完成 |
 | WP1b 後端強化 | `fix/backend-hardening` | #32 | 已完成 |
 | WP2 新前端基礎 | `feat/web-foundation` | #33 | 已完成 |
@@ -225,3 +225,9 @@ App 每天在用，重構期間舊 UI 仍是正式版，所以 bug 先修在現�
 **WP3d 切換紀錄**：`/` 改為新 UI（Vite `base: "/"`），`/next/…` 轉址到 `/…`，`frontend/index.html` 與 `/lib` 靜態路徑已移除。
 建置失敗時（不再有舊介面可退）：`npm start` 印出明確錯誤、寫 `.web-build-error.log`、仍啟動伺服器，`/` 顯示「介面建置失敗」頁；修好後 `npm run build` 重新整理即可。
 `CLAUDE.md`／`AGENTS.md`／`README.md` 已改寫為最終架構（核心不變量指向新介面的位置）。
+
+**最終驗收（2026-10-27）**：驗收通過（獨立驗證與文件檢查皆完成）。仍需要使用者自己確認、無法由 agent 代為驗證的項目：
+1. 真實的列印／另存 PDF 預覽（頁面右緣沒有貫穿整頁的直線、A4 兩張排行表並排）；
+2. 真實的「開新視窗」彈出視窗（瀏覽器第一次可能要允許彈出視窗）；
+3. 真實手機（相機／檔案選擇器上傳照片、觸控操作手感）；
+4. 全新 clone 後雙擊 `start.bat` 能直接用（agent 只用 `.\start.bat` 在命令列模擬過）。

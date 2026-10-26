@@ -1,7 +1,7 @@
 import * as React from "react";
 import { StatusGlyph } from "@/components/badges";
 import type { Aggregate, RankEntry, Severity, Status } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, labelOrUnfilled } from "@/lib/utils";
 
 /*
  * 儀表板圖表。全部是手刻 HTML / SVG（沒有圖表函式庫）。
@@ -59,11 +59,12 @@ export function HBarChart({
           <button
             type="button"
             onClick={() => onSelect(r.label)}
-            aria-label={`${actionLabel}：${r.label}，${r.count} 次`}
+            aria-label={`${actionLabel}：${labelOrUnfilled(r.label)}，${r.count} 次`}
             className="grid min-h-11 w-full grid-cols-[minmax(3.5rem,7rem)_minmax(0,1fr)_3.5rem] items-center gap-3 rounded-md px-2 text-left hover:bg-surface md:min-h-9"
           >
-            <span className="truncate text-sm" title={r.label}>
-              {r.label}
+            {/* 舊資料可能設備／分類是空字串：顯示「（未填）」，但點下去仍帶入 ""（精確篩到那些紀錄） */}
+            <span className={cn("truncate text-sm", r.label.trim() === "" && "text-ink-muted")} title={labelOrUnfilled(r.label)}>
+              {labelOrUnfilled(r.label)}
             </span>
             <span className="h-2.5 overflow-hidden rounded-full bg-line" aria-hidden="true">
               <span

@@ -200,7 +200,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
 
   /* ---------- 清除（新增）／取消（編輯） ---------- */
   const reset = () => {
-    photos.abandonAll(); // 中止上傳中的、刪掉已上傳未送出的
+    photos.abandonAll(); // 已上傳未送出的立刻刪；上傳中的標記「已放棄」（不中止請求），回應回來後補刪
     dispatch({ type: "reset" }); // 日期／時間回到「現在」
     setFormErrors([]);
     clearCopyParam();
@@ -474,7 +474,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
                 依耗時建議為「{suggested}」{" "}
                 <button
                   type="button"
-                  className="font-medium text-accent-text underline underline-offset-2"
+                  className="inline-flex min-h-11 items-center px-2 font-medium text-accent-text underline underline-offset-2 md:min-h-0 md:px-0"
                   onClick={() => dispatch({ type: "applySuggestedSeverity" })}
                 >
                   改用建議

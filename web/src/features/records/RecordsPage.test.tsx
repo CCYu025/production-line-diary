@@ -204,6 +204,13 @@ describe("篩選：日期區間", () => {
     expect(visibleProblems()).toEqual(["5", "4", "3"]);
   });
 
+  it("網址上不存在的日期（2026-13-45）直接忽略：沒有壞掉的日期 chip，也不篩掉任何紀錄", async () => {
+    await setup("/records?from=2026-13-45&to=2026-10-23");
+    expect(screen.getByRole("button", { name: /移除 日期：/ }).textContent).not.toContain("13/45");
+    expect(screen.getByRole("button", { name: /移除 日期：/ }).textContent).not.toContain("NaN");
+    expect(query().get("from")).toBe("2026-13-45"); // 網址沒被改寫，只是解析時忽略
+  });
+
   it("日期 chip 可移除", async () => {
     const { user } = await setup("/records?from=2026-10-22&to=2026-10-23");
     const chip = screen.getByRole("button", { name: /移除 日期：/ });

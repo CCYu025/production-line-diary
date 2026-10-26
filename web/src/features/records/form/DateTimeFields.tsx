@@ -33,6 +33,13 @@ export function DateTimeFields({ values, errors, review, open, onOpenChange, dat
         <span className="num text-sm text-ink-1" data-testid="date-summary">
           {formatDateSummary(values)}
         </span>
+        {/* 日期被照片鎖住時，收合的摘要上也要看得出來（提示文字在下方，面板收合時一樣顯示） */}
+        {dateLocked ? (
+          <span className="inline-flex items-center gap-1 text-xs text-ink-2" data-testid="date-lock-icon">
+            <Lock className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="sr-only">日期已鎖定</span>
+          </span>
+        ) : null}
         {needsReview && !open ? <ReviewTag className="ml-0" /> : null}
         <Button
           variant="ghost"

@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-rou
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers } from "@/app/Providers";
 import { api } from "@/lib/api";
+import { notify } from "@/lib/feedback";
 import { createQueryClient } from "@/lib/queryClient";
 import { makeRecord } from "@/test/recordsHarness";
 import type { DiaryRecord } from "@/lib/types";
@@ -24,6 +25,9 @@ function Probe() {
       </button>
       <button type="button" onClick={() => navigate("/dashboard")}>
         to-dashboard
+      </button>
+      <button type="button" onClick={() => navigate("/report?from=2026-10-26&to=2026-10-20")}>
+        to-reversed
       </button>
     </>
   );
@@ -66,6 +70,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"], now: new Date(2026, 9, 26, 0, 30) });
 });
 afterEach(() => {
+  notify.dismiss(); // sonner 的 toast 是全域的，不清掉會留到下一個測試
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -228,11 +233,34 @@ describe("ReportPage", () => {
       await waitFor(() => expect(loc()).toBe("/dashboard"));
     });
 
-    it("網址範圍不合法（起 > 迄、格式錯）：不自動產生", async () => {
+    it("網址起 > 迄：不自動產生，顯示和按鈕相同的驗證訊息，輸入框維持網址上的值", async () => {
       setup(recs, ["/report?from=2026-10-26&to=2026-10-20"]);
       await ready();
+      expect(await screen.findByText("起始日期不能晚於結束日期")).toBeInTheDocument();
       expect(document.querySelector("#report-output")).toBeNull();
-      expect(startInput().value).toBe("2026-10-26"); // 預設值（網址不合法就不採用）
+      expect(startInput().value).toBe("2026-10-26");
+      expect(endInput().value).toBe("2026-10-20");
+    });
+
+    it("已經有上一份範圍時網址又帶起 > 迄：不會悄悄換回上一份，也不自動產生", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      setup(recs, ["/dashboard"]);
+      await user.click(screen.getByRole("button", { name: "to-report" }));
+      await ready();
+      await user.click(generateBtn()); // 記住 10/26～10/26
+      await user.click(screen.getByRole("button", { name: "to-dashboard" }));
+      await user.click(screen.getByRole("button", { name: "to-reversed" }));
+      expect(await screen.findByText("起始日期不能晚於結束日期")).toBeInTheDocument();
+      expect(loc()).toBe("/report?from=2026-10-26&to=2026-10-20");
+      expect(document.querySelector("#report-output")).toBeNull();
+      expect(endInput().value).toBe("2026-10-20");
+    });
+
+    it("網址日期格式錯或不存在（2026-13-45）：忽略，不自動產生", async () => {
+      setup(recs, ["/report?from=2026-13-45&to=2026-10-26"]);
+      await ready();
+      expect(document.querySelector("#report-output")).toBeNull();
+      expect(startInput().value).toBe("2026-10-26"); // 預設值
     });
 
     it("重新按同一個範圍：重新產生但不新增瀏覽歷史", async () => {

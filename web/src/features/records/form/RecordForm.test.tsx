@@ -592,6 +592,9 @@ describe("照片：選檔立刻上傳、鎖日期、放棄清理", () => {
     expect(screen.getByText("上傳中…")).toBeInTheDocument();
     expect(dateInput()).toBeDisabled();
     expect(screen.getByTestId("date-lock-hint")).toHaveTextContent("已上傳照片，要改日期請先移除照片");
+    // 日期面板收合時（預設）也看得到鎖：摘要旁有鎖頭、提示文字照常顯示
+    expect(screen.getByRole("button", { name: "修改" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByTestId("date-lock-icon")).toHaveTextContent("日期已鎖定");
 
     await act(async () => calls[0]!.d.resolve("a.jpg"));
     expect(screen.queryByText("上傳中…")).toBeNull();

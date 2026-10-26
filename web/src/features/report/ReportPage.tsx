@@ -12,6 +12,7 @@ import {
   defaultReportRange,
   formatGeneratedAt,
   parseReportRangeParams,
+  reversedReportRangeParams,
   selectReportRecords,
   validateReportRange,
   type ReportRange,
@@ -49,8 +50,10 @@ export function ReportPage() {
   const { data: records, isPending, isError, error, refetch, isRefetching } = useRecords();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlRange = parseReportRangeParams(searchParams);
+  // 網址上起 > 迄：不自動產生、也不換成別的範圍（不會悄悄退回上一份），只顯示驗證訊息、輸入框維持網址上的值
+  const reversed = reversedReportRangeParams(searchParams);
   // 輸入框的值：網址有範圍就用網址的，否則預設今天的本地日期（不是 UTC）
-  const [range, setRange] = React.useState<ReportRange>(() => urlRange ?? defaultReportRange());
+  const [range, setRange] = React.useState<ReportRange>(() => urlRange ?? reversed ?? defaultReportRange());
   const [report, setReport] = React.useState<ReportData | null>(null);
   const reportRef = React.useRef<HTMLDivElement>(null);
   const recordsRef = React.useRef(records);
@@ -58,18 +61,33 @@ export function ReportPage() {
   const hasRecords = records !== undefined;
   const urlStart = urlRange?.start;
   const urlEnd = urlRange?.end;
+  const reversedStart = reversed?.start;
+  const reversedEnd = reversed?.end;
+  const notifiedReversed = React.useRef<string | null>(null);
 
   // 剛進入這一頁、網址沒有範圍：沿用最近一次的範圍（只在進入當下做一次；之後上一頁退回沒有範圍的網址，就是空的）
   const restoredOnMount = React.useRef(false);
   React.useEffect(() => {
     if (restoredOnMount.current) return;
     restoredOnMount.current = true;
-    if (!urlRange && lastRange) setSearchParams({ from: lastRange.start, to: lastRange.end }, { replace: true });
+    if (!urlRange && !reversed && lastRange) setSearchParams({ from: lastRange.start, to: lastRange.end }, { replace: true });
   }, []);
 
   // 網址 → 輸入框＋報表。只在「網址的範圍」或「資料第一次載入完成」時跑，資料之後重抓不會讓報表自己改。
   // 自己按「產生報表」造成的網址變動，報表已經是那個範圍，不會重複產生。
   React.useEffect(() => {
+    if (reversedStart !== undefined && reversedEnd !== undefined) {
+      setReport(null);
+      setRange((r) => (r.start === reversedStart && r.end === reversedEnd ? r : { start: reversedStart, end: reversedEnd }));
+      const key = `${reversedStart}|${reversedEnd}`;
+      if (notifiedReversed.current !== key) {
+        notifiedReversed.current = key;
+        const problem = validateReportRange({ start: reversedStart, end: reversedEnd });
+        if (problem) notify.error(problem);
+      }
+      return;
+    }
+    notifiedReversed.current = null;
     if (urlStart === undefined || urlEnd === undefined) {
       setReport(null);
       return;
@@ -79,7 +97,7 @@ export function ReportPage() {
     const all = recordsRef.current;
     if (!all) return;
     setReport((cur) => (cur && cur.start === urlStart && cur.end === urlEnd ? cur : snapshot(all, { start: urlStart, end: urlEnd })));
-  }, [urlStart, urlEnd, hasRecords]);
+  }, [urlStart, urlEnd, reversedStart, reversedEnd, hasRecords]);
 
   function generate() {
     if (!records) return;
