@@ -1812,7 +1812,7 @@ import { aggregate, toISODate, severityFromDuration, commonProblems, pickCopyFie
   }
 
   // 有「上傳中」或「已上傳、尚未儲存」的照片時鎖定日期欄：照片是依選檔當下的日期存進資料夾的，
-  // 再改日期會讓紀錄指向別的日期資料夾而破圖（伺服器端另有檢查）。上傳失敗的不算。
+  // 再改日期會讓紀錄指向別的日期資料夾而破圖（伺服器端另有檢查，V4，見 docs/refactor-plan.md WP1b）。上傳失敗的不算。
   function hasLivePhoto(list){ return list.some(function(p){ return !p.abandoned && (p.uploading || p.filename); }); }
   function syncDateLock(inputSel, hintSel, locked){
     var inp = $(inputSel), hint = $(hintSel);

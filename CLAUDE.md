@@ -43,7 +43,7 @@ npm start               # 或雙擊 start.bat
 | 檔案 | 職責 |
 |---|---|
 | `backend/server.js` | Express app、REST API、multer 照片上傳 |
-| `backend/lib/aggregate.js` | 彙總邏輯（純函式）；**前端直接 import 這支檔案**（`/lib` 有 static mount），前後端共用同一套統計邏輯。也放「複製既有紀錄」的 `pickCopyFields()`（複製欄位白名單）與 `commonProblems()`（常見問題歸併），以及紀錄列表的篩選（`emptyFilter()` / `filterRecords()` / `facetCounts()` / `sortByDate()` / `datePresets()`） |
+| `backend/lib/aggregate.js` | 彙總邏輯（純函式）；**前端直接 import 這支檔案**（`/lib` 有 static mount），前後端共用同一套統計邏輯。也放「複製既有紀錄」的 `pickCopyFields()`（複製欄位白名單）與 `commonProblems()`（常見問題歸併），以及紀錄列表的篩選（`emptyFilter()` / `filterRecords()` / `facetCounts()` / `sortByDate()` / `datePresets()`）；另外匯出 `toISODate()`（本地日期字串，報表預設日期用它） |
 | `backend/lib/store.js` | `data.json` 讀寫，原子性寫入（先寫暫存檔再 rename） |
 | `backend/lib/photos.js` | 照片檔案生命週期（刪孤兒檔、換日期時搬檔） |
 | `backend/lib/photoCaptions.js` | 圖片說明（`photoCaptions`）的清理：只留 `photos` 還有的檔名、文字去空白並限制 100 字、空白不存 |
@@ -92,6 +92,14 @@ npm start               # 或雙擊 start.bat
   `-1` 結尾，兩份內容一樣的照片就一起留在資料夾裡，看起來像「同一張照片重複出現」。
   **不要只在「送出成功」時清 `pendingPhotos`/`editState.pending`**，中途放棄的路徑也要清，
   而且是刪實體檔案，不是只清記憶體陣列。
+  **有照片「上傳中」或「已上傳、尚未送出／儲存」時，日期欄必須鎖住**（`#f-date`/`#e-date` 設為 disabled，
+  旁邊顯示 `.lock-hint`「已上傳照片，要改日期請先移除照片」）：照片是依「選檔當下的日期」存進
+  `照片/<日期>/` 資料夾的，之後再改日期，紀錄會指向另一個日期資料夾而破圖，1 小時後還會被
+  `sweepOrphanedPhotos` 當孤兒刪掉。鎖定狀態由 `hasLivePhoto()`／`syncDateLock()` 計算，
+  在 `renderAddPhotoPreview()`／`renderEditPhotoPreview()` 裡同步，所以任何改變照片清單的路徑
+  （移除、清除、放棄、送出成功）都會自動解鎖；已標記 `abandoned` 或上傳失敗的項目不算。
+  編輯畫面「既有（保留）照片」的縮圖網址一律用 `editState.origDate`（紀錄原本的日期），不跟著
+  `#e-date` 變；改日期要存檔後才由伺服器搬檔（`movePhotosForDateChange`）。
   **關鍵的 race condition，第一版修復漏掉、造成 bug 回歸過一次**：`cleanupAbandonedAddPhotos`/
   `cleanupAbandonedEditPhotos` 只能刪「已經拿到檔名」的照片——如果放棄的當下上傳還在網路
   請求中（`entry.filename` 還是 `null`），這兩個函式看不到最終檔名，沒辦法刪。**必須把該
@@ -103,6 +111,19 @@ npm start               # 或雙擊 start.bat
   不等待就觸發放棄），不能等上傳的 promise resolve 之後才放棄——本地測試伺服器回應太快，
   照著「先上傳完再放棄」的順序測，測不出這個 race window，這正是第一版修復被判定「已修好」
   卻在真實手機網路延遲下復發的原因。
+  **一次選多張時（`#f-photo`/`#e-photo` 的 `onchange` 迴圈）也要遵守同一條**：迴圈開頭記住它所屬的
+  清單（新增是 `pendingPhotos` 陣列，編輯是 `editState` 與其 `pending` 陣列），只要這個清單被換掉
+  （放棄、送出成功、儲存、重新進入編輯）或上一張已被標記 `abandoned`（包含使用者在上傳途中按了該縮圖的
+  移除鈕——移除鈕也要標記 `abandoned`），就 `break`，不能再把剩下的檔案推進別的（新的）表單；
+  畫面重畫前也要確認容器還在。驗證時要測「一次選 3 張、同一個 tick 立刻放棄」，且確認只發出 1 次上傳請求、
+  硬碟上沒留下任何檔案。
+- **編輯表單（`renderSoBodyEdit()`）要跟新增表單對齊**：包含「根本原因」（`#e-rootcause`，清空存 `null`）
+  與「處理狀態」（`#e-status`）——不然根本原因一旦填過就再也改不了。耗時只接受正整數：新增與編輯都是
+  `min="1" step="1"`；編輯面板不是 `<form>`，瀏覽器不會幫忙驗證，所以 `saveEdit()` 自己檢查，
+  **不要改回 `Number(...) || r.duration`**（會讓 0 無聲退回舊值、7.5 直接存進去）。
+  報表的預設日期用 `toISODate(new Date())`（本地日期），**不要用 `toISOString().slice(0,10)`**（UTC，
+  台灣 00:00–08:00 會變成昨天）；`test/localDate.test.js` 刻意把 `TZ` 設成 Asia/Taipei 才測得出來
+  （CI 跑 UTC 測不出），不要移除那行設定。
 - **`sweepOrphanedPhotos()`（`backend/lib/photos.js`）是孤兒照片的最後一道防線，跟上面兩個
   client 端 `cleanupAbandoned*` 函式是兩層完全獨立的防護**。client 端的清理再怎麼補，都只能
   是「盡力而為」——關分頁、手機按返回鍵、系統把分頁凍結在背景，這些情況 JS 完全沒機會執行
@@ -274,7 +295,7 @@ npm start               # 或雙擊 start.bat
 
 ```bash
 npm run check   # node --check 語法檢查
-npm test        # node --test，目前 77+ 個測試
+npm test        # node --test，目前 79 個測試
 ```
 
 CI（`.github/workflows/ci.yml`）在每次 push/PR 到 `main` 時自動跑這兩步。
@@ -290,11 +311,16 @@ CI（`.github/workflows/ci.yml`）在每次 push/PR 到 `main` 時自動跑這�
 4. 新增紀錄：選設備後如果 `equipmentMap` 有對應資料，品號/原料類別應自動帶入；選照片後
    應該立刻看到縮圖預覽（代表已經上傳，不是等送出才傳），每張縮圖旁有「圖片說明」輸入框；
    送出後詳情面板縮圖下方、燈箱都看得到說明；編輯畫面可修改或清空既有說明
+   日期鎖定：選照片後日期欄變灰不能改並出現提示，移除全部照片後恢復；一次選 3 張後立刻按「清除」或切到別的畫面，
+   去 `DATA_DIR/照片/<日期>/` 確認沒有留下任何檔案
    複製既有紀錄：列表按〔複製〕、詳情面板按〔複製為新紀錄〕、新增畫面頂端選擇器（切分頁／搜尋／
    方向鍵＋Enter）都應預填表單，日期/班別/時間/耗時/設備標「請確認」、改過就消失，狀態為「待處理」、
    沒有照片；送出後橫幅與標示都消失
 5. 編輯紀錄：處理／根本原因打多行（1. 2. 3.）存檔後，詳情面板與列印報表都要保留換行；移除一張照片、存檔後，去 `DATA_DIR/照片/<日期>/` 確認檔案真的被刪掉，不是
    只從畫面上消失
+   編輯畫面另外驗證：根本原因、處理狀態可修改（根本原因清空存成 null）；耗時填 7.5、0、空白、-3 都會被擋下並顯示提示；
+   改日期後既有照片的縮圖仍看得到，存檔後照片搬到新日期資料夾；一次選好幾張後按「取消」並立刻重新進入編輯，
+   不會殘留縮圖或孤兒檔
 6. 日曆檢視：每格的數字是當天的異常「次數」，顏色深淺跟次數成正比（不是停機分鐘）
 7. 列印報表：選日期後「產生報表」，確認統計區兩張排行表（單日、一週、全部各看一次：只列前 5 名、其他併成一列、
    窗口縮小時改上下排不撐出欄位）、每筆紀錄上方有刊頭條（時間・設備・分類三格，窄版時間獨佔第一列）、
