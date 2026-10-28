@@ -69,12 +69,14 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
 | `backend/lib/migrateLogic.js` | 搬遷規則（問題分類對照表、「追蹤中/已解決」判斷） |
 | `backend/data/schema.md` | 資料結構完整說明（資料契約） |
 | `backend/lib/aggregate.d.ts`、`backend/lib/types.d.ts` | 給 TypeScript 用的型別宣告：`aggregate.d.ts` 對應 `aggregate.js` 的每個匯出，`types.d.ts` 是 `DiaryRecord`／`Meta`／`RecordInput`…（依 `schema.md`）。**改了 `aggregate.js` 的匯出或回傳形狀、或 `schema.md` 的欄位，必須同步改這兩支**；`web/src/lib/shared.test.ts` 會檢查匯出名稱一致（簽章是否一致只有 `tsc` 看得出來） |
-| `web/src/app/` | 外殼與路由：`AppShell.tsx`、`Sidebar.tsx`（桌面側欄／平板圖示列）、`MobileChrome.tsx`（手機頂欄與底部分頁列）、`routes.tsx`（hash 路由）、`nav.ts`。外殼元件都有 `print:hidden` |
-| `web/src/lib/` | `api.ts` 是**唯一的 API 層**，每個非 GET 請求（含 multipart 上傳與 DELETE）都帶 `X-Requested-With`，失敗統一丟 `ApiError`（保留伺服器的 `errors[]`）；`feedback.ts` 的 `notify`／`toastUndoable` 是**唯一的 toast 入口**（不要直接 import sonner；錯誤訊息是 `role="alert"`）；`urlQuery.ts`（篩選 ⇄ URL query）；`drill.ts`（所有「點進紀錄列表」的動作，見核心不變量）；`queries.ts`／`queryKeys.ts`（TanStack Query）；`types.ts`（從 `@shared/types` 轉出） |
+| `web/src/app/` | 外殼與路由：`AppShell.tsx`、`Sidebar.tsx`（桌面側欄／平板圖示列）、`MobileChrome.tsx`（手機頂欄與底部分頁列）、`routes.tsx`（hash 路由）、`nav.ts`、`themeToggle.tsx`（「CYBER 介面」切換按鈕的**共用定義**：文字、圖示、`useThemeToggle()`、開／關標記；桌面側欄、平板圖示列、手機「更多」面板各自用自己的版型，但都從這裡取，不各寫一份）。外殼元件都有 `print:hidden` |
+| `web/src/lib/` | `api.ts` 是**唯一的 API 層**，每個非 GET 請求（含 multipart 上傳與 DELETE）都帶 `X-Requested-With`，失敗統一丟 `ApiError`（保留伺服器的 `errors[]`）；`feedback.ts` 的 `notify`／`toastUndoable` 是**唯一的 toast 入口**（不要直接 import sonner；錯誤訊息是 `role="alert"`）；`urlQuery.ts`（篩選 ⇄ URL query）；`drill.ts`（所有「點進紀錄列表」的動作，見核心不變量）；`queries.ts`／`queryKeys.ts`（TanStack Query）；`types.ts`（從 `@shared/types` 轉出）；`theme.ts` 是**介面主題的唯一入口**（偏好存 `localStorage` 的 `pld.theme`、`applyTheme()` 把主題套到 `<html data-theme>`、`switchTheme()`、`initTheme()`、網址 `?theme=cyber｜standard` 覆寫；`main.tsx` 在 `createRoot` 之前同步呼叫 `initTheme()` 避免閃一下標準主題）；`useThemePreference.ts`（React 用的目前主題 hook） |
 | `web/src/components/` | 通用元件：`ui/`（shadcn 風格的 Radix 元件）、`Combobox.tsx`、`MultiSelectFilter.tsx`、`SegmentedControl.tsx`、`ResponsivePopover.tsx`、`ConfirmDialog.tsx`、`Lightbox.tsx`、`PhotoThumb.tsx`、`ErrorState.tsx`、`PageHeader.tsx`、`badges.tsx` |
 | `web/src/features/<頁面>/` | `dashboard/`（總覽）、`records/`（列表、篩選、詳情面板；`records/form/` 是**新增／編輯共用的表單**：`RecordForm.tsx`、`usePhotoUploads.ts`（照片上傳／放棄 hook）、`model.ts`（純邏輯：驗證、複製、建立送出資料）、`formReducer.ts`、`CopyPicker.tsx`、`PhotoField.tsx`）、`calendar/`、`trash/`、`settings/`（設備對照）、`report/`（見下一列） |
 | `web/src/features/report/` | 列印報表：`ReportPage.tsx`（日期範圍＋按鈕，範圍存在網址）、`ReportDocument.tsx`（報表本體，DOM 與 class 名稱是穩定介面）、`reportModel.ts`（純函式）、`reportWindow.ts`（開新視窗）、**`report.css`（報紙式排版＋列印規則；刻意是純 CSS、不放進 `@layer`，才壓得過 Tailwind 的 preflight 與 utility）** |
-| `web/src/styles/index.css` | 設計 token（淺色／深色兩套，文字色對比 ≥ 4.5:1）與 Tailwind 主題 |
+| `web/src/lib/fx/` | Cyber 主題的 JS 動畫小工具。目前只有 `useFx()`：回傳「是否要播 cyber 的 JS 動畫」（`data-theme="cyber"` 且沒開啟 `prefers-reduced-motion`），jsdom 測試裡永遠是 `false`。**所有 JS 動畫都要先檢查它** |
+| `web/src/styles/index.css` | 設計 token（淺色／深色兩套，文字色對比 ≥ 4.5:1）與 Tailwind 主題；也有第三套 `:root[data-theme="cyber"]`（Cyber 色票、cyber 專用 token）、圓角執行期 token `--r-sm/md/lg`、動態 token `--dur-*`／`--ease-*` |
+| `web/src/styles/cyber.css` | Cyber-Terminal 主題的元件層樣式（`main.tsx` 在 `index.css` 之後載入）。**每條規則都以 `:root[data-theme="cyber"]` 開頭**，由 `cyberCss.test.ts`（解析工具在 `web/src/test/cssRules.ts`）把關；檔尾 `@media print` 負責還原所有裝飾。P0 只有內文字型與列印還原兩段 |
 | `scripts/ensure-web-build.js` | `npm start` 的前置步驟：`web/dist` 不存在或過期才建置（只比檔案的 mtime，不比資料夾的）。**失敗不擋伺服器啟動但絕不沉默**：主控台印錯誤、寫 `.web-build-error.log`、結束碼 0，讓 `/` 顯示「介面建置失敗」頁 |
 | `scripts/migrate.js` | 一次性搬遷腳本（CLI，`--force` 才會覆蓋既有資料） |
 
@@ -387,6 +389,13 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
   - **所有 toast 走 `lib/feedback.ts`**（成功綠色勾、錯誤紅色且停留較久且是 `role="alert"`、可撤銷操作 `toastUndoable`），不要直接 import sonner。
   - **觸控目標 ≥ 44px（手機）、所有可點元素可用鍵盤操作且有可見焦點環、詳情面板／對話框有焦點鎖定且關閉後焦點回到觸發元素**——別用不可聚焦的 `div` 當按鈕。
   - 換頁後焦點移到主內容（`AppShell`），手機「更多」面板開啟時焦點在第一個項目。
+  - **Cyber-Terminal 主題（opt-in 的第三套主題）**：規格與分期見 [`docs/cyber-theme-spec.md`](docs/cyber-theme-spec.md)（§2 是不可破壞的紅線）。**現況：P0 主題骨架與切換已完成；P1 靜態外觀、P2 微互動、P3 招牌效果尚未實作**（沒有 `data-fx` 掛勾、沒有開機畫面或換頁動畫）。切換入口是側欄／「更多」面板的「CYBER 介面」（`aria-pressed` 的按鈕）。以下規則寫新樣式或新元件時都要遵守：
+    - **cyber 規則一律以 `:root[data-theme="cyber"]` 開頭**——「開新視窗」的報表沒有 `data-theme`，整份都不會套用；裝飾用的 `content` 宣告一律加不朗讀的替代文字（`content: "> " / "";`）。`cyberCss.test.ts` 檢查這兩條。
+    - **報表不受影響**：`ReportDocument` 的任何元素**不加 `data-fx`**（P1 起 cyber 的元件層外觀與動畫都掛在 `data-fx`），`report.css` 不改；列印預覽下 cyber 與標準必須一致。
+    - **主題只放在 `<html data-theme>` 一個屬性**（`"cyber"` 啟用期間會暫時蓋過原有的 `light｜dark` 強制指定，切回標準時還原）；要讀目前主題用 `useThemePreference()`，不要自己讀 `localStorage` 或 DOM。cyber **永遠是深色、不跟隨系統**。
+    - **cyber token 必須定義全部語意 token**（不能依賴繼承，否則系統淺色時會漏出淺色值），且區塊要放在兩個深色區塊之後；`contrast.test.ts`（A2）把關，對比 ≥ 4.5:1 同樣適用。裝飾用洋紅 `--accent-2` 不能表示任何資料狀態（嚴重度仍是綠黃橘紅四色、處理狀態仍是 ○ ◐ ●）。
+    - **圓角用執行期 token**（`rounded-sm/md/lg` 經 `--r-sm/md/lg`，cyber 改成 2px），不要寫死 `px` 圓角。
+    - **`prefers-reduced-motion: reduce` 一律生效**；JS 動畫先檢查 `useFx()`（只有 cyber 且沒開減少動態才是 `true`）。cyber 不新增字型檔，只用現有的 IBM Plex Mono ＋ Noto Sans TC。
   - **每個工作包／改動完成都要更新 `docs/refactor-plan.md` §7**（重構期間的規則；重構結束後只在動到計畫書範圍時才需要）。
 
 ## 測試方法
@@ -395,7 +404,7 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
 npm run check      # 後端 node --check 語法檢查
 npm test           # 後端 node:test（test/**/*.test.js），目前 169 個測試
 npm run typecheck  # 前端 tsc --noEmit（strict）
-npm run test:web   # 前端 Vitest（jsdom + Testing Library），目前 408 個測試（25 個檔案）
+npm run test:web   # 前端 Vitest（jsdom + Testing Library），目前 483 個測試（29 個檔案）
 npm run build      # 前端 vite build → web/dist
 ```
 
@@ -455,6 +464,10 @@ CI（`.github/workflows/ci.yml`）在每次 push/PR 到 `main` 時自動跑這�
     - 並發寫入：同時送多筆新增（例如 `for i in $(seq 20); do curl … & done`），全部成功、id 不重複、沒有遺失
 11. 安全：`web/dist` 裡找不到元件預覽頁（`#/_ui` 只在 `dev:web`）
 12. 瀏覽器 console 應該沒有錯誤
+13. Cyber 主題（改動 `web/src/styles/`、`lib/theme.ts`、`app/themeToggle.tsx` 或外殼之後）：在側欄（平板是圖示列、手機是「更多」面板最後一列）按「CYBER 介面」，
+    背景立刻變深色 Cyber 配色、不重新整理、不跳 toast、焦點留在按鈕上；**重新整理、關掉分頁再開仍記得，且不會先閃一下標準主題**；再按一次切回標準，外觀與沒切過完全一樣（含原本強制的淺色／深色）；
+    網址加 `?theme=cyber`／`?theme=standard` 可覆寫並記住。cyber 下把上面 1～9 的導覽、面板焦點鎖定、新增與編輯、列印報表**重做一次**，行為要與標準主題完全相同；
+    「列印／另存 PDF」預覽與「開新視窗」的報表在 cyber 與標準下**一致**（白底紙本配色，沒有黑底或裝飾）
 
 ## 敏感檔案清單
 
