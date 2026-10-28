@@ -1,6 +1,6 @@
 # 產線日誌 Cyber-Terminal 主題 設計規格書
 
-> 狀態：**P0 實作完成、待合併（PR #40）；P1 進行中（`data-fx` 掛勾已加、cyber.css 的外觀還沒寫）；P2–P3 尚未實作**（2026-10-28）。
+> 狀態：**P0 實作完成、待合併（PR #40）；P1 實作完成、待驗證（分支 `feat/cyber-p1-static`）；P2–P3 尚未實作**（2026-10-28）。
 > 風格：終端機為骨架、賽博龐克霓虹為強調色的混合風格（「Cyber-Terminal」）。
 > 本文件是之後實作與驗收的唯一依據；實作時若要偏離，先改這份文件再改程式碼。
 
@@ -36,6 +36,8 @@
 **2026-10-28：使用者未另外指定，D1–D4 全部採用推薦值，開始開發。**
 
 **2026-10-28 P0 設計審查**裁定：(1) 報表 `#report-output` 內以 `cyber.css` 隔離還原四個嚴重度 token（`--good`／`--warning`／`--serious`／`--critical` = 標準淺色值），`report.css` 不改，標準深色既有的漏洞不碰；(2) 開機不閃：`index.html` 用同步 inline script，`theme.ts` 仍是唯一的寫回來源；(3) 列印還原全部色彩 token 與 `--r-*` 並設 `color-scheme: light`，cyber 列印 ≡ 標準淺色列印；(4) 平板圖示列的切換維持現狀（`aria-pressed`＋圖示色＋tooltip）；(5) 「更多」面板切換主題後維持開啟；(6) 套用 `?theme=` 後以 `history.replaceState` 只移除 `theme` 參數，多分頁以 `storage` 事件同步（只 apply、不寫回）；(7) 品牌 logo 的 `text-white` 留到 P1（P1 以 `data-fx` 掛 logo，cyber 下圖示用 `--accent-ink`；P0 不改，以免動到標準深色），平板分隔線與群組 `hr` 一致。另核准：`useThemePreference` 以 DOM 為準、動態 token 共用於 `:root`、`initTheme` 獨立、cyber 暫時蓋過 `light｜dark` 強制指定並在切回標準時還原。
+
+**2026-10-28 P1 設計裁定**：(1) 掃描線改用 `body::after`（不新增 DOM），點陣畫在 cyber 的 `body` `background-image`；(2) 切角面板的切角、底色與框線畫在 `::before`（`clip-path` 在偽元素上），L 形角框畫在 `::after`，**可聚焦的元素本身不加 `clip-path`**，切角斜邊的框線用 45° 漸層補連續；(3) 手機底部中央「新增」圓鈕（`data-fx="fab"`）維持實心，側欄「新增紀錄」照 `primary` 規格（透明底＋青框）；(4) 為 P1 追加的 `data-fx` 掛勾（第 3.3 節表）已隨 `8b675ff` 加入；(5) 裝飾前綴的範圍：`>` 只在桌面側欄（≥ 1024），頁面標題 `~/` 在 ≥ 768 套在 `<h1>`、< 768 套在手機頂欄的標題，**頁面標題的尾端游標延到 P3**，toast 前綴改用 sonner 屬性選擇器；(6) 文字光暈 `--text-glow` 只用在 `kpi-num` 與 ≥ 20px 的 `page-title`（手機頂欄標題 18px，不加）；(7) P1 不寫任何 `@keyframes`／`transition`（FX 全屬 P2／P3）；(8) 焦點環不另寫規則（見第 5.6 節）。
 
 | # | 決策 | 推薦 | 其他選項 |
 |---|---|---|---|
@@ -215,7 +217,7 @@ cyber 沒辦法在執行期改。做法：
 |---|---|---|
 | `--glow-accent` | `0 0 0 1px rgba(34,230,255,.55), 0 0 12px rgba(34,230,255,.35)` | hover／選取時的外框光暈 |
 | `--glow-critical` | `0 0 0 1px rgba(255,77,100,.6), 0 0 12px rgba(255,77,100,.35)` | 錯誤欄位、永久刪除 |
-| `--text-glow` | `0 0 6px rgba(34,230,255,.45)` | **只用在 ≥ 20px 的數字與頁面標題**，內文不加 |
+| `--text-glow` | `0 0 6px rgba(34,230,255,.45)` | **只用在 ≥ 20px 的數字與頁面標題**（實作：`kpi-num` 與 ≥ 768 的 `<h1 data-fx="page-title">`），內文不加；手機頂欄標題 18px，不加 |
 | `--scan-opacity` | `0.025` | 掃描線圖層透明度（手機 0.015） |
 | `--grid-dot` | `rgba(34,230,255,.06)` | 頁面背景點陣 |
 | `--cut-sm` / `--cut-md` | `8px` / `12px` | 切角大小 |
@@ -255,7 +257,7 @@ cyber 沒辦法在執行期改。做法：
 - **頁面**：`--page` 加上 24px 間距的點陣（`radial-gradient`，顏色 `--grid-dot`），畫在 cyber 的 `body` `background-image`，**靜態不動**。
 - **掃描線**：用 `:root[data-theme="cyber"] body::after` 偽元素，**不新增 DOM 元素**。`position: fixed; inset: 0; pointer-events: none; content: "" / ""`，
   `z-index` 高於所有浮層（對話框、tooltip 之上，也要高於 sonner 容器的 `z-index: 999999999`，所以取 `2147483647`），`background: repeating-linear-gradient(…)` 水平細線，透明度 `--scan-opacity`。
-  **靜態不動**（不做捲動或閃爍）。手機（< 768）`--scan-opacity: .015`。列印時隱藏（第 8 節）。
+  **靜態不動**（不做捲動或閃爍）。手機（< 768）`--scan-opacity: .015`（在 `cyber.css` 內以 media query 覆寫 token）。線條色用 `--ink-1`（`repeating-linear-gradient(to bottom, ink-1 0 1px, transparent 1px 3px)`，透明度 `--scan-opacity`）。列印時隱藏（第 8 節）。
 - **不做**：毛玻璃（`backdrop-filter`）、常駐的雜訊動畫、CRT 彎曲變形。
 
 ### 5.2 裝飾字元（一律不朗讀）
@@ -264,22 +266,24 @@ cyber 沒辦法在執行期改。做法：
 
 | 位置 | 裝飾 |
 |---|---|
-| 側欄目前頁面 | 前綴 `>`，青色；其他項目保留同寬的空白，文字才不會跳動 |
+| 側欄目前頁面 | 前綴 `>`，青色；**只在桌面側欄（≥ 1024）**。實作：`::before` 絕對定位在項目左側的內距裡，不佔版面，所以其他項目不必保留空白、文字也不會跳動；平板圖示列（文字 sr-only）與手機不加 |
 | 群組小標（檢視／輸出／管理） | `// 檢視` |
-| 頁面標題 | 前綴 `~/`（`ink-muted`）＋尾端閃爍游標方塊（`aria-hidden` 元素，1s `steps(1)` 閃爍） |
-| 分段按鈕 | 選中的項目兩側 `[ ]` |
-| 多選下拉的勾選 | 視覺上畫成 `[x]`／`[ ]`；原生的 checkbox 語意不變 |
+| 頁面標題 | 前綴 `~/`（`ink-muted`）。PageHeader 的 `<h1>` 在 < 768 是 sr-only，視覺標題是手機頂欄的 `<p aria-hidden>`，所以 `h1[data-fx="page-title"]` 的前綴只在 ≥ 768、`p[data-fx="page-title"]` 的前綴全寬度套用。**尾端閃爍游標延到 P3**（`aria-hidden` 元素，1s `steps(1)` 閃爍） |
+| 分段按鈕 | 選中的項目兩側 `[ ]`（`::before`／`::after` 絕對定位在按鈕內距裡，不改變按鈕寬度；手機版括號縮成 11px） |
+| 多選下拉的勾選 | 視覺上畫成 `[x]`／`[ ]`（隱藏方塊底、框與 `Check` 圖示；兩種狀態同寬 22px，選項不跳動）；語意由 cmdk 的 `role="option"` 與 sr-only「（已選）」提供，不變 |
 | 錯誤訊息 | 前綴 `ERR:`（critical 色） |
-| 成功 toast | 前綴 `[OK]`；錯誤 toast 前綴 `[ERR]` |
+| 成功 toast | 前綴 `[OK]`；錯誤 toast 前綴 `[ERR]`。用 sonner 屬性選擇器（`[data-sonner-toast][data-type="success｜error"] [data-title]::before`，同樣要以 `:root[data-theme="cyber"]` 開頭）。toast 外觀 cyber 化：因 `Toaster` 在 cyber 傳 `theme="dark"`，sonner 深色主題會把底色變純黑，所以 cyber.css 把 `--normal-bg／--normal-border／--normal-text` 改回 token（surface-raised／line-strong／ink-1），錯誤 toast 框用 `critical`，圓角 2px |
 
 **不加裝飾**：表格內容、紀錄文字、表單 label、按鈕文字本身。
 
 ### 5.3 面板
 
 - `data-fx="panel"`：`surface-raised` 底、1px `line` 框、2px 圓角；hover 不變（面板本身不可點）。
-- `data-fx="panel-cut"`：右上與左下切角（`clip-path`，大小 `--cut-md`）；四角各一個 10px 的 L 形角框（`::before`／`::after` 加一個 `aria-hidden` 元素），顏色 `line-strong`；
-  **「待處理」大於 0 時**，角框改成 `serious` 色並做呼吸效果（FX-08）。
-- 切角會把 `border` 一起裁掉，所以切角面板的框線改用內層 `box-shadow: inset 0 0 0 1px var(--line)` 畫，切角處另外用一條 45° 的細線補上。
+- `data-fx="panel-cut"`（待處理／追蹤中 KPI 卡，可能是可聚焦的 `<button>`，0 筆時是 `<div>`）：右上與左下切角（大小 `--cut-md`，手機 `--cut-sm`），四角各一個 10px 的 L 形角框，顏色 `line-strong`；
+  **「待處理」大於 0 時**（`[data-fx-alert]`），角框改成 `serious` 色（P1 靜態；呼吸效果是 P3 的 FX-08）。
+- **實作（P1 設計裁定）**：**元素本身不加 `clip-path`**，cyber 下底色與框線透明，並設 `position: relative; isolation: isolate`（0 筆的 `<div>` 沒有 Tailwind 的 `relative`）；
+  切角的底色與 1px 框線畫在 `::before`（`inset: -1px; z-index: -1`；`clip-path: polygon(…)` 在偽元素上；框線用 `box-shadow: inset 0 0 0 1px var(--pc-line)`；切角斜邊的框線用兩條 45° 的 `linear-gradient(to top right, …)` 補連續）；
+  L 形角框用 `::after` 的 8 條 `linear-gradient`（每角兩條，10px × 2px）畫，兩個切角處的角框沿著切角的兩側直邊排列；不新增 DOM。hover（可點的按鈕）：框線變 `accent`。局部變數 `--pc-cut／--pc-fill／--pc-line／--pc-corner` 都定義在元素自己身上。
 
 ### 5.4 按鈕
 
@@ -291,16 +295,18 @@ cyber 沒辦法在執行期改。做法：
 | `destructive` | 透明底、`critical` 框與字；hover 時 `--glow-critical` |
 | `link` | 不變 |
 
-觸控尺寸、`disabled` 樣式不變。
+觸控尺寸、`disabled` 樣式不變（hover 的光暈與框線變化只作用在 `:not(:disabled)`）。
+
+**例外與補充**：手機底部中央「新增」圓鈕（`data-fx="fab"`）**維持實心**（`accent` 底、`accent-ink` 圖示，不在 cyber.css 裡處理）；側欄的「新增紀錄」是 `Button` `primary`，照 `primary` 規格（透明底＋青框）。`primary`／`destructive` 在 cyber 多了 1px 實體框（標準主題沒有框），按鈕高度固定所以不影響觸控尺寸。表單送出鈕（`data-fx="submit"`、`data-variant` 仍在）與 `AlertDialogAction／Cancel` 都涵蓋。
 
 ### 5.5 嚴重度與狀態
 
-- 嚴重度色條（`SeverityBadge`、列表左側色條）加 4px 同色光暈（`box-shadow`，透明度 .5）。只有「重大」的光暈稍強（.7）。
+- 嚴重度色條（`[data-fx="sev"]`：`SeverityBadge` 的色條、手機卡片左側色條、圖例與篩選／表單選項前的色塊）加 4px 同色光暈（`box-shadow: 0 0 4px color-mix(in srgb, <嚴重度 token> 50%, transparent)`）。只有「重大」的光暈稍強（70%）。顏色依 `data-severity="輕微｜一般｜嚴重｜重大"` 對應 `good／warning／serious／critical`。**手機（< 768）光暈減半**：半徑 2px、透明度 ×.5（25%；重大 35%）。甜甜圈的弧是 SVG `<circle data-fx="sev">`，`box-shadow` 對 SVG 無效，改用 `filter: drop-shadow(0 0 <半徑> <同色>)`。
 - 狀態符號 ○ ◐ ● 不變，顏色 `ink-2`。**不加任何顏色**，維持「狀態用形狀」。
 
 ### 5.6 焦點環
 
-- 一般元素：`outline: 2px solid var(--accent-text); outline-offset: 2px`（與現行相同，只是顏色變青色）。
+- 一般元素：`outline: 2px solid var(--accent-text); outline-offset: 2px`（與現行相同，只是顏色變青色）。**實作**：`index.css` base 層的 `:focus-visible` 已是這個值，cyber 的 token 讓它自動變青色（`#22e6ff`），所以 `cyber.css` **不另寫** `:focus-visible` 規則——`cyber.css` 沒放進 `@layer`，多寫一條會蓋掉元件自己的 `outline-hidden`（對話框、面板、彈出選單的容器）與 `focus-visible:outline-offset-0`（輸入框），把不該出現的外框叫回來。唯一的例外：手機底部分頁列貼著螢幕下緣，外環有一邊會落在螢幕外，cyber 下改成內縮（`outline-offset: -2px`）。
 - 有切角（`clip-path`）的元素：outline 會被裁掉，改為在**外層包裝元素**上用 `:focus-within` 畫焦點框，或不在可聚焦元素本身加 `clip-path`。
   **規則：可聚焦的元素本身不加 `clip-path`。**
 
@@ -386,6 +392,7 @@ cyber 沒辦法在執行期改。做法：
 
 1. `ReportDocument.tsx` 內的元素**不加任何 `data-fx`**；`report.css` 不改。
 2. `cyber.css` 檔尾的 `@media print`：把掃描線、點陣背景、光暈、切角、裝飾前綴全部移除，並**還原全部色彩 token 與 `--r-*`**（值等於標準淺色 `:root`）、設 `color-scheme: light`、body 字型回標準；`body` 用 `background: var(--page); color: var(--ink-1)`（token 還原後即標準淺色的 `#f9f9f7`／`#0b0b0b`），所以 **cyber 列印 ≡ 標準淺色列印**——即使使用者在 App 頁面（不是報表）按列印，也不會印出黑底。（註記：此處與原文「`html, body` 背景回白色」有差異：為了做到與標準淺色列印逐元素一致，實作改用標準淺色的 `--page`／`--ink-1`，而不是純白純黑。之後各期新增的 cyber token 與裝飾，都要在這個區段同步還原；`cyberCss.test.ts` 檢查 print 區段的 token 涵蓋 cyber 區塊全部色彩 token 且值等於標準淺色 `:root`。）
+2a. **P1 新增的裝飾如何還原**：`@media print` 區段內，所有 `[data-fx]` 元素（含 `::before`／`::after`）用 `all: revert-layer` 退回 Tailwind 層的值（`cyber.css` 沒放進 `@layer`，`revert-layer` 會退到最後一個具名層，也就是標準主題的樣式）；選擇器加 `:not(#cyber-print)` 把特異度拉高，壓過螢幕規則的 `:hover`／`:not(:disabled)`。沒有 `data-fx` 但被改動的元素逐項還原：分段按鈕（`position`、`[ ]` 前後綴）、勾選的 `svg`（`display`）、欄位輸入框（`border-color`）、toast（前綴 `content: none`、圓角 8px、錯誤框、sonner 淺色主題的 `--normal-*` 字面值、關閉鈕）。點陣 `background-image: none`、`body::after { display: none }`。**驗收做法**：用 CDP 把頁面切到 print media（`Emulation.setEmulatedMedia`），逐元素（含 `::before`／`::after` 的 `content` 與完整 computed style）比對標準淺色與 cyber（系統深色／淺色各一次）；儀表板、列表、新增表單（含驗證錯誤）、日曆、回收桶、確認對話框、設定、報表（含 `#report-output`）、詳情面板、多選下拉、tooltip、toast 全部 0 差異（主題切換鈕因為狀態不同，色彩本來就不同，排除）。
 3. 掃描線是 `body::after` 偽元素（第 5.1 節），不再有「新的 fixed 元素＋`print:hidden`」，`report.css` 的 `#root .fixed` 規則（只作用在 `#root` 裡的元素）也不適用於它；所以 `cyber.css` 檔尾的 `@media print` 內要明確寫 `:root[data-theme="cyber"] body::after { display: none }`，並把 `body` 的點陣 `background-image` 還原為 `none`。
 4. 「開新視窗」的報表 `<html>` 沒有 `data-theme`，cyber.css 的規則全部不會套用（因為每條規則都以 `:root[data-theme="cyber"]` 開頭）。
 5. `ReportPage.tsx` 的**控制列**（日期範圍、產生報表、列印、開新視窗按鈕）可以用 cyber 外觀；報表本體維持紙本。
@@ -453,9 +460,11 @@ cyber 沒辦法在執行期改。做法：
 | 期 | 內容 | 涵蓋 | 驗收 |
 |---|---|---|---|
 | **P0 主題骨架**<br>實作完成、待合併（PR #40） | `theme.ts`、`useFx()`、D1 切換入口、cyber token 區塊、圓角執行期化、`cyber.css` 空殼與列印還原 | 第 3、4 節 | A1–A4、A6、A8、C1、C2、M4 |
-| **P1 靜態外觀** | `data-fx` 掛勾、面板／切角／按鈕／焦點環／裝飾前綴、背景點陣與掃描線（靜態） | 第 5 節 | A6、A7、B2、B3、C1、M2 |
+| **P1 靜態外觀**<br>實作完成、待驗證／待合併（分支 `feat/cyber-p1-static`） | `data-fx` 掛勾、面板／切角／按鈕／焦點環／裝飾前綴、背景點陣與掃描線（靜態） | 第 5 節 | A6、A7、B2、B3、C1、M2 |
 | **P2 微互動與浮層** | hover、按壓、聚焦、彈出選單、面板、對話框、toast、錯誤、骨架等純 CSS 動畫 | FX-05、06、10、15、17–24、28–31、33–37 | B1、B4、B5、P1、P2、M3 |
 | **P3 招牌效果** | 開機畫面、換頁 View Transitions、數字鎖定、長條／趨勢／日曆／列表依序進場、帶入閃爍 | FX-01–04、07–09、11–14、16、25–27、32、38 | A5、P3、P4、M1、M5 |
+
+**P1 實作時與上文的差異**（都已寫回對應章節）：掃描線 `body::after`；切角畫在 `::before`／L 形角框畫在 `::after`、元素本身不加 `clip-path`（§5.3）；`>` 前綴只在桌面側欄且絕對定位、不佔版面（§5.2）；頁面標題游標延到 P3；toast 前綴用 sonner 屬性選擇器，並把 sonner 深色主題的純黑底改回 token（§5.2）；焦點環沿用 `index.css` base 層的規則，不另寫（§5.6）；甜甜圈弧的光暈用 `drop-shadow`（§5.5）；列印還原以 `all: revert-layer` 為主（§8）；手機頂欄標題（18px）不加文字光暈（§4.2）。
 
 ---
 
