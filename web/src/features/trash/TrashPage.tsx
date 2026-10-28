@@ -127,6 +127,9 @@ function RowActions({ record, busyId, onRestore, onPurge }: Omit<ListProps, "row
       <Button
         size="sm"
         variant="secondary"
+        // cyber 主題的掛勾（docs/cyber-theme-spec.md §3.3）：純屬性。這顆是以 secondary 實作的紅字紅框按鈕，
+        // cyber 靠它擋掉 secondary hover 的青框、改成 critical 光暈。
+        data-fx-tone="danger"
         className="border-critical text-critical"
         disabled={busy}
         onClick={() => onPurge(record)}

@@ -389,7 +389,7 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
   - **所有 toast 走 `lib/feedback.ts`**（成功綠色勾、錯誤紅色且停留較久且是 `role="alert"`、可撤銷操作 `toastUndoable`），不要直接 import sonner。
   - **觸控目標 ≥ 44px（手機）、所有可點元素可用鍵盤操作且有可見焦點環、詳情面板／對話框有焦點鎖定且關閉後焦點回到觸發元素**——別用不可聚焦的 `div` 當按鈕。
   - 換頁後焦點移到主內容（`AppShell`），手機「更多」面板開啟時焦點在第一個項目。
-  - **Cyber-Terminal 主題（opt-in 的第三套主題）**：規格與分期見 [`docs/cyber-theme-spec.md`](docs/cyber-theme-spec.md)（§2 是不可破壞的紅線）。**現況：P0 主題骨架與切換已合併；P1 靜態外觀（`data-fx` 掛勾、切角面板、按鈕、裝飾前綴、背景點陣與掃描線，全部靜態）已實作、待設計審查與合併；P2 微互動、P3 招牌效果尚未實作**（沒有任何 `@keyframes`／`transition`，也沒有開機畫面或換頁動畫）。切換入口是側欄／「更多」面板的「CYBER 介面」（`aria-pressed` 的按鈕）。以下規則寫新樣式或新元件時都要遵守：
+  - **Cyber-Terminal 主題（opt-in 的第三套主題）**：規格與分期見 [`docs/cyber-theme-spec.md`](docs/cyber-theme-spec.md)（§2 是不可破壞的紅線）。**現況：P0 主題骨架與切換已合併；P1 靜態外觀（`data-fx` 掛勾、切角面板、按鈕、裝飾前綴、背景點陣與掃描線，全部靜態）已實作，設計審查退回一輪修正（PR #41，分段按鈕空心終端風、`data-fx-tone`、按鈕框線 inset box-shadow、折角括號、平板目前頁直條、日曆焦點外暈）、待複審與合併；P2 微互動、P3 招牌效果尚未實作**（沒有任何 `@keyframes`／`transition`，也沒有開機畫面或換頁動畫）。切換入口是側欄／「更多」面板的「CYBER 介面」（`aria-pressed` 的按鈕）。以下規則寫新樣式或新元件時都要遵守：
     - **cyber 規則一律以 `:root[data-theme="cyber"]` 開頭**——「開新視窗」的報表沒有 `data-theme`，整份都不會套用；裝飾用的 `content` 宣告一律加不朗讀的替代文字（`content: "> " / "";`）。`cyberCss.test.ts` 檢查這兩條。
     - **報表不受影響**：`ReportDocument` 的任何元素**不加 `data-fx`**（P1 起 cyber 的元件層外觀與動畫都掛在 `data-fx`；`ReportDocument` 也不出現 `data-variant`／`data-fx-alert`，`ReportDocument.noFx.test.tsx` 與 `test/dataFx.test.tsx` 把關；`ReportPage` 的控制列在 `#report-output` 外，可以有掛勾），`report.css` 不改（P1 起也一樣）；列印預覽下 cyber 與標準必須一致。
     - **報表本體的嚴重度 token 隔離**：`report.css` 沒有覆寫 `--good／--warning／--serious／--critical`，所以 `cyber.css` 在 `:root[data-theme="cyber"] #report-output` 內把這四個還原成標準淺色值。**任何新增的 cyber token 或裝飾都不得漏進 `#report-output`**（要隔離就加在這個區段，值取自標準淺色 `:root`）。
@@ -398,7 +398,8 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
     - **cyber token 必須定義全部語意 token**（不能依賴繼承，否則系統淺色時會漏出淺色值），且區塊要放在兩個深色區塊之後；`contrast.test.ts`（A2）把關，對比 ≥ 4.5:1 同樣適用。裝飾用洋紅 `--accent-2` 不能表示任何資料狀態（嚴重度仍是綠黃橘紅四色、處理狀態仍是 ○ ◐ ●）。
     - **元件掛勾與選擇器**：cyber.css 不針對 Tailwind class 寫選擇器（class 會變動、也會誤中報表），一律選 `data-fx`（一個元素只有一個值；掛勾總表在規格 §3.3，**新增掛勾先改那張表**）、`data-variant`、`data-severity`、`data-state`、ARIA 屬性（目前頁 `[aria-current="page"]`、選中 `[aria-pressed="true"]`）。`data-fx` 是純屬性：標準主題 0 視覺差異、0 行為差異。
     - **P1 靜態外觀不得有動畫**：cyber.css 不寫 `@keyframes`／`transition`（動態是 P2／P3，到時先改規格 §6）。
-    - **切角與焦點**：可聚焦的元素**本身不加 `clip-path`**（會裁掉焦點環）——切角底色與框線畫在 `::before`（`clip-path` 在偽元素上），L 形角框畫在 `::after`，元素用 `isolation: isolate` 自成堆疊環境；焦點環沿用 `index.css` base 層的規則，不另寫。
+    - **切角與焦點**：可聚焦的元素**本身不加 `clip-path`**（會裁掉焦點環）——切角底色與框線畫在 `::before`（`clip-path` 在偽元素上），角框畫在 `::after`（直角是 L 形，兩個切角是連續的「折角括號」），元素用 `isolation: isolate` 自成堆疊環境；焦點環沿用 `index.css` base 層的規則，不另寫。
+    - **按鈕框線用 `inset box-shadow`、不加實體 `border`**：cyber 的 `primary`／`destructive`（以及 `data-fx-tone="danger"`、分段按鈕選中態）1px 框寫成 `box-shadow: inset 0 0 0 1px …`，hover 光暈與內框合併在**同一個** `box-shadow` 宣告；標準主題的 `primary`／`destructive` 沒有 `border`，加實體框會讓自動寬度的按鈕多出 2px（cyber 與標準的按鈕 rect 必須相同）。`data-fx-tone="danger"`（純屬性，目前只有回收桶的「永久刪除」，variant 仍是 `secondary`）是掛給「以 secondary 實作的紅字紅框按鈕」用的，新增這類按鈕也要加。分段按鈕 `[ ]` 括號貼著文字（桌面是按鈕的 `::before`／`::after`、手機是標籤 `<span>` 兩側，詳見規格 §5.2）；日曆格 `:focus-visible` 的 `--page` 外暈讓焦點環不被相鄰第 3 級格吃掉。
     - **圓角用執行期 token**（`rounded-sm/md/lg` 經 `--r-sm/md/lg`，cyber 改成 2px），不要寫死 `px` 圓角。
     - **`prefers-reduced-motion: reduce` 一律生效**；JS 動畫先檢查 `useFx()`（只有 cyber 且沒開減少動態才是 `true`）。cyber 不新增字型檔，只用現有的 IBM Plex Mono ＋ Noto Sans TC。
   - **每個工作包／改動完成都要更新 `docs/refactor-plan.md` §7**（重構期間的規則；重構結束後只在動到計畫書範圍時才需要）。
@@ -409,7 +410,7 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
 npm run check      # 後端 node --check 語法檢查
 npm test           # 後端 node:test（test/**/*.test.js），目前 169 個測試
 npm run typecheck  # 前端 tsc --noEmit（strict）
-npm run test:web   # 前端 Vitest（jsdom + Testing Library），目前 554 個測試（31 個檔案）
+npm run test:web   # 前端 Vitest（jsdom + Testing Library），目前 565 個測試（31 個檔案）
 npm run build      # 前端 vite build → web/dist
 ```
 

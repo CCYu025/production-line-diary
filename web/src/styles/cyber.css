@@ -42,7 +42,8 @@
  * panel-cut（待處理／追蹤中 KPI 卡）：右上與左下切角。
  * 元素本身（可能是可聚焦的 <button>）不加 clip-path——焦點環才不會被裁；它的底色與框線在 cyber 下透明，
  * 切角的底色＋1px 框線畫在 ::before（clip-path 在偽元素上，z-index:-1，元素用 isolation 自成堆疊環境），
- * 切角斜邊的框線用 45° 漸層補上；四角 10px 的 L 形角框畫在 ::after。
+ * 切角斜邊的框線用 45° 漸層補上；角框畫在 ::after：兩個直角（左上、右下）是 10px 的 L 形，
+ * 兩個切角（右上、左下）是連續的「折角括號」——沿兩條直邊各 10px 的線段，加上中間沿 45° 切角的 2px 斜線，三段相連成一個角標。
  * 有警示（[data-fx-alert]，待處理 > 0）時角框改 serious 色（靜態；呼吸是 P3 的 FX-08）。
  */
 :root[data-theme="cyber"] [data-fx="panel-cut"] {
@@ -89,20 +90,25 @@
     linear-gradient(var(--pc-corner), var(--pc-corner)) right var(--pc-cut) top / 10px 2px no-repeat,
     linear-gradient(var(--pc-corner), var(--pc-corner)) right top var(--pc-cut) / 2px 10px no-repeat,
     linear-gradient(var(--pc-corner), var(--pc-corner)) left var(--pc-cut) bottom / 10px 2px no-repeat,
-    linear-gradient(var(--pc-corner), var(--pc-corner)) left bottom var(--pc-cut) / 2px 10px no-repeat;
+    linear-gradient(var(--pc-corner), var(--pc-corner)) left bottom var(--pc-cut) / 2px 10px no-repeat,
+    linear-gradient(to top right, transparent calc(50% - 2px), var(--pc-corner) calc(50% - 2px), var(--pc-corner) 50%, transparent 50%) right top / var(--pc-cut) var(--pc-cut) no-repeat,
+    linear-gradient(to top right, transparent 50%, var(--pc-corner) 50%, var(--pc-corner) calc(50% + 2px), transparent calc(50% + 2px)) left bottom / var(--pc-cut) var(--pc-cut) no-repeat;
 }
 
 /* ---------- 按鈕（§5.4）----------
  * 表單送出鈕的 data-fx 被覆寫成 submit，但 data-variant 仍在，所以兩個都選。disabled 的按鈕不出現 hover 光暈。
- * 手機底部中央「新增」圓鈕（data-fx="fab"）不是 button 也不在這裡：維持實心。 */
+ * 手機底部中央「新增」圓鈕（data-fx="fab"）不是 button 也不在這裡：維持實心。
+ * 框線一律畫成 box-shadow: inset 0 0 0 1px（不用 border——primary／destructive 在標準主題沒有 border，
+ * 加實體框會讓自動寬度的按鈕多出 2px）；hover 光暈與內框合併在「同一個」box-shadow 宣告，兩者才不會互相蓋掉。
+ * secondary 在標準主題本來就有 1px border，維持不動（只改色）。 */
 :root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-variant="primary"] {
   background-color: transparent;
-  border: 1px solid var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
   color: var(--accent-text);
 }
 :root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-variant="primary"]:hover:not(:disabled) {
   background-color: var(--accent-wash);
-  box-shadow: var(--glow-accent);
+  box-shadow: inset 0 0 0 1px var(--accent), var(--glow-accent);
 }
 :root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-variant="secondary"]:hover:not(:disabled) {
   border-color: var(--accent);
@@ -112,10 +118,21 @@
 }
 :root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-variant="destructive"] {
   background-color: transparent;
-  border: 1px solid var(--critical);
+  box-shadow: inset 0 0 0 1px var(--critical);
   color: var(--critical);
 }
 :root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-variant="destructive"]:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 1px var(--critical), var(--glow-critical);
+}
+/* data-fx-tone="danger"：以 secondary variant 實作的紅字紅框按鈕（回收桶「永久刪除」，標準主題靠 border-critical／text-critical class）。
+ * 它的實體 1px border 本來就是 critical 色（標準主題就有），所以框線沿用、不另加內框（否則變 2px）；
+ * 要做的是擋掉上面 secondary 的 hover「青框」，並在 hover 加 critical 光暈。比 secondary 的規則多一個屬性選擇器，特異度較高。 */
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-fx-tone="danger"] {
+  border-color: var(--critical);
+  color: var(--critical);
+}
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-fx-tone="danger"]:hover:not(:disabled) {
+  border-color: var(--critical);
   box-shadow: var(--glow-critical);
 }
 
@@ -134,6 +151,13 @@
     align-items: center;
     font-weight: 700;
     color: var(--accent-text);
+  }
+}
+/* 平板圖示列（768–1023）目前頁：左側 2px accent 內側直條（靜態；不是 nav-indicator），
+ * 讓目前頁不只靠圖示色與 hover 區分。1024 以上維持 ">" 前綴。 */
+@media (min-width: 768px) and (max-width: 1023px) {
+  :root[data-theme="cyber"] aside [data-fx="nav-item"][aria-current="page"] {
+    box-shadow: inset 2px 0 0 var(--accent);
   }
 }
 /* 側欄項目 hover（靜態）：文字 ink-1、accent-wash 底；目前頁與 disabled 不變 */
@@ -178,32 +202,61 @@
 
 /* ---------- 分段按鈕、多選勾選、錯誤訊息 ---------- */
 
-/* 分段按鈕：選中項前後 "[" "]"，畫在按鈕內距裡（絕對定位，不改變按鈕寬度；手機版內距小，括號縮小） */
+/* 分段按鈕：選中項改空心終端風——accent-wash 底＋1px accent 內框（inset box-shadow，不改尺寸）＋accent-text 字，
+ * 文字前後各一個 "[" "]"，離文字固定 4px（括號貼著文字，不貼按鈕兩端）。括號有兩種畫法，因為兩種版型的內容排列不同：
+ *   桌面（≥ 768，按鈕是橫排的「標籤＋筆數」）：括號是按鈕自己的 ::before／::after，當作 flex 子項目排進內容前後
+ *     （flex gap 6px，用 -2px margin 修成 4px），包住「標籤＋筆數」。為了選中／未選中時文字位置不跳動、按鈕寬度一致，
+ *     **所有**分段按鈕都有括號，未選中的用 visibility: hidden 佔位（不朗讀、不可見）。
+ *   手機（< 768，按鈕是直排的「標籤／筆數」，欄寬由 auto-cols-fr 等分）：括號絕對定位在標籤 <span>（第一個子元素）兩側，
+ *     不佔版面、不改欄寬；只包標籤、筆數在下一行。括號縮成 10px，並把按鈕最小寬度放大到容得下「括號＋4px 間距」。 */
 :root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"] {
-  position: relative;
+  background-color: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent-text);
 }
-:root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"]::before,
-:root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"]::after {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  font-weight: 400;
-  pointer-events: none;
-}
-:root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"]::before {
-  content: "[" / "";
-  left: 1px;
-}
-:root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"]::after {
-  content: "]" / "";
-  right: 1px;
-}
-@media (max-width: 767px) {
+@media (min-width: 768px) {
+  :root[data-theme="cyber"] [data-fx="seg"] > button::before {
+    content: "[" / "";
+    margin-right: -2px;
+    font-weight: 400;
+    visibility: hidden;
+  }
+  :root[data-theme="cyber"] [data-fx="seg"] > button::after {
+    content: "]" / "";
+    margin-left: -2px;
+    font-weight: 400;
+    visibility: hidden;
+  }
   :root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"]::before,
   :root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"]::after {
-    font-size: 11px;
+    visibility: visible;
+  }
+}
+@media (max-width: 767px) {
+  :root[data-theme="cyber"] [data-fx="seg"] > button {
+    min-width: 52px;
+  }
+  :root[data-theme="cyber"] [data-fx="seg"] > button > span:first-child {
+    position: relative;
+  }
+  :root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"] > span:first-child::before,
+  :root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"] > span:first-child::after {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    font-size: 10px;
+    font-weight: 400;
+    pointer-events: none;
+  }
+  :root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"] > span:first-child::before {
+    content: "[" / "";
+    right: calc(100% + 4px);
+  }
+  :root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"] > span:first-child::after {
+    content: "]" / "";
+    left: calc(100% + 4px);
   }
 }
 
@@ -294,6 +347,16 @@
 }
 :root[data-theme="cyber"] :is([data-fx="row"], [data-fx="bar-row"]):hover {
   background-color: var(--accent-wash);
+}
+
+/* ---------- 日曆格焦點環 ----------
+ * 焦點環（base 層的 2px accent-text、offset 2px）落在相鄰格上時，對最深的第 3 級（seq-700 淺青）只有約 1.2:1。
+ * 在環的外側墊一圈 --page 色（0 0 0 6px：環的外緣在 4px，所以 6px 才蓋得住）；z-index 讓它蓋在相鄰格上。
+ * box-shadow 畫在 outline 之下，環本身不受影響。 */
+:root[data-theme="cyber"] [data-fx="cal-cell"]:focus-visible {
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 0 0 6px var(--page);
 }
 
 /* ---------- toast（sonner 沒有 data-fx，用它自己的屬性）----------
@@ -410,14 +473,23 @@
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx]::after {
     all: revert-layer;
   }
-  /* 沒有 data-fx 的被選取元素：逐項退回標準值 */
+  /* 沒有 data-fx 的被選取元素：逐項退回標準值。
+   * 分段按鈕：按鈕本身（選中態的底色／內框／字色、最小寬度）、括號（按鈕的 ::before／::after、標籤 <span> 的 ::before／::after）與標籤 <span> 的 position */
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button {
-    position: revert-layer;
+    background-color: revert-layer;
+    box-shadow: revert-layer;
+    color: revert-layer;
+    min-width: revert-layer;
   }
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button::before,
-  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button::after {
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button::after,
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button > span:first-child::before,
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button > span:first-child::after {
     content: none;
     display: none;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button > span:first-child {
+    position: revert-layer;
   }
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx="check"] > svg {
     display: revert-layer;

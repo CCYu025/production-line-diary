@@ -259,7 +259,7 @@ describe("cyber.css：panel-cut 切角面板（§5.3）", () => {
     const after = decl(screenRule(`${SEL}::after`)!);
     expect(after["clip-path"]).toBeUndefined();
     expect(after["z-index"]).toBe("-1");
-    expect((after["background"]!.match(/linear-gradient\(/g) ?? []).length).toBe(8); // 四角各兩條
+    expect((after["background"]!.match(/linear-gradient\(/g) ?? []).length).toBe(10); // 四角各兩條＋兩個切角的 45° 斜線（折角括號）
     expect(after["content"]).toBe('"" / ""');
   });
 
@@ -274,15 +274,17 @@ describe("cyber.css：panel-cut 切角面板（§5.3）", () => {
 describe("cyber.css：按鈕、前綴與嚴重度光暈", () => {
   const BTN = `${CYBER_SCOPE} :is([data-fx="button"], [data-fx="submit"])`;
 
-  it("按鈕規則同時涵蓋 button 與 submit；primary／destructive 是透明底＋細框，hover 光暈只作用在 :not(:disabled)", () => {
+  it("按鈕規則同時涵蓋 button 與 submit；primary／destructive 是透明底＋inset box-shadow 細框（不用 border，尺寸才與標準相同），hover 光暈與內框合併在同一個 box-shadow", () => {
     const primary = decl(screenRule(`${BTN}[data-variant="primary"]`)!);
     expect(primary["background-color"]).toBe("transparent");
-    expect(primary["border"]).toBe("1px solid var(--accent)");
+    expect(primary["border"]).toBeUndefined();
+    expect(primary["box-shadow"]).toBe("inset 0 0 0 1px var(--accent)");
     expect(primary["color"]).toBe("var(--accent-text)");
     const destructive = decl(screenRule(`${BTN}[data-variant="destructive"]`)!);
-    expect(destructive["border"]).toBe("1px solid var(--critical)");
-    expect(decl(screenRule(`${BTN}[data-variant="primary"]:hover:not(:disabled)`)!)["box-shadow"]).toBe("var(--glow-accent)");
-    expect(decl(screenRule(`${BTN}[data-variant="destructive"]:hover:not(:disabled)`)!)["box-shadow"]).toBe("var(--glow-critical)");
+    expect(destructive["border"]).toBeUndefined();
+    expect(destructive["box-shadow"]).toBe("inset 0 0 0 1px var(--critical)");
+    expect(decl(screenRule(`${BTN}[data-variant="primary"]:hover:not(:disabled)`)!)["box-shadow"]).toBe("inset 0 0 0 1px var(--accent), var(--glow-accent)");
+    expect(decl(screenRule(`${BTN}[data-variant="destructive"]:hover:not(:disabled)`)!)["box-shadow"]).toBe("inset 0 0 0 1px var(--critical), var(--glow-critical)");
     expect(decl(screenRule(`${BTN}[data-variant="secondary"]:hover:not(:disabled)`)!)["border-color"]).toBe("var(--accent)");
     expect(decl(screenRule(`${BTN}[data-variant="ghost"]:hover:not(:disabled)`)!)["color"]).toBe("var(--accent-text)");
     // link 不動；手機中央「新增」圓鈕（fab）維持實心，不在 cyber.css 裡
@@ -313,8 +315,8 @@ describe("cyber.css：按鈕、前綴與嚴重度光暈", () => {
     const h1 = contentOf(`${CYBER_SCOPE} h1[data-fx="page-title"]::before`);
     expect(h1?.content).toBe('"~/" / ""');
     expect(inMedia(h1!.rule, /min-width:\s*768px/)).toBe(true);
-    expect(contentOf(`${CYBER_SCOPE} [data-fx="seg"] > button[aria-pressed="true"]::before`)?.content).toBe('"[" / ""');
-    expect(contentOf(`${CYBER_SCOPE} [data-fx="seg"] > button[aria-pressed="true"]::after`)?.content).toBe('"]" / ""');
+    expect(contentOf(`${CYBER_SCOPE} [data-fx="seg"] > button[aria-pressed="true"] > span:first-child::before`)?.content).toBe('"[" / ""');
+    expect(contentOf(`${CYBER_SCOPE} [data-fx="seg"] > button[aria-pressed="true"] > span:first-child::after`)?.content).toBe('"]" / ""');
     expect(contentOf(`${CYBER_SCOPE} [data-fx="error-msg"]::before`)?.content).toBe('"ERR: " / ""');
     expect(contentOf(`${CYBER_SCOPE} [data-fx="check"]::before`)?.content).toBe('"[ ]" / ""');
     expect(contentOf(`${CYBER_SCOPE} [data-fx="check"][data-state="on"]::before`)?.content).toBe('"[x]" / ""');
@@ -371,5 +373,98 @@ describe("cyber.css：@media print 還原（cyber 列印 ≡ 標準淺色列印�
     const lastScreen = rules.map((r) => !inPrint(r)).lastIndexOf(true);
     const firstPrint = rules.findIndex(inPrint);
     expect(firstPrint).toBeGreaterThan(lastScreen);
+  });
+});
+
+/*
+ * P1 設計審查退回項的守門（docs/cyber-theme-spec.md §1「P1 設計審查」、§5.2–§5.4、§7）。
+ */
+describe("cyber.css：設計審查退回項", () => {
+  const BTN = `${CYBER_SCOPE} :is([data-fx="button"], [data-fx="submit"])`;
+  const SEG = `${CYBER_SCOPE} [data-fx="seg"] > button`;
+  const rulesFor = (sel: string) => screenRules.filter((r) => r.selectors.includes(sel));
+
+  it("分段按鈕選中態：空心終端風（accent-wash 底、1px accent 內框用 inset box-shadow 不改尺寸、accent-text 字）", () => {
+    const d = decl(screenRule(`${SEG}[aria-pressed="true"]`)!);
+    expect(d["background-color"]).toBe("var(--accent-wash)");
+    expect(d["box-shadow"]).toBe("inset 0 0 0 1px var(--accent)");
+    expect(d["color"]).toBe("var(--accent-text)");
+    expect(d["border"]).toBeUndefined();
+    expect(d["padding"]).toBeUndefined();
+  });
+
+  it("分段按鈕括號（桌面）：所有分段按鈕都有 ::before／::after 括號當 flex 子項目（未選中 visibility:hidden 佔位，文字不跳動），離文字 4px（gap 6px − 2px），選中才可見", () => {
+    const find = (sel: string) => rulesFor(sel).find((r) => inMedia(r, /min-width:\s*768px/) && decl(r)["content"] !== undefined)!;
+    const before = find(`${SEG}::before`);
+    const after = find(`${SEG}::after`);
+    expect(decl(before)).toMatchObject({ content: '"[" / ""', "margin-right": "-2px", visibility: "hidden" });
+    expect(decl(after)).toMatchObject({ content: '"]" / ""', "margin-left": "-2px", visibility: "hidden" });
+    const shown = rules.find((r) => r.selectors.includes(`${SEG}[aria-pressed="true"]::before`) && inMedia(r, /min-width:\s*768px/));
+    expect(shown && decl(shown)["visibility"]).toBe("visible");
+    // 括號不是絕對定位（桌面是排版內的子項目，才會貼著文字、又不會蓋到筆數）
+    expect(decl(before)["position"]).toBeUndefined();
+  });
+
+  it("分段按鈕括號（手機）：畫在標籤 <span>（第一個子元素）兩側，絕對定位、離文字 4px；按鈕最小寬度放大到容得下括號", () => {
+    const S = `${SEG}[aria-pressed="true"] > span:first-child`;
+    const inMobile = (sel: string) => rules.find((r) => r.selectors.includes(sel) && inMedia(r, /max-width:\s*767px/) && decl(r)["content"] !== undefined)!;
+    expect(decl(inMobile(`${S}::before`))).toMatchObject({ content: '"[" / ""', right: "calc(100% + 4px)" });
+    expect(decl(inMobile(`${S}::after`))).toMatchObject({ content: '"]" / ""', left: "calc(100% + 4px)" });
+    const pos = rules.find((r) => r.selectors.includes(`${S}::before`) && decl(r)["position"] !== undefined);
+    expect(decl(pos!)["position"]).toBe("absolute");
+    const min = rules.find((r) => r.selectors.includes(SEG) && inMedia(r, /max-width:\s*767px/));
+    expect(min && decl(min)["min-width"]).toBe("52px");
+  });
+
+  it("data-fx-tone=\"danger\"（回收桶永久刪除）：critical 字與框，hover 為 critical 光暈、框不變青色；不用 accent", () => {
+    const base = decl(screenRule(`${BTN}[data-fx-tone="danger"]`)!);
+    expect(base).toMatchObject({ "border-color": "var(--critical)", color: "var(--critical)" });
+    const hover = decl(screenRule(`${BTN}[data-fx-tone="danger"]:hover:not(:disabled)`)!);
+    expect(hover["border-color"]).toBe("var(--critical)");
+    expect(hover["box-shadow"]).toBe("var(--glow-critical)");
+    for (const r of screenRules.filter((x) => x.selectors.some((s) => s.includes("data-fx-tone")))) {
+      expect(r.declarations, r.selectors[0]).not.toMatch(/accent/);
+    }
+  });
+
+  it("panel-cut 折角括號：兩個切角（右上、左下）各有一條 45° 斜線（2px、corner 色）接在兩段直邊線之間", () => {
+    const after = decl(screenRule(`${CYBER_SCOPE} [data-fx="panel-cut"]::after`)!)["background"]!;
+    const diag = after.split("linear-gradient(").filter((g) => g.startsWith("to top right,") && g.includes("var(--pc-corner)"));
+    expect(diag).toHaveLength(2);
+    expect(diag.some((g) => /right top \/ var\(--pc-cut\) var\(--pc-cut\)/.test(g))).toBe(true);
+    expect(diag.some((g) => /left bottom \/ var\(--pc-cut\) var\(--pc-cut\)/.test(g))).toBe(true);
+  });
+
+  it("日曆格焦點環：只在 :focus-visible，外側墊 --page 色的 6px 外暈（蓋得住 offset 2px＋寬 2px 的環），並用 z-index 蓋在相鄰格上", () => {
+    const rule = screenRule(`${CYBER_SCOPE} [data-fx="cal-cell"]:focus-visible`);
+    expect(rule, "要有 cal-cell:focus-visible 規則").toBeDefined();
+    expect(decl(rule!)).toMatchObject({ position: "relative", "z-index": "1", "box-shadow": "0 0 0 6px var(--page)" });
+    expect(decl(rule!)["outline"]).toBeUndefined(); // 環本身沿用 index.css base 層，不另寫（見檔頭）
+  });
+
+  it("平板圖示列（768–1023）目前頁：左側 2px accent 內側直條（靜態、只在這個寬度）", () => {
+    const rule = screenRules.find((r) => r.selectors.includes(`${CYBER_SCOPE} aside [data-fx="nav-item"][aria-current="page"]`) && decl(r)["box-shadow"] !== undefined);
+    expect(rule, "要有平板目前頁的規則").toBeDefined();
+    expect(decl(rule!)["box-shadow"]).toBe("inset 2px 0 0 var(--accent)");
+    expect(inMedia(rule!, /min-width:\s*768px\)\s*and\s*\(max-width:\s*1023px/)).toBe(true);
+  });
+
+  it("按鈕框線一律是 inset box-shadow（不新增實體 border，尺寸才與標準相同）；secondary 的標準 border 不動", () => {
+    const selectors = screenRules.filter((r) => r.selectors.some((s) => s.startsWith(BTN)));
+    for (const r of selectors) {
+      const d = decl(r);
+      expect(d["border"], r.selectors[0]).toBeUndefined();
+      expect(d["border-width"], r.selectors[0]).toBeUndefined();
+    }
+  });
+
+  it("@media print 還原新增的東西：分段按鈕（底色、內框、字色、最小寬度、兩種括號）與 span 的 position", () => {
+    const P = `${CYBER_SCOPE}:not(#cyber-print) [data-fx="seg"] > button`;
+    const btn = printRule(P);
+    expect(btn).toBeDefined();
+    for (const k of ["background-color", "box-shadow", "color", "min-width"]) expect(decl(btn!)[k], k).toBe("revert-layer");
+    const pseudo = printRules.find((r) => r.selectors.includes(`${P}::before`) && r.selectors.includes(`${P} > span:first-child::before`));
+    expect(pseudo && decl(pseudo)).toMatchObject({ content: "none", display: "none" });
+    expect(decl(printRule(`${P} > span:first-child`)!)["position"]).toBe("revert-layer");
   });
 });

@@ -524,3 +524,43 @@ describe("其他頁面：calendar／trash／settings／report", () => {
     });
   });
 });
+
+describe("回收桶：永久刪除按鈕的 data-fx-tone（Cyber 設計審查）", () => {
+  const DELETED = makeRecord({ id: 1, deleted: true, deletedAt: "2026-10-26T09:00:00" });
+
+  function renderTrash() {
+    vi.spyOn(api, "listRecords").mockResolvedValue([DELETED]);
+    const client = createQueryClient();
+    client.setDefaultOptions({ queries: { retry: false } });
+    const router = createMemoryRouter([{ path: "*", element: <TrashPage /> }], { initialEntries: ["/trash"] });
+    return render(
+      <Providers client={client}>
+        <RouterProvider router={router} />
+      </Providers>,
+    );
+  }
+
+  it("桌面表格與手機卡片的「永久刪除」都帶 data-fx-tone=\"danger\"（純屬性，variant 仍是 secondary，「復原」沒有）", async () => {
+    const { unmount } = renderTrash();
+    await screen.findByRole("table");
+    const purge = screen.getByRole("button", { name: /^永久刪除/ });
+    expect(purge).toHaveAttribute("data-fx-tone", "danger");
+    expect(purge).toHaveAttribute("data-variant", "secondary");
+    expect(screen.getByRole("button", { name: /^復原/ })).not.toHaveAttribute("data-fx-tone");
+    unmount();
+    setViewportWidth(375);
+    renderTrash();
+    await screen.findByRole("list");
+    expect(screen.getByRole("button", { name: /^永久刪除/ })).toHaveAttribute("data-fx-tone", "danger");
+  });
+
+  it("確認對話框內的確認鈕本來就是 destructive variant（不需要 data-fx-tone）", async () => {
+    renderTrash();
+    await screen.findByRole("table");
+    await userEvent.setup().click(screen.getByRole("button", { name: /^永久刪除/ }));
+    const dialog = await screen.findByRole("alertdialog");
+    const confirm = within(dialog).getByRole("button", { name: "永久刪除" });
+    expect(confirm).toHaveAttribute("data-variant", "destructive");
+    expect(confirm).not.toHaveAttribute("data-fx-tone");
+  });
+});
