@@ -1,6 +1,6 @@
 # 產線日誌 Cyber-Terminal 主題 設計規格書
 
-> 狀態：**規格草案，尚未實作**（2026-10-28）。
+> 狀態：**P0 實作完成、待合併（PR #40）；P1–P3 尚未實作**（2026-10-28）。
 > 風格：終端機為骨架、賽博龐克霓虹為強調色的混合風格（「Cyber-Terminal」）。
 > 本文件是之後實作與驗收的唯一依據；實作時若要偏離，先改這份文件再改程式碼。
 
@@ -34,6 +34,8 @@
 
 實作前需要使用者拍板。每項都附推薦值；未特別回覆即依推薦值實作。
 **2026-10-28：使用者未另外指定，D1–D4 全部採用推薦值，開始開發。**
+
+**2026-10-28 P0 設計審查**裁定：(1) 報表 `#report-output` 內以 `cyber.css` 隔離還原四個嚴重度 token（`--good`／`--warning`／`--serious`／`--critical` = 標準淺色值），`report.css` 不改，標準深色既有的漏洞不碰；(2) 開機不閃：`index.html` 用同步 inline script，`theme.ts` 仍是唯一的寫回來源；(3) 列印還原全部色彩 token 與 `--r-*` 並設 `color-scheme: light`，cyber 列印 ≡ 標準淺色列印；(4) 平板圖示列的切換維持現狀（`aria-pressed`＋圖示色＋tooltip）；(5) 「更多」面板切換主題後維持開啟；(6) 套用 `?theme=` 後以 `history.replaceState` 只移除 `theme` 參數，多分頁以 `storage` 事件同步（只 apply、不寫回）；(7) 品牌 logo 的 `text-white` 留到 P1（P1 以 `data-fx` 掛 logo，cyber 下圖示用 `--accent-ink`；P0 不改，以免動到標準深色），平板分隔線與群組 `hr` 一致。另核准：`useThemePreference` 以 DOM 為準、動態 token 共用於 `:root`、`initTheme` 獨立、cyber 暫時蓋過 `light｜dark` 強制指定並在切回標準時還原。
 
 | # | 決策 | 推薦 | 其他選項 |
 |---|---|---|---|
@@ -70,10 +72,12 @@
   - `getThemePreference(): "standard" | "cyber"`、`setThemePreference(v)`。存取 `localStorage` 的 key 為 `pld.theme`，**每次讀寫都包 try/catch**，失敗時一律回傳 `"standard"`。
   - `applyTheme(v)`：設定或移除 `document.documentElement.dataset.theme`，同時更新 `<meta name="color-scheme">`（cyber 時為 `dark`）。
 - `web/src/app/main.tsx` 在 `createRoot` **之前**同步呼叫 `applyTheme(getThemePreference())`，避免先閃一下標準主題。
-- 網址 `?theme=cyber`／`?theme=standard`（hash 前的 query）可以覆寫並寫回偏好，方便測試與 D1 選項 (b)。
+- 網址 `?theme=cyber`／`?theme=standard`（hash 前的 query）可以覆寫並寫回偏好，方便測試與 D1 選項 (b)。套用後以 `history.replaceState` 把網址的 `theme` 參數移除（保留其他 query 與 `#hash` 路由，不觸發導覽），重新整理或複製網址時不會帶著它。
+- **開機不閃**：`web/index.html` 的 `<head>` 有一段同步 inline script，在第一次繪製之前讀 `?theme=` 或 `pld.theme`；是 cyber 時**只**設 `<html data-theme="cyber">` 與 `<meta name="color-scheme">` = `dark`，並把 meta 的原值記在 `<html data-prev-color-scheme>`，供 `applyTheme` 切回標準時還原。寫回偏好、清掉網址參數仍由 `theme.ts` 負責（它仍是唯一的寫回來源）。inline script 的 key、值與屬性名稱要與 `theme.ts` 一致，`theme.test.ts` 會執行那段 script 比對。`main.tsx` 實際呼叫的是 `initTheme()`（決定偏好、套用、註冊 `storage` 監聽）。
+- **多分頁同步**：`initTheme()` 監聽 `storage` 事件（`pld.theme` 變動或 `localStorage.clear()`），其他分頁改了偏好時這個分頁跟著套用；只 `applyTheme`、**不寫回**（偏好已被那個分頁寫好）。
 - sonner 的 `Toaster` 要傳入目前生效的主題（cyber 時為 `dark`），不然系統淺色時 sonner 自己的預設樣式會是淺色。
 - 新增 `useFx()` hook：只有在 `data-theme === "cyber"` **而且**沒有開啟減少動態效果時，才回傳 `true`。所有 JS 動畫（第 6 節標 JS 的項目）都要先檢查它。
-  **jsdom 測試環境沒有 `data-theme`，所以 `useFx()` 是 false，現有 408 個前端測試的行為不變。**
+  **jsdom 測試環境沒有 `data-theme`，所以 `useFx()` 是 false，P0 之前的 408 個前端測試的行為不變（P0 完成後前端共 503 個，含 P0 新增的測試）。**
 
 ### 3.2 CSS 檔案結構
 
@@ -354,10 +358,11 @@ cyber 沒辦法在執行期改。做法：
 ## 8. 列印與報表
 
 1. `ReportDocument.tsx` 內的元素**不加任何 `data-fx`**；`report.css` 不改。
-2. `cyber.css` 檔尾的 `@media print`：把掃描線、點陣背景、光暈、切角、裝飾前綴全部移除，`html, body` 背景回白色——即使使用者在 App 頁面（不是報表）按列印，也不會印出黑底。
+2. `cyber.css` 檔尾的 `@media print`：把掃描線、點陣背景、光暈、切角、裝飾前綴全部移除，並**還原全部色彩 token 與 `--r-*`**（值等於標準淺色 `:root`）、設 `color-scheme: light`、body 字型回標準；`body` 用 `background: var(--page); color: var(--ink-1)`（token 還原後即標準淺色的 `#f9f9f7`／`#0b0b0b`），所以 **cyber 列印 ≡ 標準淺色列印**——即使使用者在 App 頁面（不是報表）按列印，也不會印出黑底。（註記：此處與原文「`html, body` 背景回白色」有差異：為了做到與標準淺色列印逐元素一致，實作改用標準淺色的 `--page`／`--ink-1`，而不是純白純黑。之後各期新增的 cyber token 與裝飾，都要在這個區段同步還原；`cyberCss.test.ts` 檢查 print 區段的 token 涵蓋 cyber 區塊全部色彩 token 且值等於標準淺色 `:root`。）
 3. 掃描線圖層是 fixed 元素，除了 `print:hidden`，也會被 `report.css` 的 `#root .fixed` 規則涵蓋；兩者都要在。
 4. 「開新視窗」的報表 `<html>` 沒有 `data-theme`，cyber.css 的規則全部不會套用（因為每條規則都以 `:root[data-theme="cyber"]` 開頭）。
 5. `ReportPage.tsx` 的**控制列**（日期範圍、產生報表、列印、開新視窗按鈕）可以用 cyber 外觀；報表本體維持紙本。
+6. **`#report-output` 的嚴重度 token 隔離**：`report.css` 只重新定義文字／線／底色 token，沒有覆寫嚴重度四色，而報表的 `.rr-sev` 色塊會用到它們；所以 `cyber.css` 在 `:root[data-theme="cyber"] #report-output` 內把 `--good`／`--warning`／`--serious`／`--critical` 還原成標準淺色值（`cyberCss.test.ts` 與 `index.css` 比對）。之後新增的 cyber token 或裝飾也不得漏進 `#report-output`。
 
 ---
 
@@ -374,7 +379,7 @@ cyber 沒辦法在執行期改。做法：
 | A5 | `ScrambleNumber`：可存取名稱與 `getByText` 都是真實數字；`useFx()` 為 false 時不渲染亂碼層；動畫結束後亂碼層已移除 | `fx.test.tsx` |
 | A6 | cyber.css 每條規則都以 `:root[data-theme="cyber"]` 開頭（讀檔、逐條檢查選擇器）；所有 `content:` 宣告都有 `/ ""` 替代文字 | 新的 `cyberCss.test.ts` |
 | A7 | `ReportDocument` 的輸出中沒有任何 `data-fx` 屬性；`report.css` 的列印選擇器仍在（沿用現有測試） | `ReportDocument.test.tsx` |
-| A8 | 現有 408 個前端測試、169 個後端測試**不修改就全部通過**（只允許因 `data-fx` 屬性造成的快照差異，若有快照） | — |
+| A8 | P0 之前既有的 408 個前端測試、169 個後端測試**不修改就全部通過**（只允許因 `data-fx` 屬性造成的快照差異，若有快照）。前端測試數量基準：P0 前 408 個、P0 後 503 個（實測；之後各期以實測為準） | — |
 
 ### 9.2 無障礙
 
@@ -420,7 +425,7 @@ cyber 沒辦法在執行期改。做法：
 
 | 期 | 內容 | 涵蓋 | 驗收 |
 |---|---|---|---|
-| **P0 主題骨架** | `theme.ts`、`useFx()`、D1 切換入口、cyber token 區塊、圓角執行期化、`cyber.css` 空殼與列印還原 | 第 3、4 節 | A1–A4、A6、A8、C1、C2、M4 |
+| **P0 主題骨架**<br>實作完成、待合併（PR #40） | `theme.ts`、`useFx()`、D1 切換入口、cyber token 區塊、圓角執行期化、`cyber.css` 空殼與列印還原 | 第 3、4 節 | A1–A4、A6、A8、C1、C2、M4 |
 | **P1 靜態外觀** | `data-fx` 掛勾、面板／切角／按鈕／焦點環／裝飾前綴、背景點陣與掃描線（靜態） | 第 5 節 | A6、A7、B2、B3、C1、M2 |
 | **P2 微互動與浮層** | hover、按壓、聚焦、彈出選單、面板、對話框、toast、錯誤、骨架等純 CSS 動畫 | FX-05、06、10、15、17–24、28–31、33–37 | B1、B4、B5、P1、P2、M3 |
 | **P3 招牌效果** | 開機畫面、換頁 View Transitions、數字鎖定、長條／趨勢／日曆／列表依序進場、帶入閃爍 | FX-01–04、07–09、11–14、16、25–27、32、38 | A5、P3、P4、M1、M5 |
@@ -462,5 +467,6 @@ cyber 沒辦法在執行期改。做法：
 
 ## 13. 待實作時一併更新的文件
 
-- `CLAUDE.md`：〈關鍵檔案〉加入 `styles/cyber.css`、`lib/theme.ts`、`lib/fx/`；〈前端與共用邏輯的規則〉加入第 2 節的紅線摘要（特別是「報表不加 `data-fx`」「cyber 規則一律以 `:root[data-theme="cyber"]` 開頭」「裝飾 `content` 要有 `/ ""`」）；手動驗證清單加入 cyber 主題的項目。
+- `CLAUDE.md`／`AGENTS.md`（兩份內容保持同步，只有原本就不同的章節標題不同）：〈關鍵檔案〉加入 `styles/cyber.css`、`lib/theme.ts`、`lib/fx/`；〈前端與共用邏輯的規則〉加入第 2 節的紅線摘要（特別是「報表不加 `data-fx`」「cyber 規則一律以 `:root[data-theme="cyber"]` 開頭」「裝飾 `content` 要有 `/ ""`」）；手動驗證清單加入 cyber 主題的項目。
+- `README.md`：介面主題的行為描述、專案結構（`src/lib/`、`src/styles/`、`docs/`）；與 `CLAUDE.md` 同步更新。
 - 本文件：每期完成後在第 10 節標註完成日期與 PR（見第 12 節）。
