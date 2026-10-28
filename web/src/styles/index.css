@@ -8,6 +8,7 @@
  * 與舊 UI 不同之處（皆為了對比度 ≥ 4.5:1，量測值見 web/src/test/contrast.test.ts）：
  *   - ink-muted：淺色 #898781(3.4:1) → #6b6a64；深色 #898781 → #9b9a93
  *   - 淺色 accent #2a78d6 → #2468bd（白字／當文字用都 ≥ 4.5:1）；深色另有 accent-text
+ * 第三套 :root[data-theme="cyber"]（Cyber-Terminal，opt-in，永遠是深色）放在所有 token 區塊之後；規格見 docs/cyber-theme-spec.md。
  * 元件請只用語意 token（bg-surface-raised、text-ink-2…），不要寫死色碼，也不要用行內 style 寫視覺樣式。
  */
 :root {
@@ -42,6 +43,21 @@
   --seq-500: #256abf;
   --seq-600: #184f95;
   --seq-700: #0d366b;
+
+  /* 圓角尺度（執行期 token，cyber 會改成 2px；@theme inline 的 --radius-* 引用這三個）。 */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+
+  /* 動態 token（規格 §4.4）：所有主題共用，標準主題不引用。 */
+  --dur-instant: 80ms;
+  --dur-fast: 150ms;
+  --dur-base: 220ms;
+  --dur-slow: 400ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-glitch: steps(4, end);
+  --stagger: 40ms;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -108,6 +124,59 @@
   --seq-700: #b7d3f6;
 }
 
+/*
+ * Cyber-Terminal 主題（規格 §4.1、§4.2）。
+ * 位置規則：必須在上面兩個深色區塊「之後」——系統深色時 :root:not([data-theme="light"]) 也會套用到 data-theme="cyber"，
+ * 兩者特異度相同（0,2,0），後面的才會勝出。也必須定義全部 token（不能依賴繼承），不然系統淺色時會漏出淺色值。
+ * 這兩點由 web/src/test/contrast.test.ts 把關。
+ */
+:root[data-theme="cyber"] {
+  color-scheme: dark;
+  --page: #070b11;
+  --surface: #0c131c;
+  --surface-raised: #111a25;
+  --ink-1: #e6f1fa;
+  --ink-2: #b4c6d6;
+  --ink-muted: #8ba1b5;
+  --line: #1d2b3a;
+  --line-strong: #2c4054;
+  --accent: #22e6ff;
+  --accent-ink: #04121a;
+  --accent-text: #22e6ff;
+  --accent-wash: #08262f;
+  --accent-2: #ff3fd2; /* 純裝飾，不可表示任何資料狀態 */
+  --good: #3ddc84;
+  --warning: #ffd23f;
+  --serious: #ff8a3d;
+  --serious-wash: #2a1608;
+  --critical: #ff4d64;
+  --critical-ink: #12040a;
+  --shadow: 0 0 0 1px rgba(34, 230, 255, 0.18), 0 16px 40px -16px rgba(0, 0, 0, 0.85);
+  --ring: rgba(34, 230, 255, 0.25);
+  --overlay: rgba(2, 6, 10, 0.72);
+  --seq-100: #0a1f29;
+  --seq-200: #0c3340;
+  --seq-300: #0f4d5e;
+  --seq-400: #138299;
+  --seq-450: #17a9c4;
+  --seq-500: #1cc8e6;
+  --seq-600: #6fe3f5;
+  --seq-700: #b8f3fb;
+
+  --r-sm: 2px;
+  --r-md: 2px;
+  --r-lg: 2px;
+
+  /* cyber 專用 token（只在這裡定義；標準主題不引用） */
+  --glow-accent: 0 0 0 1px rgba(34, 230, 255, 0.55), 0 0 12px rgba(34, 230, 255, 0.35);
+  --glow-critical: 0 0 0 1px rgba(255, 77, 100, 0.6), 0 0 12px rgba(255, 77, 100, 0.35);
+  --text-glow: 0 0 6px rgba(34, 230, 255, 0.45); /* 只用在 ≥ 20px 的數字與頁面標題 */
+  --scan-opacity: 0.025;
+  --grid-dot: rgba(34, 230, 255, 0.06);
+  --cut-sm: 8px;
+  --cut-md: 12px;
+}
+
 /* 把上面的 CSS 變數註冊成 Tailwind 的語意 token：bg-page、text-ink-2、border-line… */
 @theme inline {
   --color-page: var(--page);
@@ -159,11 +228,11 @@
   --color-input: var(--line-strong);
   --color-ring: var(--accent-text);
 
-  /* 圓角尺度 sm 6 / md 10 / lg 14（其餘沿用 Tailwind 預設會讓尺度失控，所以先清掉） */
+  /* 圓角尺度 sm 6 / md 10 / lg 14（值在 :root 的 --r-*，cyber 會改；其餘沿用 Tailwind 預設會讓尺度失控，所以先清掉） */
   --radius-*: initial;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
   --radius-full: 9999px;
 
   --font-sans: "Noto Sans TC", "Segoe UI", system-ui, -apple-system, sans-serif;

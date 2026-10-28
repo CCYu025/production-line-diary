@@ -1,0 +1,31 @@
+/*
+ * Cyber-Terminal 主題的元件層樣式（規格 docs/cyber-theme-spec.md §3.2）。
+ * 色票與圓角等 token 在 index.css 的 :root[data-theme="cyber"]；這裡只放用到 token 的外觀。
+ *
+ * 規則（由 web/src/styles/cyberCss.test.ts 把關）：
+ *   1. 每條規則的選擇器都要以 :root[data-theme="cyber"] 開頭——「開新視窗」的報表沒有 data-theme，整份都不會套用。
+ *   2. 所有 content 宣告都要加不朗讀的替代文字：content: "> " / "";
+ *   3. 不針對 Tailwind class 寫選擇器；要掛外觀請在元件上加 data-fx 屬性。報表（ReportDocument）一律不加 data-fx。
+ *   4. 檔尾的 @media print 要把所有裝飾還原。
+ *
+ * 載入順序：main.tsx 在 index.css 之後 import 這個檔案（沒放進 @layer，所以優先於 Tailwind 的 base／utility 層）。
+ */
+
+/* 內文字型（§4.3）：英數字用 IBM Plex Mono（等寬），中文回落到 Noto Sans TC；字級與行高不變。 */
+:root[data-theme="cyber"] body {
+  font-family: "IBM Plex Mono", "Noto Sans TC", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+/* ---------- 列印還原（§8）：一定要放在檔尾 ----------
+ * 即使使用者在 App 頁面（不是報表）按列印，也不能印出黑底或裝飾。
+ * 之後各期的裝飾（掃描線、點陣、光暈、切角、前綴）都要在這裡被還原。 */
+@media print {
+  :root[data-theme="cyber"],
+  :root[data-theme="cyber"] body {
+    background: #fff;
+    color: #000;
+  }
+  :root[data-theme="cyber"] body {
+    font-family: "Noto Sans TC", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+}

@@ -6,6 +6,7 @@ import { useTrashCount } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { MORE_ITEMS, MORE_PATHS, type NavEntry } from "./nav";
 import { CountBadge } from "./Sidebar";
+import { THEME_TOGGLE, ThemeToggleState, useThemeToggle } from "./themeToggle";
 import { useExportAction } from "./useExportAction";
 
 /** 手機（< 768px）頂部標題列：只放頁面標題（品牌字不換行成直排）。 */
@@ -72,6 +73,24 @@ function MoreRow({ entry, onDone }: { entry: NavEntry; onDone: () => void }) {
         {entry.badge === "trash" && <CountBadge count={trashCount} className="ml-auto" />}
       </Link>
     </SheetClose>
+  );
+}
+
+/** 「更多」面板的最後一列：介面主題切換。就地動作，按下後面板不關閉。 */
+function ThemeToggleRow() {
+  const { isCyber, toggle } = useThemeToggle();
+  const Icon = THEME_TOGGLE.icon;
+  return (
+    <button
+      type="button"
+      aria-pressed={isCyber}
+      onClick={toggle}
+      className="flex min-h-12 w-full items-center gap-3 rounded-md px-3 text-base font-medium text-ink-1 hover:bg-surface"
+    >
+      <Icon className={cn("size-5", isCyber ? "text-accent-text" : "text-ink-muted")} aria-hidden="true" />
+      {THEME_TOGGLE.label}
+      <ThemeToggleState isCyber={isCyber} className="ml-auto text-sm" />
+    </button>
   );
 }
 
@@ -174,6 +193,10 @@ export function MobileTabBar() {
               </li>
             ))}
           </ul>
+          {/* 導覽清單之外的最後一列（不改變既有導覽清單的項目數與結構） */}
+          <div className="mx-3 border-t border-line pb-2 pt-2">
+            <ThemeToggleRow />
+          </div>
         </SheetContent>
       </Sheet>
     </>
