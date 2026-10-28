@@ -4,6 +4,26 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
+    <!--
+      避免閃一幀標準主題：在第一次繪製之前同步把 cyber 套到 <html>（網址 ?theme= ＞ localStorage 的 pld.theme）。
+      只做「套上 cyber」這一件事；寫回偏好、清掉網址參數、切回標準時的還原仍由 src/lib/theme.ts 的 initTheme／applyTheme 負責。
+      這裡的 key、值、屬性名稱要與 theme.ts 一致（theme.test.ts 會執行這段 script 並比對）。
+    -->
+    <script>
+      (function () {
+        try {
+          var t = new URLSearchParams(location.search).get("theme");
+          if (t !== "cyber" && t !== "standard") t = localStorage.getItem("pld.theme");
+          if (t === "cyber") {
+            var d = document.documentElement;
+            var m = document.querySelector('meta[name="color-scheme"]');
+            if (m) d.setAttribute("data-prev-color-scheme", m.getAttribute("content") || "");
+            d.setAttribute("data-theme", "cyber");
+            if (m) m.setAttribute("content", "dark");
+          }
+        } catch (e) {}
+      })();
+    </script>
     <title>產線日誌</title>
   </head>
   <body>

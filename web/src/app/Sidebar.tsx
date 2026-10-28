@@ -7,6 +7,7 @@ import { useTrashCount } from "@/lib/queries";
 import { useIsDesktop } from "@/lib/useMediaQuery";
 import { cn } from "@/lib/utils";
 import { NAV_GROUPS, type NavEntry } from "./nav";
+import { THEME_TOGGLE, ThemeToggleState, useThemeToggle } from "./themeToggle";
 import { useExportAction } from "./useExportAction";
 
 export const navItemClass =
@@ -57,6 +58,21 @@ function ExportItem({ entry }: { entry: Extract<NavEntry, { kind: "action" }> })
           <Icon className="size-5 shrink-0 text-ink-muted" aria-hidden="true" />
         )}
         <span className="sr-only lg:not-sr-only">{exporter.pending ? "匯出中…" : entry.label}</span>
+      </button>
+    </MaybeTooltip>
+  );
+}
+
+/** 介面主題切換（桌面側欄底部／平板圖示列底部）。平板只有圖示＋tooltip，狀態由 aria-pressed 與圖示顏色表達。 */
+function ThemeToggleItem() {
+  const { isCyber, toggle } = useThemeToggle();
+  const Icon = THEME_TOGGLE.icon;
+  return (
+    <MaybeTooltip label={THEME_TOGGLE.label}>
+      <button type="button" className={navItemClass} aria-pressed={isCyber} onClick={toggle}>
+        <Icon className={cn("size-5 shrink-0", isCyber ? "text-accent-text" : "text-ink-muted")} aria-hidden="true" />
+        <span className="sr-only lg:not-sr-only">{THEME_TOGGLE.label}</span>
+        <ThemeToggleState isCyber={isCyber} className="hidden lg:ml-auto lg:inline" />
       </button>
     </MaybeTooltip>
   );
@@ -158,6 +174,11 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* 最底部：與導覽群組之間用分隔線隔開，不屬於任何導覽群組。平板圖示列的線與群組之間的 hr 一樣內縮（mx-2），桌面全寬 */}
+      <div className="mx-2 flex flex-col border-t border-line pt-3 lg:mx-0">
+        <ThemeToggleItem />
+      </div>
     </aside>
   );
 }

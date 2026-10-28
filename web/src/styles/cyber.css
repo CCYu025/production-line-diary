@@ -1,0 +1,80 @@
+/*
+ * Cyber-Terminal 主題的元件層樣式（規格 docs/cyber-theme-spec.md §3.2）。
+ * 色票與圓角等 token 在 index.css 的 :root[data-theme="cyber"]；這裡只放用到 token 的外觀。
+ *
+ * 規則（由 web/src/styles/cyberCss.test.ts 把關）：
+ *   1. 每條規則的選擇器都要以 :root[data-theme="cyber"] 開頭——「開新視窗」的報表沒有 data-theme，整份都不會套用。
+ *   2. 所有 content 宣告都要加不朗讀的替代文字：content: "> " / "";
+ *   3. 不針對 Tailwind class 寫選擇器；要掛外觀請在元件上加 data-fx 屬性。報表（ReportDocument）一律不加 data-fx。
+ *   4. 檔尾的 @media print 要把所有裝飾還原。
+ *
+ * 載入順序：main.tsx 在 index.css 之後 import 這個檔案（沒放進 @layer，所以優先於 Tailwind 的 base／utility 層）。
+ */
+
+/* 內文字型（§4.3）：英數字用 IBM Plex Mono（等寬），中文回落到 Noto Sans TC；字級與行高不變。 */
+:root[data-theme="cyber"] body {
+  font-family: "IBM Plex Mono", "Noto Sans TC", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+/* ---------- 報表隔離（不是裝飾）----------
+ * 把 cyber 擋在列印報表（#report-output）之外。report.css 只把「文字／線／底色」token 重新定義成紙本配色，
+ * 沒有覆寫嚴重度四色，而它的 .rr-sev i 色塊（print-color-adjust: exact）會用到這四個 token——
+ * 不還原的話 cyber 下列印報表會印出霓虹色。值必須與 index.css 標準淺色 :root 的同名 token 相同（cyberCss.test.ts 比對）。 */
+:root[data-theme="cyber"] #report-output {
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+}
+
+/* ---------- 列印還原（§8）：一定要放在檔尾 ----------
+ * 即使使用者在 App 頁面（不是報表）按列印，也不能印出黑底或裝飾。
+ * 之後各期的裝飾（掃描線、點陣、光暈、切角、前綴）都要在這裡被還原。 */
+@media print {
+  /* 只動 body，與標準淺色完全一樣：標準的 body 用 var(--page)／var(--ink-1)，html 自己沒有設色（底色由 body 傳給畫布），
+   * token 在下面還原成標準淺色值，所以列印時 app 外殼繼承的文字色是 rgb(11,11,11)，不是 #000。 */
+  :root[data-theme="cyber"] body {
+    background: var(--page);
+    color: var(--ink-1);
+    font-family: "Noto Sans TC", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  /* 色彩與圓角 token 還原成標準淺色 :root 的值（cyber 列印 ≡ 標準淺色列印）。值由 cyberCss.test.ts 與 index.css 的 :root 比對；
+   * 涵蓋 cyber 區塊的全部 token（扣掉 cyber 專用的光暈、掃描線、點陣、切角 token——那些之後各期的裝飾規則自己在這裡還原）。
+   * accent-2 在標準 :root 有定義（#eb6834），所以同樣還原成該值。 */
+  :root[data-theme="cyber"] {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --surface-raised: #ffffff;
+    --ink-1: #0b0b0b;
+    --ink-2: #52514e;
+    --ink-muted: #6b6a64;
+    --line: #e1e0d9;
+    --line-strong: #c3c2b7;
+    --accent: #2468bd;
+    --accent-ink: #ffffff;
+    --accent-text: #2468bd;
+    --accent-wash: #e9f1fb;
+    --accent-2: #eb6834;
+    --good: #0ca30c;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --serious-wash: #fdece3;
+    --critical: #d03b3b;
+    --critical-ink: #ffffff;
+    --shadow: 0 12px 32px -12px rgba(20, 20, 18, 0.18), 0 2px 8px -2px rgba(20, 20, 18, 0.1);
+    --ring: rgba(11, 11, 11, 0.1);
+    --overlay: rgba(11, 11, 11, 0.45);
+    --seq-100: #cde2fb;
+    --seq-200: #9ec5f4;
+    --seq-300: #6da7ec;
+    --seq-400: #3987e5;
+    --seq-450: #2a78d6;
+    --seq-500: #256abf;
+    --seq-600: #184f95;
+    --seq-700: #0d366b;
+    --r-sm: 6px;
+    --r-md: 10px;
+    --r-lg: 14px;
+  }
+}

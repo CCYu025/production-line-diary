@@ -10,13 +10,18 @@ import "@fontsource/ibm-plex-mono/latin-400.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
 import "@fontsource/ibm-plex-mono/latin-600.css";
 import "../styles/index.css";
+import "../styles/cyber.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 import { createQueryClient } from "@/lib/queryClient";
+import { initTheme } from "@/lib/theme";
 import { Providers } from "./Providers";
 import { createRouter } from "./routes";
+
+// 主題要在 createRoot 之前同步套用（網址 ?theme= ＞ 已儲存的偏好），避免先閃一下標準主題。
+initTheme();
 
 const queryClient = createQueryClient();
 const router = createRouter();
