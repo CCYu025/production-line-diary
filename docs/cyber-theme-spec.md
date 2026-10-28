@@ -1,6 +1,6 @@
 # 產線日誌 Cyber-Terminal 主題 設計規格書
 
-> 狀態：**P0 實作完成、待合併（PR #40）；P1 實作完成、待驗證（分支 `feat/cyber-p1-static`）；P2–P3 尚未實作**（2026-10-28）。
+> 狀態：**P0 已合併（PR #40）；P1 實作＋獨立驗證完成、待設計審查與合併（分支 `feat/cyber-p1-static`，PR 待開）；P2–P3 尚未實作**（2026-10-28）。
 > 風格：終端機為骨架、賽博龐克霓虹為強調色的混合風格（「Cyber-Terminal」）。
 > 本文件是之後實作與驗收的唯一依據；實作時若要偏離，先改這份文件再改程式碼。
 
@@ -79,7 +79,7 @@
 - **多分頁同步**：`initTheme()` 監聽 `storage` 事件（`pld.theme` 變動或 `localStorage.clear()`），其他分頁改了偏好時這個分頁跟著套用；只 `applyTheme`、**不寫回**（偏好已被那個分頁寫好）。
 - sonner 的 `Toaster` 要傳入目前生效的主題（cyber 時為 `dark`），不然系統淺色時 sonner 自己的預設樣式會是淺色。
 - 新增 `useFx()` hook：只有在 `data-theme === "cyber"` **而且**沒有開啟減少動態效果時，才回傳 `true`。所有 JS 動畫（第 6 節標 JS 的項目）都要先檢查它。
-  **jsdom 測試環境沒有 `data-theme`，所以 `useFx()` 是 false，P0 之前的 408 個前端測試的行為不變（P0 完成後前端共 503 個，含 P0 新增的測試）。**
+  **jsdom 測試環境沒有 `data-theme`，所以 `useFx()` 是 false，P0 之前的 408 個前端測試的行為不變（P0 完成後前端共 503 個，P1 完成後 554 個，均含該期新增的測試）。**
 
 ### 3.2 CSS 檔案結構
 
@@ -413,7 +413,7 @@ cyber 沒辦法在執行期改。做法：
 | A5 | `ScrambleNumber`：可存取名稱與 `getByText` 都是真實數字；`useFx()` 為 false 時不渲染亂碼層；動畫結束後亂碼層已移除 | `fx.test.tsx` |
 | A6 | cyber.css 每條規則都以 `:root[data-theme="cyber"]` 開頭（讀檔、逐條檢查選擇器）；所有 `content:` 宣告都有 `/ ""` 替代文字 | 新的 `cyberCss.test.ts` |
 | A7 | `ReportDocument` 的輸出中沒有任何 `data-fx`／`data-variant`／`data-fx-alert`；`report.css` 的列印選擇器仍在（沿用現有測試） | `ReportDocument.noFx.test.tsx`（新）、`ReportDocument.test.tsx`；整頁（`ReportPage`）版本在 `test/dataFx.test.tsx` |
-| A8 | P0 之前既有的 408 個前端測試、169 個後端測試**不修改就全部通過**（只允許因 `data-fx` 屬性造成的快照差異，若有快照）。前端測試數量基準：P0 前 408 個、P0 後 503 個（實測；之後各期以實測為準） | — |
+| A8 | P0 之前既有的 408 個前端測試、169 個後端測試**不修改就全部通過**（只允許因 `data-fx` 屬性造成的快照差異，若有快照）。前端測試數量基準：P0 前 408 個、P0 後 503 個、P1 後 554 個（均為實測；之後各期以實測為準） | — |
 
 ### 9.2 無障礙
 
@@ -459,8 +459,8 @@ cyber 沒辦法在執行期改。做法：
 
 | 期 | 內容 | 涵蓋 | 驗收 |
 |---|---|---|---|
-| **P0 主題骨架**<br>實作完成、待合併（PR #40） | `theme.ts`、`useFx()`、D1 切換入口、cyber token 區塊、圓角執行期化、`cyber.css` 空殼與列印還原 | 第 3、4 節 | A1–A4、A6、A8、C1、C2、M4 |
-| **P1 靜態外觀**<br>實作完成、待驗證／待合併（分支 `feat/cyber-p1-static`） | `data-fx` 掛勾、面板／切角／按鈕／焦點環／裝飾前綴、背景點陣與掃描線（靜態） | 第 5 節 | A6、A7、B2、B3、C1、M2 |
+| **P0 主題骨架**<br>已合併（PR #40） | `theme.ts`、`useFx()`、D1 切換入口、cyber token 區塊、圓角執行期化、`cyber.css` 空殼與列印還原 | 第 3、4 節 | A1–A4、A6、A8、C1、C2、M4 |
+| **P1 靜態外觀**<br>實作＋獨立驗證完成、待設計審查與合併（分支 `feat/cyber-p1-static`，PR 待開） | `data-fx` 掛勾、面板／切角／按鈕／焦點環／裝飾前綴、背景點陣與掃描線（靜態） | 第 5 節 | A6、A7、B2、B3、C1、M2 |
 | **P2 微互動與浮層** | hover、按壓、聚焦、彈出選單、面板、對話框、toast、錯誤、骨架等純 CSS 動畫 | FX-05、06、10、15、17–24、28–31、33–37 | B1、B4、B5、P1、P2、M3 |
 | **P3 招牌效果** | 開機畫面、換頁 View Transitions、數字鎖定、長條／趨勢／日曆／列表依序進場、帶入閃爍 | FX-01–04、07–09、11–14、16、25–27、32、38 | A5、P3、P4、M1、M5 |
 
