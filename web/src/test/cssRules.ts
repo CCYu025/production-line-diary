@@ -173,3 +173,27 @@ export function findContentWithoutAltText(src: string): string[] {
   }
   return bad;
 }
+
+/** 宣告文字 → { 屬性名稱（含 --token）: 值 }（值去頭尾空白、拿掉 !important）。 */
+export function declarationMap(declarations: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const decl of splitTopLevel(declarations, ";")) {
+    const i = decl.indexOf(":");
+    if (i < 0) continue;
+    const name = decl.slice(0, i).trim();
+    if (name) out[name] = decl.slice(i + 1).replace(/!important\s*$/i, "").trim();
+  }
+  return out;
+}
+
+/** 找出選擇器就是單獨一個 selector、且在指定 at-rule 內（inPrint）或最上層（!inPrint）的規則；沒找到回傳 undefined。 */
+export function findRule(src: string, selector: string, inPrint = false): ParsedRule | undefined {
+  return parseCss(src).find(
+    (r) => r.selectors.length === 1 && r.selectors[0] === selector && r.context.some((c) => /^@media\s+print\b/.test(c)) === inPrint && r.context.length === (inPrint ? 1 : 0),
+  );
+}
+
+/** cyber 專用 token（規格 §4.2）：只在 cyber 區塊定義，標準主題不引用，所以不必出現在淺色 :root，也不必在列印還原。 */
+export const CYBER_ONLY_TOKENS = ["glow-accent", "glow-critical", "text-glow", "scan-opacity", "grid-dot", "cut-sm", "cut-md"];
+/** 動態 token（規格 §4.4）：定義在 :root，所有主題共用，cyber 區塊不重複定義。 */
+export const SHARED_MOTION_TOKENS = ["dur-instant", "dur-fast", "dur-base", "dur-slow", "ease-out", "ease-in", "ease-glitch", "stagger"];

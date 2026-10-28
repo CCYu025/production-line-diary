@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { STEP_CLASS } from "@/features/calendar/calendarModel";
+import { CYBER_ONLY_TOKENS, SHARED_MOTION_TOKENS } from "./cssRules";
 
 /*
  * 對比度守門：直接讀 styles/index.css 裡的色票，確認文字色在各底色上 ≥ 4.5:1（WCAG AA）。
@@ -110,11 +111,6 @@ describe("日曆格（STEP_CLASS）的文字在底色上 ≥ 4.5:1（12px 的日
     }
   }
 });
-
-/** cyber 專用 token（規格 §4.2）：只在 cyber 區塊定義，標準主題不引用，所以不必出現在淺色 :root。 */
-const CYBER_ONLY_TOKENS = ["glow-accent", "glow-critical", "text-glow", "scan-opacity", "grid-dot", "cut-sm", "cut-md"];
-/** 動態 token（規格 §4.4）：定義在 :root，所有主題共用，cyber 區塊不重複定義。 */
-const SHARED_MOTION_TOKENS = ["dur-instant", "dur-fast", "dur-base", "dur-slow", "ease-out", "ease-in", "ease-glitch", "stagger"];
 
 describe("cyber 區塊的完整性與位置（規格 §3.2、§9.1 A2）", () => {
   const lightNames = tokenNames(":root {");

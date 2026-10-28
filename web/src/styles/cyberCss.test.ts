@@ -2,7 +2,15 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { CYBER_SCOPE, findContentWithoutAltText, findUnscopedSelectors, parseCss } from "@/test/cssRules";
+import {
+  CYBER_ONLY_TOKENS,
+  CYBER_SCOPE,
+  declarationMap,
+  findContentWithoutAltText,
+  findRule,
+  findUnscopedSelectors,
+  parseCss,
+} from "@/test/cssRules";
 
 /*
  * cyber.css 守門（docs/cyber-theme-spec.md §9.1 A6）：
@@ -14,6 +22,11 @@ import { CYBER_SCOPE, findContentWithoutAltText, findUnscopedSelectors, parseCss
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const cyberCss = readFileSync(path.join(here, "cyber.css"), "utf8");
+const indexCss = readFileSync(path.join(here, "index.css"), "utf8");
+
+/** index.css 的標準淺色 :root 與 cyber 區塊的宣告（--token → 值）。單一真相來源在 index.css，這裡不寫死第二份。 */
+const lightRoot = declarationMap(findRule(indexCss, ":root")!.declarations);
+const cyberRoot = declarationMap(findRule(indexCss, CYBER_SCOPE)!.declarations);
 
 describe("cyber.css", () => {
   it("有規則可檢查（檔案沒讀空）", () => {
@@ -40,6 +53,42 @@ describe("cyber.css", () => {
     expect(restore, "要有 html／body 的還原規則").toBeDefined();
     expect(restore!.declarations).toMatch(/background:\s*#fff\b/);
     expect(restore!.declarations).toMatch(/color:\s*#000\b/);
+  });
+});
+
+describe("cyber.css 與報表／列印的隔離（值一律取自 index.css 標準淺色 :root）", () => {
+  it("#report-output 內嚴重度四色還原成標準值（report.css 的 .rr-sev 色塊會用到，列印時 print-color-adjust: exact）", () => {
+    const rule = findRule(cyberCss, `${CYBER_SCOPE} #report-output`);
+    expect(rule, "要有 #report-output 的隔離還原規則").toBeDefined();
+    const decls = declarationMap(rule!.declarations);
+    expect(Object.keys(decls).sort()).toEqual(["--critical", "--good", "--serious", "--warning"]);
+    for (const [name, value] of Object.entries(decls)) expect(value, name).toBe(lightRoot[name]);
+  });
+
+  it("@media print：cyber 區塊的全部色彩／圓角 token（扣掉 cyber 專用 token）都還原成標準淺色值，並設 color-scheme: light", () => {
+    const rule = findRule(cyberCss, CYBER_SCOPE, true);
+    expect(rule, "print 區段要有 token 還原規則").toBeDefined();
+    const printDecls = declarationMap(rule!.declarations);
+    expect(printDecls["color-scheme"]).toBe("light");
+
+    const expected = Object.keys(cyberRoot).filter((n) => n.startsWith("--") && !CYBER_ONLY_TOKENS.includes(n.slice(2)));
+    expect(expected.length).toBeGreaterThan(30); // 沒解析成空
+    const missing = expected.filter((n) => !(n in printDecls));
+    expect(missing, "print 區段漏還原的 token").toEqual([]);
+    for (const name of expected) expect(printDecls[name], name).toBe(lightRoot[name]);
+
+    // 沒有多餘的：print 區段只能放 color-scheme 與上述 token（不會把 cyber 專用 token 或亂七八糟的值塞進來）
+    const extras = Object.keys(printDecls).filter((n) => n !== "color-scheme" && !expected.includes(n));
+    expect(extras).toEqual([]);
+  });
+
+  it("@media print：保留白底黑字與 body 字型還原", () => {
+    const rule = findRule(cyberCss, CYBER_SCOPE, true);
+    expect(rule).toBeDefined();
+    const both = parseCss(cyberCss).find((r) => r.context.length === 1 && r.selectors.length === 2 && r.selectors.includes(`${CYBER_SCOPE} body`));
+    expect(declarationMap(both!.declarations)).toMatchObject({ background: "#fff", color: "#000" });
+    const body = parseCss(cyberCss).find((r) => r.context.length === 1 && r.selectors.length === 1 && r.selectors[0] === `${CYBER_SCOPE} body`);
+    expect(declarationMap(body!.declarations)["font-family"]).toContain("Noto Sans TC");
   });
 });
 

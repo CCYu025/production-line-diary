@@ -11,6 +11,13 @@ export const THEME_STORAGE_KEY = "pld.theme";
 
 const CYBER_COLOR_SCHEME = "dark";
 
+/**
+ * index.html <head> 裡有一小段同步 inline script，在第一次繪製之前就把 <html data-theme="cyber"> 設好（避免閃一幀標準主題）。
+ * 它同時把 color-scheme meta 的原值記在 <html> 的這個屬性上，這樣 applyTheme 之後切回標準時才能把 meta 還原成原值。
+ * theme.test.ts 會執行那段 script，並檢查它用的 storage key、cyber 值與這個屬性名稱都和這裡一致。
+ */
+export const PREV_COLOR_SCHEME_ATTR = "data-prev-color-scheme";
+
 function isThemePreference(v: unknown): v is ThemePreference {
   return v === "standard" || v === "cyber";
 }
@@ -43,6 +50,16 @@ let previousColorScheme: string | null | undefined;
 
 const listeners = new Set<() => void>();
 
+/** index.html 的 inline script 已先把 <html> 設成 cyber 時，接手它留下的 color-scheme 原值（只接手一次）。 */
+function adoptInlineScriptState(root: HTMLElement): void {
+  if (root.dataset.theme !== "cyber" || previousColorScheme !== undefined) return;
+  const prev = root.getAttribute(PREV_COLOR_SCHEME_ATTR);
+  if (prev !== null) {
+    previousColorScheme = prev;
+    root.removeAttribute(PREV_COLOR_SCHEME_ATTR);
+  }
+}
+
 function colorSchemeMeta(): HTMLMetaElement | null {
   return document.querySelector<HTMLMetaElement>('meta[name="color-scheme"]');
 }
@@ -59,6 +76,7 @@ export function getAppliedTheme(): ThemePreference {
  */
 export function applyTheme(v: ThemePreference): void {
   const root = document.documentElement;
+  adoptInlineScriptState(root);
   const wasCyber = root.dataset.theme === "cyber";
   if (v === "cyber") {
     if (!wasCyber) {
@@ -96,13 +114,21 @@ export function switchTheme(v: ThemePreference): void {
 
 /**
  * 開機時決定要用哪個主題：網址 ?theme=cyber|standard（hash 之前的 query）優先並寫回偏好，
+ * 並用 history.replaceState 只把 theme 參數從網址拿掉（保留其他 query 與 #hash 路由，不觸發導覽）；
  * 否則用已儲存的偏好。回傳決定的結果（尚未套用）。
  */
 export function resolveInitialTheme(): ThemePreference {
   try {
-    const q = new URLSearchParams(window.location.search).get("theme");
+    const url = new URL(window.location.href);
+    const q = url.searchParams.get("theme");
     if (isThemePreference(q)) {
       setThemePreference(q);
+      url.searchParams.delete("theme");
+      try {
+        window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+      } catch {
+        /* 取代網址失敗不影響主題 */
+      }
       return q;
     }
   } catch {
@@ -111,10 +137,31 @@ export function resolveInitialTheme(): ThemePreference {
   return getThemePreference();
 }
 
-/** main.tsx 在 createRoot 之前同步呼叫，避免先閃一下標準主題。 */
+let storageListenerRegistered = false;
+
+/**
+ * 別的分頁改了偏好（localStorage 的 storage 事件）：這個分頁跟著套用。
+ * 用 applyTheme 而不是 switchTheme——偏好已經被那個分頁寫好了，這裡不再寫回。
+ * key 為 null 是 localStorage.clear()，視為標準；值不認得也當標準。
+ */
+function onStorage(e: StorageEvent): void {
+  if (e.key !== null && e.key !== THEME_STORAGE_KEY) return;
+  try {
+    if (e.storageArea && e.storageArea !== window.localStorage) return;
+  } catch {
+    return;
+  }
+  applyTheme(e.key !== null && isThemePreference(e.newValue) ? e.newValue : "standard");
+}
+
+/** main.tsx 在 createRoot 之前同步呼叫，避免先閃一下標準主題；同時開始監聽其他分頁的切換（只註冊一次）。 */
 export function initTheme(): ThemePreference {
   const v = resolveInitialTheme();
   applyTheme(v);
+  if (!storageListenerRegistered) {
+    storageListenerRegistered = true;
+    window.addEventListener("storage", onStorage);
+  }
   return v;
 }
 

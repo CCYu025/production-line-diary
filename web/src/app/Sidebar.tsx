@@ -175,8 +175,8 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* 最底部：與導覽群組之間用分隔線隔開，不屬於任何導覽群組 */}
-      <div className="flex flex-col border-t border-line pt-3">
+      {/* 最底部：與導覽群組之間用分隔線隔開，不屬於任何導覽群組。平板圖示列的線與群組之間的 hr 一樣內縮（mx-2），桌面全寬 */}
+      <div className="mx-2 flex flex-col border-t border-line pt-3 lg:mx-0">
         <ThemeToggleItem />
       </div>
     </aside>
