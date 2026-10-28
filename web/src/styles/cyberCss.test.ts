@@ -10,6 +10,7 @@ import {
   findRule,
   findUnscopedSelectors,
   parseCss,
+  splitTopLevel,
   stripComments,
 } from "@/test/cssRules";
 
@@ -195,9 +196,12 @@ describe("cyber.css：背景點陣與掃描線（§5.1）", () => {
 });
 
 describe("cyber.css：P1 是靜態外觀（沒有動畫與 transition）", () => {
-  it("沒有 @keyframes，也沒有 animation／transition 宣告（FX 屬於 P2／P3）", () => {
-    expect(stripped).not.toMatch(/@keyframes/i);
-    expect(stripped).not.toMatch(/(^|[\s;{])(animation|transition)[\w-]*\s*:/i);
+  it("P1 區段（P2 動態區段之前）沒有 @keyframes，也沒有 animation／transition 宣告（P2 起的動態全部集中在後面的 P2 區段，由下方「P2 動畫守門」把關）", () => {
+    const p2Start = cyberCss.indexOf("P2 微互動與浮層（規格");
+    expect(p2Start).toBeGreaterThan(0);
+    const p1Part = stripComments(cyberCss.slice(0, p2Start));
+    expect(p1Part).not.toMatch(/@keyframes/i);
+    expect(p1Part).not.toMatch(/(^|[\s;{])(animation|transition)[\w-]*\s*:/i);
   });
 });
 
@@ -223,6 +227,8 @@ describe("cyber.css：只用屬性選擇器、不寫死色碼", () => {
       "panel", "panel-cut", "nav-item", "nav-group", "brand", "fab", "topbar", "bar-row", "bar", "trend-col", "trend-bar", "cal-cell", "row",
       "page-title", "kpi-num", "field", "combobox", "error-msg", "check", "submit", "button", "seg", "sev", "sheet", "dialog", "pop", "tooltip",
       "skeleton", "error",
+      // P2 新增的掛勾（純屬性，規格 §3.3 之後補列）
+      "chip", "bar-track", "detail-body", "lightbox", "error-title", "unsaved",
     ]);
     const used = [...stripped.matchAll(/\[data-fx="([^"]+)"\]/g)].map((m) => m[1]!);
     expect(used.length).toBeGreaterThan(10);
@@ -466,5 +472,332 @@ describe("cyber.css：設計審查退回項", () => {
     const pseudo = printRules.find((r) => r.selectors.includes(`${P}::before`) && r.selectors.includes(`${P} > span:first-child::before`));
     expect(pseudo && decl(pseudo)).toMatchObject({ content: "none", display: "none" });
     expect(decl(printRule(`${P} > span:first-child`)!)["position"]).toBe("revert-layer");
+  });
+});
+
+/*
+ * P2 動態的守門（docs/cyber-theme-spec.md §6.1、§8）。以新增方式擴充，不動上面既有的斷言
+ * （唯一的調整：P1 的「沒有動畫」斷言改成只掃 P1 區段，見該 describe 的註解）。
+ */
+describe("cyber.css：P2 動畫守門", () => {
+  const frames = rules.filter((r) => r.context.some((c) => /^@keyframes\b/.test(c)));
+  const keyframesName = (r: { context: string[] }) => /^@keyframes\s+(\S+)/.exec(r.context.find((c) => /^@keyframes\b/.test(c))!)![1]!;
+  const definedNames = [...new Set(frames.map(keyframesName))];
+  /** 非 keyframes 內的 animation／animation-name 宣告（螢幕與 print 都算） */
+  const animationDecls = rules
+    .filter((r) => !r.context.some((c) => /^@keyframes\b/.test(c)))
+    .flatMap((r) =>
+      Object.entries(decl(r))
+        .filter(([k]) => /^animation(-[a-z-]+)?$/.test(k))
+        .map(([k, v]) => ({ rule: r, prop: k, value: v })),
+    );
+  /** 秒數字串 → 毫秒 */
+  const ms = (v: string) => (v.endsWith("ms") ? parseFloat(v) : parseFloat(v) * 1000);
+  /** token（--dur-*）解析：index.css 的 :root（動態 token）＋ cyber.css 自己的 token 規則 */
+  const cyberTokens = declarationMap(
+    rules.filter((r) => r.selectors.length === 1 && r.selectors[0] === CYBER_SCOPE && r.context.length === 0).map((r) => r.declarations).join(";"),
+  );
+  const token = (name: string): string => cyberTokens[name] ?? lightRoot[name] ?? "";
+
+  it("有 @keyframes，名稱一律 cyber- 前綴，而且每個都有被引用、每個被引用的都有定義", () => {
+    expect(definedNames.length).toBeGreaterThan(10);
+    expect(definedNames.filter((n) => !n.startsWith("cyber-"))).toEqual([]);
+    const used = new Set(
+      animationDecls
+        .filter((d) => d.prop === "animation" || d.prop === "animation-name")
+        .flatMap((d) => d.value.split(/[\s,]+/))
+        .filter((t) => t.startsWith("cyber-")),
+    );
+    expect([...used].filter((n) => !definedNames.includes(n)), "引用了沒定義的 keyframes").toEqual([]);
+    expect(definedNames.filter((n) => !used.has(n)), "定義了沒用到的 keyframes").toEqual([]);
+  });
+
+  it("keyframes 只動 transform／opacity／clip-path／box-shadow（沒有 width／height／top／left／margin／padding／顏色）", () => {
+    const allowed = new Set(["transform", "opacity", "clip-path", "box-shadow"]);
+    const bad = frames.flatMap((r) => Object.keys(decl(r)).filter((k) => !allowed.has(k)).map((k) => `${keyframesName(r)}: ${k}`));
+    expect(bad).toEqual([]);
+  });
+
+  it("進場 keyframes 的最終影格就是基礎狀態（clip-path 的結尾是 inset(0 0 0 0)，或明確登記為退場／掃描）", () => {
+    // 退場與掃描類在動畫結束後本來就該是「收起／看不見」：退場停在收起狀態等 Radix 卸載，掃描的基礎樣式是 opacity 0
+    const endsHidden = new Set(["cyber-pop-out-down", "cyber-pop-out-up", "cyber-sheet-sweep"]);
+    for (const name of definedNames) {
+      const own = frames.filter((r) => keyframesName(r) === name);
+      const withClip = own.filter((r) => decl(r)["clip-path"] !== undefined);
+      if (withClip.length === 0 || endsHidden.has(name)) continue;
+      const last = withClip[withClip.length - 1]!;
+      expect(decl(last)["clip-path"], name).toBe("inset(0 0 0 0)");
+    }
+  });
+
+  it("animation 簡寫與 animation-duration 不寫死毫秒（0ms 除外），時間走 --dur-* token；steps() 的步數除外", () => {
+    const hard = animationDecls
+      .filter((d) => d.prop === "animation" || d.prop === "animation-duration" || d.prop === "animation-delay")
+      .map((d) => ({ ...d, value: d.value.replace(/var\([^)]*\)/g, "").replace(/steps\([^)]*\)/g, "") }))
+      .filter((d) => /(^|[\s,(])\d*\.?\d+m?s\b/.test(d.value) && !/^0ms$/.test(d.value.trim()));
+    // animation-delay 用 calc(var(--stagger-sheet) * n) 時 var 被拿掉後只剩 "* n"，不含時間單位，不會誤報
+    expect(hard.map((d) => `${d.rule.selectors[0]} { ${d.prop}: ${d.value} }`)).toEqual([]);
+  });
+
+  it("只播一次：沒有 animation-iteration-count 數字 > 1；infinite 只有 FX-33 骨架掃光與 FX-35 呼吸", () => {
+    const INFINITE_OK = new Set(["cyber-skeleton-sweep", "cyber-breathe"]);
+    const infinite = animationDecls.filter((d) => /\binfinite\b/.test(d.value));
+    expect(infinite.length).toBe(2);
+    for (const d of infinite) {
+      const names = d.value.split(/[\s,]+/).filter((t) => t.startsWith("cyber-"));
+      expect(names.length, d.value).toBe(1);
+      expect(INFINITE_OK.has(names[0]!), d.value).toBe(true);
+    }
+    for (const d of animationDecls.filter((x) => x.prop === "animation-iteration-count")) expect(d.value).toBe("1");
+    // 簡寫裡不得有獨立的整數 ≥ 2（calc()／var()／steps() 內的不算）
+    const counts = animationDecls
+      .filter((d) => d.prop === "animation")
+      .map((d) => d.value.replace(/(var|calc|steps)\((?:[^()]|\([^()]*\))*\)/g, ""))
+      .filter((v) => /(^|\s)([2-9]|\d{2,})(\s|$)/.test(v));
+    expect(counts).toEqual([]);
+  });
+
+  it("animation-fill-mode 只有兩種用法：依序淡入的 backwards（延遲期間維持透明）與退場的 forwards（停在收起狀態）；沒有 both", () => {
+    const modes = animationDecls.flatMap((d) => (d.prop === "animation" ? d.value.split(/[\s,]+/) : d.prop === "animation-fill-mode" ? [d.value] : [])).filter((t) => /^(forwards|backwards|both)$/.test(t));
+    expect(modes.filter((m) => m === "both")).toEqual([]);
+    expect(new Set(modes)).toEqual(new Set(["backwards", "forwards"]));
+    // backwards 只在詳情面板的依序淡入；forwards 只在退場（data-state="closed"）
+    for (const d of animationDecls.filter((x) => x.prop === "animation" && /\bbackwards\b/.test(x.value))) {
+      expect(d.rule.selectors.join(), d.value).toContain('[data-fx="detail-body"]');
+    }
+    for (const d of animationDecls.filter((x) => x.prop === "animation" && /\bforwards\b/.test(x.value))) {
+      expect(d.rule.selectors.join(), d.value).toContain('[data-state="closed"]');
+    }
+  });
+
+  it("退場（data-state=\"closed\"）的動畫時間 ≤ 120ms（Radix 會等退場動畫結束才卸載）", () => {
+    const exits = screenRules.filter((r) => r.selectors.some((s) => s.includes('[data-state="closed"]')) && (decl(r)["animation"] !== undefined || decl(r)["animation-duration"] !== undefined));
+    expect(exits.length).toBeGreaterThanOrEqual(3); // pop、dialog、sheet
+    for (const r of exits) {
+      const d = decl(r);
+      const raw = d["animation-duration"] ?? d["animation"]!;
+      const used = [...raw.matchAll(/var\((--[a-z-]+)\)/g)].map((m) => m[1]!).filter((n) => n.startsWith("--dur-"));
+      expect(used.length, r.selectors[0]).toBeGreaterThan(0);
+      for (const n of used) expect(ms(token(n)), `${r.selectors[0]} 的 ${n}`).toBeLessThanOrEqual(120);
+    }
+  });
+
+  it("transition 只動 transform／opacity／box-shadow（外加 Tailwind transition-colors 既有的顏色屬性與日曆格既有的 filter）", () => {
+    const allowed = new Set(["transform", "opacity", "clip-path", "box-shadow", "filter", "color", "background-color", "border-color"]);
+    const bad: string[] = [];
+    for (const r of screenRules) {
+      const d = decl(r);
+      const props: string[] = [];
+      if (d["transition"] !== undefined) props.push(...splitTopLevel(d["transition"], ",").map((p) => p.trim().split(/\s+/)[0]!));
+      if (d["transition-property"] !== undefined) props.push(...d["transition-property"].split(",").map((p) => p.trim()));
+      for (const p of props) if (!allowed.has(p)) bad.push(`${r.selectors[0]}: ${p}`);
+    }
+    expect(bad).toEqual([]);
+    // transition 的時間也走 token
+    const hard = screenRules.filter((r) => decl(r)["transition"] !== undefined && /(^|[\s,])\d*\.?\d+m?s\b/.test(decl(r)["transition"]!.replace(/var\([^)]*\)/g, "")));
+    expect(hard.map((r) => r.selectors[0])).toEqual([]);
+  });
+
+  it("pointer-events: none 只出現在偽元素（裝飾蓋在可點元素上）；可點元素（button／a／input／row…）本身沒有", () => {
+    const none = rules.filter((r) => decl(r)["pointer-events"] === "none");
+    expect(none.length).toBeGreaterThan(0);
+    const bad = none.flatMap((r) => r.selectors).filter((s) => !/::(before|after)$/.test(s));
+    expect(bad).toEqual([]);
+    // 新加的動畫規則不碰可點性
+    for (const r of rules.filter((x) => decl(x)["animation"] !== undefined && !x.selectors.every((q) => /::(before|after)$/.test(q)))) expect(decl(r)["pointer-events"], r.selectors[0]).toBeUndefined();
+  });
+
+  it("#report-output 與報表相關的選擇器沒有任何動畫／transition", () => {
+    const report = rules.filter((r) => r.selectors.some((s) => s.includes("#report-output")));
+    for (const r of report) {
+      expect(Object.keys(decl(r)).filter((k) => /^(animation|transition)/.test(k)), r.selectors[0]).toEqual([]);
+    }
+  });
+
+  it("減少動態效果：延遲也歸零（index.css 的全域規則只壓 duration 與 iteration-count，依序淡入的 backwards 會多等）", () => {
+    const rm = rules.find((r) => inMedia(r, /prefers-reduced-motion:\s*reduce/) && decl(r)["animation-delay"] !== undefined);
+    expect(rm, "要有 reduced-motion 的 animation-delay 規則").toBeDefined();
+    expect(rm!.declarations).toMatch(/animation-delay:\s*0ms\s*!important/);
+    expect(rm!.selectors.every((s) => s.startsWith(CYBER_SCOPE))).toBe(true);
+    // index.css 的全域規則仍在（cyber 的 CSS 動畫靠它收斂）
+    expect(indexCss).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation-duration: 0\.01ms !important[\s\S]*animation-iteration-count: 1 !important[\s\S]*transition-duration: 0\.01ms !important/);
+  });
+
+  it("基礎樣式就是最終狀態：靠 from 影格的元素不設 animation-fill-mode；掃描／環這類結束後看不見的，基礎樣式是 opacity 0 或在裁切範圍外", () => {
+    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="sheet"][data-side="right"]::after`)!)["opacity"]).toBe("0");
+    expect(decl(screenRule(`${CYBER_SCOPE} nav[aria-label="底部導覽"] a[data-fx="nav-item"][href$="/records/new"]:active::after`)!)["opacity"]).toBe("0");
+    const skeleton = decl(screenRule(`${CYBER_SCOPE} [data-fx="skeleton"]::after`)!);
+    expect(skeleton["transform"]).toBe("translateX(-100%)"); // 基礎位置在左側外面
+    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="skeleton"]`)!)["overflow"]).toBe("hidden"); // 掃光被裁在骨架裡
+  });
+
+  it("FX-19 括號動畫：只在新選中項（[aria-pressed=\"true\"]）播，只動 transform／opacity，不改括號的最終位置與 P1 的 content", () => {
+    const sel = (s: string) => `${CYBER_SCOPE} [data-fx="seg"] > button[aria-pressed="true"]${s}`;
+    for (const s of [sel("::before"), sel(" > span:first-child::before")]) {
+      const r = screenRule(`${s}`) ?? rules.find((x) => x.selectors.includes(s) && decl(x)["animation"] !== undefined);
+      const d = decl(rules.find((x) => x.selectors.includes(s) && decl(x)["animation"] !== undefined)!);
+      expect(d["animation"], s).toContain("cyber-bracket-l");
+      expect(Object.keys(d), s).toEqual(["animation"]);
+      expect(r).toBeDefined();
+    }
+    for (const s of [sel("::after"), sel(" > span:first-child::after")]) {
+      expect(decl(rules.find((x) => x.selectors.includes(s) && decl(x)["animation"] !== undefined)!)["animation"], s).toContain("cyber-bracket-r");
+    }
+    for (const n of ["cyber-bracket-l", "cyber-bracket-r"]) {
+      const own = frames.filter((r) => keyframesName(r) === n);
+      expect(own).toHaveLength(1); // 只有 from；to 就是括號原本的位置
+      expect(Object.keys(decl(own[0]!)).sort()).toEqual(["opacity", "transform"]);
+      expect(Math.abs(parseFloat(/translateX\((-?\d+)px\)/.exec(decl(own[0]!)["transform"]!)![1]!))).toBe(4);
+    }
+  });
+
+  it("FX-24 驗證錯誤：aria-invalid 出現時抖動一次（±4px、240ms）；ERR: 前綴與訊息文字一起打字式顯示；欄位 critical 光暈", () => {
+    const inv = decl(screenRule(`${CYBER_SCOPE} [data-fx="field"] :is(input, textarea, select)[aria-invalid="true"]`)!);
+    expect(inv["animation"]).toContain("cyber-shake");
+    expect(inv["animation"]).toContain("var(--dur-shake)");
+    expect(token("--dur-shake")).toBe("240ms");
+    expect(inv["box-shadow"]).toBe("var(--glow-critical)");
+    const shake = frames.filter((r) => keyframesName(r) === "cyber-shake");
+    const offsets = shake.flatMap((r) => [...(decl(r)["transform"] ?? "").matchAll(/translateX\((-?\d+)px\)/g)].map((m) => Math.abs(Number(m[1]))));
+    expect(Math.max(...offsets)).toBe(4);
+    // 打字式顯示掛在 error-msg 本身（::before 的 "ERR: " 在它裡面，一起被 clip）
+    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="error-msg"]`)!)["animation"]).toContain("cyber-type");
+    expect(findContentWithoutAltText(cyberCss)).toEqual([]);
+    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="error-msg"]::before`)!)["content"]).toBe('"ERR: " / ""');
+  });
+
+  it("FX-23 輸入框：聚焦 --glow-accent；Combobox 外層才有 \">\" 提示符（絕對定位、不擋點擊、有 / \"\" 替代文字）", () => {
+    const focus = screenRules.find((r) => r.selectors.length === 1 && r.selectors[0] === `${CYBER_SCOPE} [data-fx="field"] :is(input, textarea, select):focus:not([aria-invalid="true"])` && decl(r)["box-shadow"] !== undefined);
+    expect(focus && decl(focus)["box-shadow"]).toBe("var(--glow-accent)");
+    const gt = decl(screenRule(`${CYBER_SCOPE} [data-fx="combobox"]::before`)!);
+    expect(gt).toMatchObject({ content: '">" / ""', position: "absolute", "pointer-events": "none", opacity: "0" });
+    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="combobox"]:focus-within::before`)!)["opacity"]).toBe("1");
+    // 輸入框本身不加偽元素：沒有任何 input／textarea／select 的 ::before／::after
+    expect(screenRules.flatMap((r) => r.selectors).filter((s) => /(input|textarea|select)[^,]*::(before|after)/.test(s))).toEqual([]);
+  });
+
+  it("FX-15 日曆格：聚焦時保留 P1 的 0 0 0 6px var(--page) 外暈並疊上光暈（外暈在上，焦點環對比不被光暈稀釋）；hover 只有光暈", () => {
+    expect(decl(screenRule(`${CYBER_SCOPE} button[data-fx="cal-cell"]:focus-visible`)!)["box-shadow"]).toBe("0 0 0 6px var(--page), var(--glow-accent)");
+    expect(decl(screenRule(`${CYBER_SCOPE} button[data-fx="cal-cell"]:hover`)!)["box-shadow"]).toBe("var(--glow-accent)");
+    // P1 的規則仍在
+    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="cal-cell"]:focus-visible`)!)["box-shadow"]).toBe("0 0 0 6px var(--page)");
+  });
+
+  it("FX-22 永久刪除對話框：4px 斜紋上緣（repeating-linear-gradient、critical、偽元素、不佔版面）；glitch 進場 ≤ 200ms", () => {
+    const stripe = decl(screenRule(`${CYBER_SCOPE} [data-fx="dialog"][data-variant="destructive"]::before`)!);
+    expect(stripe).toMatchObject({ position: "absolute", height: "4px", content: '"" / ""' });
+    expect(stripe["background"]).toMatch(/^repeating-linear-gradient\(/);
+    expect(stripe["background"]).toContain("var(--critical)");
+    expect(ms(token("--dur-open"))).toBeLessThanOrEqual(200);
+    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="dialog"][data-state="open"]`)!)["animation"]).toContain("var(--dur-open)");
+    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="dialog"][data-variant="destructive"]`)!)["box-shadow"]).toContain("var(--glow-critical)");
+  });
+
+  it("FX-29 toast：不覆寫 sonner 的滑動（不動 toast 的 transform／transition／opacity）；swipe-out 時不蓋掉 sonner 的 animation-name；狀態色條畫在 [data-content]::before", () => {
+    const toastRules = screenRules.filter((r) => r.selectors.some((s) => s.includes("[data-sonner-toast]")));
+    for (const r of toastRules) {
+      const d = decl(r);
+      for (const k of ["transform", "transition", "transition-duration", "opacity", "translate"]) expect(d[k], `${r.selectors[0]} ${k}`).toBeUndefined();
+    }
+    const flash = screenRules.find((r) => r.selectors.some((s) => s.includes('[data-type="error"]:not([data-swipe-out="true"])')));
+    expect(flash && decl(flash)["animation"]).toContain("cyber-flash-critical");
+    const bar = decl(screenRule(`${CYBER_SCOPE} [data-sonner-toast][data-styled="true"][data-type] [data-content]::before`)!);
+    expect(bar).toMatchObject({ content: '"" / ""', position: "absolute", width: "3px" });
+    // toast 自己的 ::before／::after 被 sonner 拿去做滑動與展開的感應區，這裡不碰
+    expect(screenRules.flatMap((r) => r.selectors).filter((s) => /\[data-sonner-toast\](?:\[[^\]]+\])*::(before|after)/.test(s))).toEqual([]);
+    // 動作鈕按下閃一次，120ms
+    expect(token("--dur-flash")).toBe("120ms");
+  });
+
+  it("FX-33 骨架：關掉標準的 opacity 脈動，改 ▒ 斜紋＋偽元素 translateX 掃光（1.6s 循環）", () => {
+    const base = decl(screenRule(`${CYBER_SCOPE} [data-fx="skeleton"]`)!);
+    expect(base["animation"]).toBe("none");
+    expect(base["background-image"]).toMatch(/^repeating-linear-gradient\(/);
+    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="skeleton"]::after`)!)["animation"]).toBe("cyber-skeleton-sweep var(--dur-sweep) linear infinite");
+    expect(token("--dur-sweep")).toBe("1.6s");
+    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="skeleton"]::after`)!)["content"]).toBe('"" / ""');
+  });
+
+  it("FX-35 呼吸：2.4s、透明度在 .35 與 1 之間，不是閃爍", () => {
+    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="unsaved"]::before`)!)["animation"]).toBe("cyber-breathe var(--dur-breathe) ease-in-out infinite");
+    expect(token("--dur-breathe")).toBe("2.4s");
+    const opacities = frames.filter((r) => keyframesName(r) === "cyber-breathe").map((r) => Number(decl(r)["opacity"]));
+    expect(Math.min(...opacities)).toBeGreaterThanOrEqual(0.3);
+    expect(Math.max(...opacities)).toBe(1);
+  });
+
+  it("FX-37 按壓：只作用在 button／submit 與分段按鈕的 :active:not(:disabled)，scale(.97)；transition 的 transform 用 --dur-instant", () => {
+    const press = screenRules.find((r) => r.selectors.length === 2 && decl(r)["transform"] === "scale(0.97)");
+    expect(press, "要有 :active 縮放規則").toBeDefined();
+    expect(press!.selectors).toEqual([
+      `${CYBER_SCOPE} :is([data-fx="button"], [data-fx="submit"]):active:not(:disabled)`,
+      `${CYBER_SCOPE} [data-fx="seg"] > button:active:not(:disabled)`,
+    ]);
+    const trRule = screenRules.find((r) => r.selectors.includes(`${CYBER_SCOPE} [data-fx="seg"] > button`) && decl(r)["transition"] !== undefined)!;
+    expect(trRule.selectors).toContain(`${CYBER_SCOPE} :is([data-fx="button"], [data-fx="submit"])`);
+    expect(decl(trRule)["transition"]).toMatch(/transform var\(--dur-instant\)/);
+    // 螢幕規則（keyframes 之外）裡只有這一處對元素本身做 scale()
+    const scaled = screenRules.filter((r) => !r.context.some((c) => /^@keyframes\b/.test(c)) && /scale\(/.test(decl(r)["transform"] ?? ""));
+    expect(scaled).toEqual([press]);
+  });
+
+  it("FX-18 浮層：開 --dur-fast／關 --dur-close，clip-path 由上往下（data-side=top 反向）；Combobox 清單（沒有 data-state）掛載時展開", () => {
+    const P = `${CYBER_SCOPE} [data-fx="pop"]`;
+    const open = rules.find((r) => r.selectors.includes(`${P}[data-state="open"]`))!;
+    expect(open.selectors).toContain(`${P}:not([data-state])`);
+    expect(decl(open)["animation"]).toBe("cyber-pop-down var(--dur-fast) var(--ease-out)");
+    expect(decl(screenRule(`${P}[data-state="open"][data-side="top"]`)!)["animation-name"]).toBe("cyber-pop-up");
+    expect(decl(screenRule(`${P}[data-state="closed"]`)!)["animation"]).toBe("cyber-pop-out-down var(--dur-close) var(--ease-in) forwards");
+    expect(decl(screenRule(`${P}[data-state="closed"][data-side="top"]`)!)["animation-name"]).toBe("cyber-pop-out-up");
+    expect(ms(token("--dur-close"))).toBe(100);
+  });
+
+  it("FX-06 手機分頁列：目前頁上緣 2px 線（scaleX，--dur-fast）；新增鈕環 300ms，只在 :active，基礎 opacity 0", () => {
+    const line = decl(screenRule(`${CYBER_SCOPE} nav[aria-label="底部導覽"] [data-fx="nav-item"][aria-current="page"]::before`)!);
+    expect(line).toMatchObject({ height: "2px", top: "0", animation: "cyber-tab-line var(--dur-fast) var(--ease-out)" });
+    expect(decl(frames.find((r) => keyframesName(r) === "cyber-tab-line")!)["transform"]).toBe("scaleX(0)");
+    expect(token("--dur-ring")).toBe("300ms");
+    expect(decl(screenRule(`${CYBER_SCOPE} nav[aria-label="底部導覽"] a[data-fx="nav-item"][href$="/records/new"]:active::after`)!)["animation"]).toContain("var(--dur-ring)");
+  });
+
+  it("FX-05 導覽 hover 線用 ::after（::before 是目前頁的 \">\" 前綴），scaleY 由上往下長出", () => {
+    const hover = decl(screenRule(`${CYBER_SCOPE} aside [data-fx="nav-item"]:not([aria-current="page"]):hover:not(:disabled)::after`)!);
+    expect(hover).toMatchObject({ width: "2px", "transform-origin": "top", animation: "cyber-nav-line var(--dur-fast) var(--ease-out)" });
+    expect(decl(frames.find((r) => keyframesName(r) === "cyber-nav-line")!)["transform"]).toBe("scaleY(0)");
+  });
+
+  it("FX-20 詳情面板：框線掃描是 data-side=right 的 ::after（clip-path 窗口）；內容區塊依序淡入最多 6 段、間隔 30ms", () => {
+    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="sheet"][data-side="right"]::after`)!)["animation"]).toContain("cyber-sheet-sweep");
+    expect(token("--stagger-sheet")).toBe("30ms");
+    const delays = screenRules.filter((r) => r.selectors.some((s) => s.includes('[data-fx="detail-body"] >')) && decl(r)["animation-delay"] !== undefined).map((r) => decl(r)["animation-delay"]!);
+    // 6 段：0（沒有 delay 宣告的第一段）＋ 1、2、3、4、5 倍間隔
+    expect(delays.map((v) => (v === "var(--stagger-sheet)" ? 1 : Number(/\*\s*(\d)\)/.exec(v)![1]))).sort()).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("FX-21 內容區塊 glitch 不分前後方向（只有一組 keyframes，沒有 -prev／-next 或 direction）", () => {
+    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="detail-body"]`)!)["animation"]).toBe("cyber-glitch var(--dur-fast) var(--ease-glitch)");
+    expect(definedNames.filter((n) => /prev|next|left|right/.test(n))).toEqual([]);
+  });
+
+  it("P2 新增的 data-fx 掛勾都在清單內（chip、bar-track、detail-body、lightbox、error-title、unsaved）", () => {
+    for (const v of ["chip", "bar-track", "detail-body", "lightbox", "error-title", "unsaved"]) expect(stripped, v).toContain(`[data-fx="${v}"]`);
+  });
+
+  it("@media print：除了 toast 之外所有元素與偽元素的 animation／transition 退回標準值（revert-layer；cyber 自己加的在標準層沒有對應，等於 none）；toast 子樹只清 animation（sonner 的無層級 transition 不能退）", () => {
+    const P = `${CYBER_SCOPE}:not(#cyber-print)`;
+    const NOT_TOAST = "*:not([data-sonner-toaster], [data-sonner-toaster] *)";
+    const r = printRules.find((x) => x.selectors.includes(`${P} ${NOT_TOAST}`) && x.selectors.includes(`${P} ${NOT_TOAST}::before`) && x.selectors.includes(`${P} ${NOT_TOAST}::after`));
+    expect(r, "print 區段要有所有元素／::before／::after 的 animation／transition 規則").toBeDefined();
+    expect(decl(r!)).toEqual({ animation: "revert-layer", transition: "revert-layer" });
+    const toast = printRules.find((x) => x.selectors.includes(`${P} [data-sonner-toaster] *`) && x.selectors.includes(`${P} [data-sonner-toaster] *::before`) && x.selectors.includes(`${P} [data-sonner-toaster] *::after`));
+    expect(toast && decl(toast)).toEqual({ animation: "none" });
+    // 特異度高於螢幕規則的 :hover／:active（有 #id）
+    expect([...r!.selectors, ...toast!.selectors].every((s) => s.includes(":not(#cyber-print)"))).toBe(true);
+    // print 區段內不再宣告別的 animation
+    const others = printRules.filter((x) => x !== r && x !== toast && Object.keys(decl(x)).some((k) => /^animation/.test(k) && k !== "all"));
+    expect(others).toEqual([]);
+    // 新增在非 data-fx 元素上的靜態裝飾也要還原：toast 色條、欄位的 box-shadow
+    expect(printRules.flatMap((x) => x.selectors).join("\n")).toContain("[data-sonner-toast] [data-content]::before");
+    expect(printRules.some((x) => decl(x)["box-shadow"] === "revert-layer" && x.selectors.some((s) => s.includes('[data-fx="field"]')))).toBe(true);
   });
 });
