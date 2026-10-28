@@ -30,7 +30,7 @@ function ActionKpi({
         {status}
       </span>
       <span className="mt-2 flex items-baseline gap-1">
-        <span className="num text-4xl font-bold leading-none">{value.toLocaleString()}</span>
+        <span data-fx="kpi-num" className="num text-4xl font-bold leading-none">{value.toLocaleString()}</span>
         <span className="text-sm font-medium text-ink-2">筆</span>
       </span>
       <span className="mt-2 block text-xs text-ink-muted">{hint}</span>
@@ -38,10 +38,19 @@ function ActionKpi({
   );
   const base = "block w-full rounded-lg border border-line bg-surface-raised p-4 text-left md:p-5";
   // 0 筆沒有東西可看，不做成按鈕（舊 UI 同樣只在有資料時才可點）
-  if (value === 0) return <div className={base}>{body}</div>;
+  // data-fx-alert：只有「待處理」> 0 才輸出（沒有警示時整個屬性不存在）；panel-cut 在 0 筆（<div>）與可點（<button>）兩種元素上都有
+  const alertAttr = status === "待處理" && value > 0 ? { "data-fx-alert": "" } : {};
+  if (value === 0)
+    return (
+      <div data-fx="panel-cut" className={base}>
+        {body}
+      </div>
+    );
   return (
     <button
       type="button"
+      data-fx="panel-cut"
+      {...alertAttr}
       onClick={onSelect}
       aria-label={`${status} ${value} 筆，查看紀錄`}
       className={cn(base, "relative hover:border-accent hover:bg-surface")}
@@ -54,10 +63,10 @@ function ActionKpi({
 
 function MiniKpi({ label, value, unit, sub }: { label: string; value: React.ReactNode; unit: string; sub: string }) {
   return (
-    <div className="rounded-lg border border-line bg-surface-raised px-4 py-3">
+    <div data-fx="panel" className="rounded-lg border border-line bg-surface-raised px-4 py-3">
       <p className="text-xs font-medium text-ink-muted">{label}</p>
       <p className="mt-1 flex items-baseline gap-1">
-        <span className="num text-2xl font-bold leading-none">{value}</span>
+        <span data-fx="kpi-num" className="num text-2xl font-bold leading-none">{value}</span>
         <span className="text-xs font-medium text-ink-2">{unit}</span>
       </p>
       <p className="mt-1 truncate text-xs text-ink-muted">{sub}</p>

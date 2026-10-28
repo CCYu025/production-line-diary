@@ -103,7 +103,7 @@ export function DateRangeFilter({ from, to, onChange }: DateRangeFilterProps) {
           />
         </div>
         {reversed ? (
-          <p id={hintId} role="status" className="mt-2 text-xs text-critical">
+          <p id={hintId} role="status" data-fx="error-msg" className="mt-2 text-xs text-critical">
             起日晚於迄日，沒有符合的紀錄
           </p>
         ) : null}

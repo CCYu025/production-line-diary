@@ -22,7 +22,7 @@ export function ChartCard({
 }) {
   const id = React.useId();
   return (
-    <section aria-labelledby={id} className={cn("min-w-0 rounded-lg border border-line bg-surface-raised p-4 md:p-5", className)}>
+    <section aria-labelledby={id} data-fx="panel" className={cn("min-w-0 rounded-lg border border-line bg-surface-raised p-4 md:p-5", className)}>
       <header className="mb-3 flex items-baseline justify-between gap-3">
         <h2 id={id} className="text-base font-bold">
           {title}
@@ -58,6 +58,7 @@ export function HBarChart({
         <li key={r.label}>
           <button
             type="button"
+            data-fx="bar-row"
             onClick={() => onSelect(r.label)}
             aria-label={`${actionLabel}：${labelOrUnfilled(r.label)}，${r.count} 次`}
             className="grid min-h-11 w-full grid-cols-[minmax(3.5rem,7rem)_minmax(0,1fr)_3.5rem] items-center gap-3 rounded-md px-2 text-left hover:bg-surface md:min-h-9"
@@ -68,6 +69,7 @@ export function HBarChart({
             </span>
             <span className="h-2.5 overflow-hidden rounded-full bg-line" aria-hidden="true">
               <span
+                data-fx="bar"
                 className="block h-full rounded-full bg-accent"
                 style={{ width: `${Math.max(4, Math.round((r.count / max) * 100))}%` }}
               />
@@ -121,6 +123,7 @@ export function SeverityDonut({
               const el = (
                 <circle
                   key={s.label}
+                  data-fx="sev"
                   data-severity={s.label}
                   cx={cx}
                   cy={cy}
@@ -154,7 +157,12 @@ export function SeverityDonut({
               onClick={() => onSelect(s.label)}
               className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface md:min-h-9"
             >
-              <span aria-hidden="true" className={cn("size-3 shrink-0 rounded-sm", SEVERITY_FILL[s.label])} />
+              <span
+                aria-hidden="true"
+                data-fx="sev"
+                data-severity={s.label}
+                className={cn("size-3 shrink-0 rounded-sm", SEVERITY_FILL[s.label])}
+              />
               <span>{s.label}</span>
               <span className="num ml-auto font-bold">{s.count}</span>
               <span className="text-ink-muted">次</span>
@@ -252,6 +260,7 @@ export function TrendChart({
           <li key={t.date}>
             <button
               type="button"
+              data-fx="trend-col"
               data-date={t.date}
               onClick={() => onSelect(t.date)}
               aria-label={`${t.date}，${t.count} 次，查看紀錄`}
@@ -260,6 +269,7 @@ export function TrendChart({
               <span className="num text-xs">{t.count}</span>
               <span
                 aria-hidden="true"
+                data-fx="trend-bar"
                 className="block w-5 rounded-sm bg-accent"
                 style={{ height: Math.max(8, Math.round((t.count / max) * TREND_MAX_PX)) }}
               />

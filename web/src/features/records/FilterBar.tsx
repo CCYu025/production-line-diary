@@ -72,7 +72,7 @@ export function FilterBar({
       value: s,
       label: s,
       count: severityCounts[s] ?? 0,
-      prefix: <span aria-hidden="true" className={cn("h-3.5 w-1 rounded-full", SEVERITY_BG[s])} />,
+      prefix: <span aria-hidden="true" data-fx="sev" data-severity={s} className={cn("h-3.5 w-1 rounded-full", SEVERITY_BG[s])} />,
     })),
   ];
 

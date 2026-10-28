@@ -140,7 +140,7 @@ function RowActions({ record, busyId, onRestore, onPurge }: Omit<ListProps, "row
 
 function TrashTable({ rows, ...actions }: ListProps) {
   return (
-    <div className="overflow-hidden rounded-lg border border-line bg-surface-raised">
+    <div data-fx="panel" className="overflow-hidden rounded-lg border border-line bg-surface-raised">
       <table className="w-full table-fixed text-sm">
         <thead>
           <tr className="border-b border-line text-left text-xs text-ink-muted">
@@ -189,7 +189,7 @@ function TrashCards({ rows, ...actions }: ListProps) {
   return (
     <ul className="flex flex-col gap-3">
       {rows.map((r) => (
-        <li key={r.id} className="rounded-lg border border-line bg-surface-raised p-4">
+        <li key={r.id} data-fx="panel" className="rounded-lg border border-line bg-surface-raised p-4">
           <p className="break-words font-bold">{r.problem}</p>
           <p className="mt-1 text-sm text-ink-2">
             <span className="font-medium">{r.equipment}</span>

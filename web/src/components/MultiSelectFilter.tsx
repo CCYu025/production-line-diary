@@ -76,6 +76,8 @@ export function MultiSelectFilter({ label, options, counts, selected, onChange }
                 >
                   <span
                     aria-hidden="true"
+                    data-fx="check"
+                    data-state={on ? "on" : "off"}
                     className={cn(
                       "flex size-4 shrink-0 items-center justify-center rounded-sm border",
                       on ? "border-accent bg-accent text-accent-ink" : "border-line-strong",

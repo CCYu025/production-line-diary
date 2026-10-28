@@ -12,9 +12,9 @@ import { useExportAction } from "./useExportAction";
 /** 手機（< 768px）頂部標題列：只放頁面標題（品牌字不換行成直排）。 */
 export function MobileTopBar({ title }: { title: string }) {
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center border-b border-line bg-page px-4 pt-[env(safe-area-inset-top)] md:hidden print:hidden">
+    <header data-fx="topbar" className="sticky top-0 z-30 flex h-14 items-center border-b border-line bg-page px-4 pt-[env(safe-area-inset-top)] md:hidden print:hidden">
       {/* 視覺標題；頁面真正的 <h1> 在 PageHeader（手機版僅供輔助科技讀取），避免標題重複 */}
-      <p aria-hidden="true" className="truncate text-lg font-bold">
+      <p aria-hidden="true" data-fx="page-title" className="truncate text-lg font-bold">
         {title}
       </p>
     </header>
@@ -29,6 +29,7 @@ function Tab({ to, label, icon: Icon }: { to: string; label: string; icon: typeo
     <NavLink
       to={to}
       end={to === "/records"}
+      data-fx="nav-item"
       className={({ isActive }) => cn(tabClass, isActive && "font-bold text-accent-text")}
     >
       <Icon className="size-6" aria-hidden="true" />
@@ -48,6 +49,7 @@ function MoreRow({ entry, onDone }: { entry: NavEntry; onDone: () => void }) {
     return (
       <button
         type="button"
+        data-fx="nav-item"
         className={rowClass}
         disabled={exporter.pending}
         aria-busy={exporter.pending}
@@ -67,7 +69,7 @@ function MoreRow({ entry, onDone }: { entry: NavEntry; onDone: () => void }) {
   }
   return (
     <SheetClose asChild>
-      <Link to={entry.to} className={rowClass}>
+      <Link to={entry.to} data-fx="nav-item" className={rowClass}>
         <Icon className="size-5 text-ink-muted" aria-hidden="true" />
         {entry.label}
         {entry.badge === "trash" && <CountBadge count={trashCount} className="ml-auto" />}
@@ -83,6 +85,7 @@ function ThemeToggleRow() {
   return (
     <button
       type="button"
+      data-fx="nav-item"
       aria-pressed={isCyber}
       onClick={toggle}
       className="flex min-h-12 w-full items-center gap-3 rounded-md px-3 text-base font-medium text-ink-1 hover:bg-surface"
@@ -127,10 +130,11 @@ export function MobileTabBar() {
 
           <NavLink
             to="/records/new"
+            data-fx="nav-item"
             className={({ isActive }) => cn(tabClass, "relative", isActive && "font-bold text-accent-text")}
           >
             {/* 中央突出的圓形＋按鈕（絕對定位往上凸出），文字標籤與其他分頁同一條基線 */}
-            <span className="absolute -top-6 left-1/2 flex size-14 -translate-x-1/2 items-center justify-center rounded-full border-4 border-surface-raised bg-accent text-accent-ink shadow-pop">
+            <span data-fx="fab" className="absolute -top-6 left-1/2 flex size-14 -translate-x-1/2 items-center justify-center rounded-full border-4 border-surface-raised bg-accent text-accent-ink shadow-pop">
               <Plus className="size-7" aria-hidden="true" />
             </span>
             <span className="size-6" aria-hidden="true" />
@@ -142,6 +146,7 @@ export function MobileTabBar() {
           <button
             ref={moreButtonRef}
             type="button"
+            data-fx="nav-item"
             onClick={() => {
               openedAtRef.current = pathname;
               setMoreOpen(true);

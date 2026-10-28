@@ -1,6 +1,6 @@
 # 產線日誌 Cyber-Terminal 主題 設計規格書
 
-> 狀態：**P0 實作完成、待合併（PR #40）；P1–P3 尚未實作**（2026-10-28）。
+> 狀態：**P0 實作完成、待合併（PR #40）；P1 進行中（`data-fx` 掛勾已加、cyber.css 的外觀還沒寫）；P2–P3 尚未實作**（2026-10-28）。
 > 風格：終端機為骨架、賽博龐克霓虹為強調色的混合風格（「Cyber-Terminal」）。
 > 本文件是之後實作與驗收的唯一依據；實作時若要偏離，先改這份文件再改程式碼。
 
@@ -94,27 +94,53 @@ cyber 區塊的特異度相同（0,2,0），**所以必須放在它後面**才�
 ### 3.3 元件掛勾：`data-fx`
 
 cyber.css **不針對 Tailwind class 寫選擇器**（class 會變動，也會誤中報表）。改為在下列元件上加穩定的 `data-fx` 屬性，
-**這是 cyber 唯一需要改動元件標記的地方，不改結構、不改事件**：
+**這是 cyber 唯一需要改動元件標記的地方，不改結構、不改事件**（唯一的例外是 `nav-indicator`，見表末）。
+`data-fx` 是純屬性：標準主題 0 視覺差異、0 行為差異、可存取名稱不變。
 
-| `data-fx` 值 | 掛在哪裡 |
+**通則**
+
+- **一個元素只有一個 `data-fx` 值**。`Button` 預設輸出 `data-fx="button"`；表單送出鈕由呼叫端覆寫成 `submit`（`data-variant` 仍在），
+  所以按鈕的 CSS 要寫成 `:is([data-fx="button"], [data-fx="submit"])`，再用 `[data-variant="…"]` 分變體。
+- 輔助屬性：`data-variant`（Button、破壞性確認對話框）、`data-severity`（`sev`）、`data-state`（`check`）、`data-side`（`sheet`）、`data-fx-alert`（`panel-cut`）。
+- **報表隔離**：`features/report/ReportDocument.tsx` 與 `#report-output` 內（含報表用到的任何元件）**不得出現** `data-fx`／`data-variant`／`data-fx-alert`
+  （`ReportDocument` 目前只用 `.rr-sev i[data-sev]` 這種報表自己的屬性）。`ReportPage` 的控制列（`<form>`、日期、按鈕）在 `#report-output` 外，可以有掛勾。
+  測試：`ReportDocument.noFx.test.tsx`（A7）與 `test/dataFx.test.tsx`。
+- **選中／目前頁狀態用 ARIA**，CSS 直接選：目前頁 `[aria-current="page"]`；分段按鈕選中 `[aria-pressed="true"]`。
+
+| `data-fx` 值 | 掛在哪裡（元素型別）與 DOM 備註 |
 |---|---|
-| `panel` | `ChartCard`、KPI 卡、列表外框、設定表格外框、回收桶外框 |
-| `panel-cut` | 主要 KPI 卡（待處理、追蹤中）——切角＋HUD 角框 |
-| `nav-item` | `Sidebar.tsx`、`MobileChrome.tsx` 的每個導覽項目 |
-| `nav-indicator` | 新增一個 `aria-hidden` 的高亮條元素（側欄目前位置） |
-| `bar` / `bar-row` | `charts.tsx` 的長條與整列按鈕 |
-| `trend-col` | 每日趨勢的柱子 |
-| `cal-cell` | 日曆格子 |
-| `row` | 紀錄列表的每一列（桌面表格列與手機卡片） |
-| `page-title` | `PageHeader.tsx` 的標題、手機頂欄標題 |
-| `kpi-num` | KPI 數字 |
-| `field` | 表單輸入框外層（`fields.tsx`） |
-| `submit` | 表單送出按鈕、匯出 Excel 按鈕 |
-| `seg` | `SegmentedControl.tsx` |
-| `sheet` / `dialog` / `pop` | 詳情面板、確認對話框、彈出選單 |
-| `toast` | sonner 的 toast（用 `toastOptions.classNames` 加） |
-| `skeleton` | `ui/skeleton.tsx` |
-| `error` | `ErrorState.tsx` |
+| `panel` | `ChartCard`（`<section>`）、次要 KPI 卡（`<div>`）、紀錄列表桌面表格的外框（`<div>`，內含 `<table>`）、回收桶（桌面表格外框 `<div>`；手機每張卡片 `<li>`）、設備對照設定的表單（`<form>`）、日曆外框（`<div>`）、列印報表頁的控制列（`<form>`，`print:hidden`）、儀表板載入骨架的卡片 |
+| `panel-cut` | 主要 KPI 卡（待處理、追蹤中）。**可點時是 `<button>`（有 `relative`），0 筆時是 `<div>`（沒有 `relative`，CSS 要自己設 `position: relative`）**，兩者都是同一個值；元素本身沒有 `clip-path`／`overflow`，內容（圖示、數字、提示）是它的子元素，按鈕版另有一個絕對定位的 `ChevronRight`。載入骨架的兩張主要 KPI 也是 `panel-cut`（`<div>`）。切角與框線請畫在 `::before`、L 形角框畫在 `::after`（元素本身 cyber 下底色與框線透明；§5.3、§5.6）。 |
+| `data-fx-alert`（屬性，不是 `data-fx` 的值） | 只在「待處理」那張 `panel-cut` 且**數量 > 0** 時輸出（值為空字串，`[data-fx-alert]` 即可選）；沒有警示時整個屬性不存在。追蹤中那張永遠沒有。 |
+| `nav-item` | 側欄（`Sidebar.tsx`）每個導覽項目：6 個 `<a>` 頁面連結、`匯出 Excel`（`<button>`）、最底部的「CYBER 介面」切換（`<button aria-pressed>`）；手機底部分頁列（`MobileChrome.tsx`）的 4 個分頁 `<a>`（含中央「新增」）與「更多」`<button>`；手機「更多」面板內的每一列（`<a>`／`<button>`，位於 `[data-fx="sheet"]` 內，版型是橫列，和分頁列的直排不同，請用祖先區分）與其中的「CYBER 介面」列。目前頁：`<a>` 有 `aria-current="page"`；「更多」按鈕在子頁（報表、設定、回收桶）時也有。側欄的「新增紀錄」是 `Button`（`button`／`primary`），**不是** `nav-item`。 |
+| `nav-group` | 側欄群組小標（`<h2>` 檢視／輸出／管理；< 1024 時 `hidden`） |
+| `brand` | 側欄 logo 方塊（`<span>`，內含 Factory 圖示，`text-white` 沒動；cyber 下圖示色由 CSS 處理）。手機頂欄沒有 logo，所以只有這一處 |
+| `fab` | 手機底部中央「新增」圓鈕（`<span>`，在 `nav-item` 的 `<a>` 裡，絕對定位凸出）。維持實心樣式（§5.4） |
+| `topbar` | 手機頂欄（`<header>`，`< 768` 才顯示） |
+| `nav-indicator` | **延到 P3 與 FX-04 一起做，P1 不加**（會新增一個 `aria-hidden` 的高亮條元素，是這個表唯一會動到 DOM 結構的項目） |
+| `bar-row` / `bar` | `charts.tsx` `HBarChart`：每一列整個按鈕（`<button>`，`bar-row`）與長條的填色（`<span aria-hidden>`，`bar`；寬度是行內 style，FX-09 的 `scaleX` 作用在它上面，它在一個 `overflow-hidden` 的軌道裡）。處理狀態堆疊條與甜甜圈不是 `bar` |
+| `trend-col` / `trend-bar` | 每日趨勢：`trend-col` 是整個柱子按鈕（`<button>`，含數量、柱、日期），`trend-bar` 是裡面的柱（`<span aria-hidden>`，高度是行內 style，FX-12 的 `scaleY` 作用在它上面） |
+| `cal-cell` | 日曆格子：有紀錄的是 `<button>`（另帶 `data-step`、`data-date`），沒有紀錄的是 `<div>`；補位的空格（`<td aria-hidden>`）不是 |
+| `row` | 紀錄列表的每一列：桌面是 `<tr tabindex="0">`，手機卡片是 `<button>`（卡片內有 `sev`） |
+| `page-title` | `PageHeader.tsx` 的 `<h1>`（**< 768 時是 `sr-only`**，視覺上看不到）與手機頂欄的標題（`<p aria-hidden>`，< 768 才是視覺標題） |
+| `kpi-num` | KPI 數字（`<span class="num">`）：主要 KPI 與次要 KPI 共 6 個 |
+| `field` | 表單欄位外層：`fields.tsx` 的 `Field`（`<div data-field="…">`，含 label、輸入元件、提示、錯誤）；設備對照設定頁自己的 `Field`（`<label>`） |
+| `combobox` | `Combobox.tsx` 的外層（`<div class="relative">`，含 `<input role="combobox">` 與展開的清單）。它在 `field` 裡面，所以**用不同的值**，避免巢狀的 `field` 重複套用 |
+| `error-msg` | 錯誤訊息**文字本身**（`ERR:` 前綴用）：`fields.tsx` `FieldError` 裡的 `<span>`（外層 `<p role="alert">` 另含圖示，**不**掛）、設備對照設定儲存失敗標題 `<p>`（容器 `role="alert"` 不掛）、日期篩選「起日晚於迄日」`<p role="status">`、照片上傳失敗的狀態文字 `<p>`（只有失敗時才有）。`ErrorState` 內的訊息不算（它整塊是 `error`） |
+| `check` | `MultiSelectFilter.tsx` 每個選項的勾選方塊視覺：`<span aria-hidden="true" data-fx="check" data-state="on｜off">`（16px 方塊），在 `cmdk` 的 `div[role="option"]` 裡；選中時內含一個 lucide `Check` 的 `<svg>`（CSS 要隱藏它再畫 `[x]`／`[ ]`）。**這裡沒有原生 checkbox**（是 `role="option"` 的清單項目，已選時另有 `sr-only` 的「（已選）」），所以不存在 `:checked`；狀態用 `data-state`（也可從父層 `[data-checked="true｜false"]` 接）。`DateRangeFilter` 沒有勾選視覺 |
+| `submit` | 表單送出按鈕（`Button type="submit"`，覆寫掉 `button`，`data-variant="primary"` 仍在）：新增／編輯紀錄、設備對照設定的「儲存對照表」、列印報表頁的「產生報表」。**匯出 Excel 只存在於導覽（側欄與「更多」面板），它是 `nav-item`，不是 `submit`**。 |
+| `button` | `ui/button.tsx` 的 `Button`（所有按鈕，含 `asChild` 的 `<a>`）以及 `ui/alert-dialog.tsx` 的 `AlertDialogAction`／`AlertDialogCancel`。永遠搭配 `data-variant="primary｜secondary｜ghost｜destructive｜link"`（沒傳 variant 時是 `secondary`；確認對話框的確認鈕預設 `primary`、取消鈕 `secondary`）。呼叫端自己傳的 `data-fx` 優先 |
+| `seg` | `SegmentedControl.tsx` 的容器（`<div role="group" aria-label>`）；底下直接子元素是 `<button aria-pressed>`，**選中項 `[aria-pressed="true"]`**（沒有另外加屬性）。用在儀表板範圍、列表的狀態與嚴重度篩選、表單的嚴重度與處理狀態 |
+| `sev` | 嚴重度色塊（都是 `aria-hidden`，並帶 `data-severity="輕微｜一般｜嚴重｜重大"`，光暈顏色靠它）：`SeverityBadge` 裡的色條（`<span>`；外層膠囊本身**不是** `sev`）、手機卡片左側色條、甜甜圈的弧（`<circle>`，SVG）與圖例色塊、篩選列與表單裡嚴重度選項前的色塊。**報表（`ReportDocument`）不算，不碰** |
+| `sheet` | `ui/sheet.tsx` 的 `SheetContent`（詳情面板、手機「更多」面板、窄螢幕的 `ResponsivePopover`）。另帶 `data-side="right｜bottom｜left"` |
+| `dialog` | `ui/alert-dialog.tsx` 的 `AlertDialogContent`（確認對話框）。破壞性的（永久刪除）另帶 `data-variant="destructive"`，一般的沒有這個屬性 |
+| `pop` | `ui/popover.tsx` 的 `PopoverContent`（多選下拉、日期篩選、桌面 `ResponsivePopover`；有 Radix 的 `data-state`、`data-side`）以及 `Combobox` 展開的建議清單（`<ul role="listbox">`，**沒有** `data-state`）。`cmdk` 的 `Command` 清單在 `pop` 或 `sheet` 裡面，不另外掛 |
+| `tooltip` | `ui/tooltip.tsx` 的 `TooltipContent`（Radix，有 `data-state`、`data-side`） |
+| `toast` | **sonner 不支援在 toast 元素上加自訂屬性**（`toastOptions.classNames` 只能加 class；`data-testid` 要由發 toast 的地方傳，而 `lib/feedback.ts` 不動），所以**沒有 `data-fx="toast"`**，穩定選擇器是 sonner 自己輸出的：容器 `[data-sonner-toaster]`（有 `data-sonner-theme="light｜dark"`）、每個 toast `[data-sonner-toast]`（`<li>`），類型 `[data-sonner-toast][data-type="success｜error｜info｜warning｜loading"]`（`notify.success`／`toastUndoable` → `success`，`notify.error` → `error`；未指定類型的 `toast()` 沒有 `data-type`，目前沒人用）。內部：圖示 `[data-icon]`、內容 `[data-content]`、標題 `[data-title]`、說明 `[data-description]`、動作鈕 `[data-button]`、關閉鈕 `[data-close-button]`。錯誤 toast 的文字外面包一層 `<span role="alert">`（在 `[data-title]` 裡）。`test/dataFx.test.tsx` 會檢查這些選擇器，sonner 升級後若改了會變紅 |
+| `skeleton` | `ui/skeleton.tsx`（`<div aria-hidden>`） |
+| `error` | `ErrorState.tsx`（`<div role="alert">`，內含標題、訊息與「重試」`Button`） |
+
+**刻意沒有掛勾**（P2／P3 需要時再加，加之前先改這張表）：`Lightbox`、處理狀態堆疊條與甜甜圈的非嚴重度部分、篩選 chip（FX-17）、設備對照設定的「未儲存」提示（FX-35）、`CopyPicker` 與 `PhotoThumb`／`PhotoField` 的縮圖（FX-26／27）、匯出項目的進行中標記（FX-32，目前只有 `aria-busy`）、日期篩選的快捷 pill（用 `aria-pressed`）、紀錄詳情面板內部（面板本身是 `sheet`）。
 
 ### 3.4 圓角改成執行期 token（標準主題零視覺差異）
 
@@ -226,9 +252,10 @@ cyber 沒辦法在執行期改。做法：
 
 ### 5.1 背景與圖層
 
-- **頁面**：`--page` 加上 24px 間距的點陣（`radial-gradient`，顏色 `--grid-dot`），**靜態不動**。
-- **掃描線**：一層固定在畫面上、`pointer-events: none`、`aria-hidden` 的水平細線（`repeating-linear-gradient`，透明度 `--scan-opacity`）。
-  **靜態不動**（不做捲動或閃爍），列印時隱藏（第 8 節）。它是新的 fixed 元素，必須加 `print:hidden`。
+- **頁面**：`--page` 加上 24px 間距的點陣（`radial-gradient`，顏色 `--grid-dot`），畫在 cyber 的 `body` `background-image`，**靜態不動**。
+- **掃描線**：用 `:root[data-theme="cyber"] body::after` 偽元素，**不新增 DOM 元素**。`position: fixed; inset: 0; pointer-events: none; content: "" / ""`，
+  `z-index` 高於所有浮層（對話框、tooltip 之上，也要高於 sonner 容器的 `z-index: 999999999`，所以取 `2147483647`），`background: repeating-linear-gradient(…)` 水平細線，透明度 `--scan-opacity`。
+  **靜態不動**（不做捲動或閃爍）。手機（< 768）`--scan-opacity: .015`。列印時隱藏（第 8 節）。
 - **不做**：毛玻璃（`backdrop-filter`）、常駐的雜訊動畫、CRT 彎曲變形。
 
 ### 5.2 裝飾字元（一律不朗讀）
@@ -359,7 +386,7 @@ cyber 沒辦法在執行期改。做法：
 
 1. `ReportDocument.tsx` 內的元素**不加任何 `data-fx`**；`report.css` 不改。
 2. `cyber.css` 檔尾的 `@media print`：把掃描線、點陣背景、光暈、切角、裝飾前綴全部移除，並**還原全部色彩 token 與 `--r-*`**（值等於標準淺色 `:root`）、設 `color-scheme: light`、body 字型回標準；`body` 用 `background: var(--page); color: var(--ink-1)`（token 還原後即標準淺色的 `#f9f9f7`／`#0b0b0b`），所以 **cyber 列印 ≡ 標準淺色列印**——即使使用者在 App 頁面（不是報表）按列印，也不會印出黑底。（註記：此處與原文「`html, body` 背景回白色」有差異：為了做到與標準淺色列印逐元素一致，實作改用標準淺色的 `--page`／`--ink-1`，而不是純白純黑。之後各期新增的 cyber token 與裝飾，都要在這個區段同步還原；`cyberCss.test.ts` 檢查 print 區段的 token 涵蓋 cyber 區塊全部色彩 token 且值等於標準淺色 `:root`。）
-3. 掃描線圖層是 fixed 元素，除了 `print:hidden`，也會被 `report.css` 的 `#root .fixed` 規則涵蓋；兩者都要在。
+3. 掃描線是 `body::after` 偽元素（第 5.1 節），不再有「新的 fixed 元素＋`print:hidden`」，`report.css` 的 `#root .fixed` 規則（只作用在 `#root` 裡的元素）也不適用於它；所以 `cyber.css` 檔尾的 `@media print` 內要明確寫 `:root[data-theme="cyber"] body::after { display: none }`，並把 `body` 的點陣 `background-image` 還原為 `none`。
 4. 「開新視窗」的報表 `<html>` 沒有 `data-theme`，cyber.css 的規則全部不會套用（因為每條規則都以 `:root[data-theme="cyber"]` 開頭）。
 5. `ReportPage.tsx` 的**控制列**（日期範圍、產生報表、列印、開新視窗按鈕）可以用 cyber 外觀；報表本體維持紙本。
 6. **`#report-output` 的嚴重度 token 隔離**：`report.css` 只重新定義文字／線／底色 token，沒有覆寫嚴重度四色，而報表的 `.rr-sev` 色塊會用到它們；所以 `cyber.css` 在 `:root[data-theme="cyber"] #report-output` 內把 `--good`／`--warning`／`--serious`／`--critical` 還原成標準淺色值（`cyberCss.test.ts` 與 `index.css` 比對）。之後新增的 cyber token 或裝飾也不得漏進 `#report-output`。
@@ -378,7 +405,7 @@ cyber 沒辦法在執行期改。做法：
 | A4 | `useFx()`：沒有 `data-theme`、或減少動態效果時為 false | 新的 `fx.test.tsx` |
 | A5 | `ScrambleNumber`：可存取名稱與 `getByText` 都是真實數字；`useFx()` 為 false 時不渲染亂碼層；動畫結束後亂碼層已移除 | `fx.test.tsx` |
 | A6 | cyber.css 每條規則都以 `:root[data-theme="cyber"]` 開頭（讀檔、逐條檢查選擇器）；所有 `content:` 宣告都有 `/ ""` 替代文字 | 新的 `cyberCss.test.ts` |
-| A7 | `ReportDocument` 的輸出中沒有任何 `data-fx` 屬性；`report.css` 的列印選擇器仍在（沿用現有測試） | `ReportDocument.test.tsx` |
+| A7 | `ReportDocument` 的輸出中沒有任何 `data-fx`／`data-variant`／`data-fx-alert`；`report.css` 的列印選擇器仍在（沿用現有測試） | `ReportDocument.noFx.test.tsx`（新）、`ReportDocument.test.tsx`；整頁（`ReportPage`）版本在 `test/dataFx.test.tsx` |
 | A8 | P0 之前既有的 408 個前端測試、169 個後端測試**不修改就全部通過**（只允許因 `data-fx` 屬性造成的快照差異，若有快照）。前端測試數量基準：P0 前 408 個、P0 後 503 個（實測；之後各期以實測為準） | — |
 
 ### 9.2 無障礙

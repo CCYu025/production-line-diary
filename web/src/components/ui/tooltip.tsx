@@ -14,6 +14,7 @@ export function TooltipContent({
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
+        data-fx="tooltip"
         sideOffset={sideOffset}
         className={cn(
           "z-50 rounded-md bg-ink-1 px-3 py-1.5 text-xs font-medium text-page shadow-pop",

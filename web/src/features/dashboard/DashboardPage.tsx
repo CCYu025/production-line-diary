@@ -30,7 +30,7 @@ function DashboardSkeleton() {
       <span className="sr-only">載入中…</span>
       <div className="grid grid-cols-2 gap-3">
         {[0, 1].map((i) => (
-          <div key={i} className="rounded-lg border border-line bg-surface-raised p-5">
+          <div key={i} data-fx="panel-cut" className="rounded-lg border border-line bg-surface-raised p-5">
             <Skeleton className="h-4 w-16" />
             <Skeleton className="mt-4 h-9 w-20" />
             <Skeleton className="mt-3 h-3 w-28" />
@@ -39,7 +39,7 @@ function DashboardSkeleton() {
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="rounded-lg border border-line bg-surface-raised px-4 py-3">
+          <div key={i} data-fx="panel" className="rounded-lg border border-line bg-surface-raised px-4 py-3">
             <Skeleton className="h-3 w-14" />
             <Skeleton className="mt-3 h-6 w-16" />
           </div>
@@ -47,7 +47,7 @@ function DashboardSkeleton() {
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="rounded-lg border border-line bg-surface-raised p-5">
+          <div key={i} data-fx="panel" className="rounded-lg border border-line bg-surface-raised p-5">
             <Skeleton className="h-4 w-28" />
             <Skeleton className="mt-5 h-3 w-full" />
             <Skeleton className="mt-3 h-3 w-4/5" />

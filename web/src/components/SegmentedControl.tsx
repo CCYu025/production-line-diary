@@ -27,6 +27,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
   return (
     <div
       role="group"
+      data-fx="seg"
       aria-label={label}
       className={cn("inline-flex flex-wrap gap-0.5 max-md:grid max-md:flex-nowrap max-md:grid-flow-col max-md:auto-cols-fr rounded-md border border-line-strong bg-surface-raised p-0.5", className)}
     >

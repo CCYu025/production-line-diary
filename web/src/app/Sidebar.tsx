@@ -47,6 +47,7 @@ function ExportItem({ entry }: { entry: Extract<NavEntry, { kind: "action" }> })
     <MaybeTooltip label={entry.label}>
       <button
         type="button"
+        data-fx="nav-item"
         className={navItemClass}
         onClick={() => void exporter.run()}
         disabled={exporter.pending}
@@ -69,7 +70,7 @@ function ThemeToggleItem() {
   const Icon = THEME_TOGGLE.icon;
   return (
     <MaybeTooltip label={THEME_TOGGLE.label}>
-      <button type="button" className={navItemClass} aria-pressed={isCyber} onClick={toggle}>
+      <button type="button" data-fx="nav-item" className={navItemClass} aria-pressed={isCyber} onClick={toggle}>
         <Icon className={cn("size-5 shrink-0", isCyber ? "text-accent-text" : "text-ink-muted")} aria-hidden="true" />
         <span className="sr-only lg:not-sr-only">{THEME_TOGGLE.label}</span>
         <ThemeToggleState isCyber={isCyber} className="hidden lg:ml-auto lg:inline" />
@@ -91,6 +92,7 @@ const RailLink = React.forwardRef<
     <Link
       ref={ref}
       to={to}
+      data-fx="nav-item"
       aria-current={active ? "page" : undefined}
       className={cn(
         navItemClass,
@@ -139,7 +141,7 @@ export function Sidebar() {
         aria-label="產線日誌，回到儀表板"
         className="flex items-center justify-center gap-2.5 rounded-md border-b border-line px-1 pb-3 lg:justify-start lg:px-2"
       >
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-linear-to-br from-accent to-seq-600 text-white">
+        <span data-fx="brand" className="flex size-9 shrink-0 items-center justify-center rounded-md bg-linear-to-br from-accent to-seq-600 text-white">
           <Factory className="size-5" aria-hidden="true" />
         </span>
         <span className="hidden min-w-0 flex-col leading-tight lg:flex">
@@ -160,7 +162,7 @@ export function Sidebar() {
       <nav aria-label="主要導覽" className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
         {NAV_GROUPS.map((group, i) => (
           <div key={group.label} role="group" aria-label={group.label} className="flex flex-col gap-1">
-            <h2 className={cn("hidden px-3 pb-1 pt-3 text-xs font-medium text-ink-muted lg:block", i === 0 && "pt-1")}>
+            <h2 data-fx="nav-group" className={cn("hidden px-3 pb-1 pt-3 text-xs font-medium text-ink-muted lg:block", i === 0 && "pt-1")}>
               {group.label}
             </h2>
             {i > 0 && <hr className="mx-2 my-2 border-line lg:hidden" />}

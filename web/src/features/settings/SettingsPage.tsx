@@ -138,6 +138,7 @@ function EquipmentMapForm({ meta }: { meta: Meta }) {
 
   return (
     <form
+      data-fx="panel"
       className="max-w-3xl rounded-lg border border-line bg-surface-raised p-4 md:p-6"
       onSubmit={(e) => {
         e.preventDefault();
@@ -244,7 +245,9 @@ function EquipmentMapForm({ meta }: { meta: Meta }) {
           role="alert"
           className="mt-4 rounded-md border border-critical bg-surface p-3 text-sm"
         >
-          <p className="font-bold text-critical">儲存失敗，請修正後再試一次</p>
+          <p data-fx="error-msg" className="font-bold text-critical">
+            儲存失敗，請修正後再試一次
+          </p>
           <ul className="mt-1 list-disc pl-5 text-ink-1">
             {errors.map((msg) => (
               <li key={msg}>{msg}</li>
@@ -254,7 +257,7 @@ function EquipmentMapForm({ meta }: { meta: Meta }) {
       ) : null}
 
       <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-4">
-        <Button type="submit" variant="primary" disabled={save.isPending} aria-busy={save.isPending}>
+        <Button type="submit" data-fx="submit" variant="primary" disabled={save.isPending} aria-busy={save.isPending}>
           {save.isPending ? "儲存中…" : "儲存對照表"}
         </Button>
         <p aria-live="polite" className="min-h-5 text-sm">
@@ -277,7 +280,7 @@ function EquipmentMapForm({ meta }: { meta: Meta }) {
 /** 手機每個欄位都顯示標籤；桌面（有表頭）只留給螢幕閱讀器。 */
 function Field({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
   return (
-    <label className={cn("flex min-w-0 flex-col gap-1", className)}>
+    <label data-fx="field" className={cn("flex min-w-0 flex-col gap-1", className)}>
       <span className="text-xs font-medium text-ink-muted md:sr-only">{label}</span>
       {children}
     </label>

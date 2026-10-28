@@ -17,6 +17,7 @@ export function ErrorState({ title = "載入失敗", error, onRetry, retrying, c
   return (
     <div
       role="alert"
+      data-fx="error"
       className={cn(
         "flex flex-col items-start gap-3 rounded-lg border border-critical bg-surface-raised p-5 sm:flex-row sm:items-center",
         className,

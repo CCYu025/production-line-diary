@@ -88,7 +88,12 @@ function PhotoRow({
           </Button>
         </div>
         {statusText ? (
-          <p className={cn("[overflow-wrap:anywhere]", statusTone === "error" ? "text-sm font-medium text-critical" : "text-xs text-ink-muted")}>{statusText}</p>
+          <p
+            {...(statusTone === "error" ? { "data-fx": "error-msg" } : {})}
+            className={cn("[overflow-wrap:anywhere]", statusTone === "error" ? "text-sm font-medium text-critical" : "text-xs text-ink-muted")}
+          >
+            {statusText}
+          </p>
         ) : null}
         {caption}
       </div>

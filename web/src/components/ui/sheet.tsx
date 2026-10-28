@@ -57,7 +57,7 @@ export function SheetContent({ className, children, side = "right", hideClose = 
   return (
     <SheetPrimitive.Portal>
       <SheetOverlay />
-      <SheetPrimitive.Content className={cn(sheetVariants({ side }), className)} {...props}>
+      <SheetPrimitive.Content data-fx="sheet" data-side={side} className={cn(sheetVariants({ side }), className)} {...props}>
         {children}
         {!hideClose && (
           <SheetPrimitive.Close
