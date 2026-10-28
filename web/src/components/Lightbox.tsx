@@ -45,6 +45,7 @@ export function Lightbox({ photos, index, onIndexChange, onClose, onCloseAutoFoc
           )}
         />
         <DialogPrimitive.Content
+          data-fx="lightbox"
           aria-describedby={undefined}
           onCloseAutoFocus={onCloseAutoFocus}
           onKeyDown={(e) => {

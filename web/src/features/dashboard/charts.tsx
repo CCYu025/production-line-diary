@@ -67,7 +67,7 @@ export function HBarChart({
             <span className={cn("truncate text-sm", r.label.trim() === "" && "text-ink-muted")} title={labelOrUnfilled(r.label)}>
               {labelOrUnfilled(r.label)}
             </span>
-            <span className="h-2.5 overflow-hidden rounded-full bg-line" aria-hidden="true">
+            <span data-fx="bar-track" className="h-2.5 overflow-hidden rounded-full bg-line" aria-hidden="true">
               <span
                 data-fx="bar"
                 className="block h-full rounded-full bg-accent"

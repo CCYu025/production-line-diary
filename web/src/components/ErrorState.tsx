@@ -25,7 +25,7 @@ export function ErrorState({ title = "載入失敗", error, onRetry, retrying, c
     >
       <TriangleAlert className="size-6 shrink-0 text-critical" aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <p className="font-bold">{title}</p>
+        <p data-fx="error-title" className="font-bold">{title}</p>
         <p className="text-sm text-ink-2">{errorMessage(error)}</p>
       </div>
       {onRetry ? (
