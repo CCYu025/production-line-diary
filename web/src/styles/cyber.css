@@ -7,13 +7,395 @@
  *   2. 所有 content 宣告都要加不朗讀的替代文字：content: "> " / "";
  *   3. 不針對 Tailwind class 寫選擇器；要掛外觀請在元件上加 data-fx 屬性。報表（ReportDocument）一律不加 data-fx。
  *   4. 檔尾的 @media print 要把所有裝飾還原。
+ *   5. P1 是靜態外觀：沒有 @keyframes、沒有 transition（動態屬於 P2／P3）。
  *
- * 載入順序：main.tsx 在 index.css 之後 import 這個檔案（沒放進 @layer，所以優先於 Tailwind 的 base／utility 層）。
+ * 載入順序：main.tsx 在 index.css 之後 import 這個檔案（沒放進 @layer，所以優先於 Tailwind 的 base／utility 層，
+ * 不必比 Tailwind 的特異度）。也因此：焦點環不另外寫規則——index.css base 層的 :focus-visible 已是
+ * 2px solid var(--accent-text)、offset 2px，cyber 的 token 讓它變青色；若在這裡再寫一條無層級的 :focus-visible，
+ * 會蓋掉元件自己的 outline-hidden／focus-visible:outline-offset-0（對話框、面板、輸入框），把不該出現的外框叫回來。
  */
 
-/* 內文字型（§4.3）：英數字用 IBM Plex Mono（等寬），中文回落到 Noto Sans TC；字級與行高不變。 */
+/* ---------- 背景與掃描線（§5.1）---------- */
+
+/* 內文字型（§4.3）：英數字用 IBM Plex Mono（等寬），中文回落到 Noto Sans TC；字級與行高不變。
+ * 點陣：24px 間距，靜態（background-color 仍由 index.css 的 var(--page) 提供）。 */
 :root[data-theme="cyber"] body {
   font-family: "IBM Plex Mono", "Noto Sans TC", "Segoe UI", system-ui, -apple-system, sans-serif;
+  background-image: radial-gradient(circle at 1px 1px, var(--grid-dot) 1px, transparent 1.5px);
+  background-size: 24px 24px;
+}
+
+/* 掃描線：body::after 偽元素，不新增 DOM。z-index 高於所有浮層（sonner 容器是 999999999）；不擋點擊；靜態。 */
+:root[data-theme="cyber"] body::after {
+  content: "" / "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, var(--ink-1) 0, var(--ink-1) 1px, transparent 1px, transparent 3px);
+  opacity: var(--scan-opacity);
+}
+
+/* ---------- 面板（§5.3）：panel 用 token 就是 surface-raised 底、1px line 框、2px 圓角，不另外寫 ---------- */
+
+/*
+ * panel-cut（待處理／追蹤中 KPI 卡）：右上與左下切角。
+ * 元素本身（可能是可聚焦的 <button>）不加 clip-path——焦點環才不會被裁；它的底色與框線在 cyber 下透明，
+ * 切角的底色＋1px 框線畫在 ::before（clip-path 在偽元素上，z-index:-1，元素用 isolation 自成堆疊環境），
+ * 切角斜邊的框線用 45° 漸層補上；角框畫在 ::after：兩個直角（左上、右下）是 10px 的 L 形，
+ * 兩個切角（右上、左下）是連續的「折角括號」——沿兩條直邊各 10px 的線段，加上中間沿 45° 切角的 2px 斜線，三段相連成一個角標。
+ * 有警示（[data-fx-alert]，待處理 > 0）時角框改 serious 色（靜態；呼吸是 P3 的 FX-08）。
+ */
+:root[data-theme="cyber"] [data-fx="panel-cut"] {
+  --pc-cut: var(--cut-md);
+  --pc-fill: var(--surface-raised);
+  --pc-line: var(--line);
+  --pc-corner: var(--line-strong);
+  position: relative;
+  isolation: isolate;
+  background-color: transparent;
+  border-color: transparent;
+}
+:root[data-theme="cyber"] button[data-fx="panel-cut"]:hover {
+  --pc-line: var(--accent);
+}
+:root[data-theme="cyber"] [data-fx="panel-cut"][data-fx-alert] {
+  --pc-corner: var(--serious);
+}
+:root[data-theme="cyber"] [data-fx="panel-cut"]::before {
+  content: "" / "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    linear-gradient(to top right, transparent calc(50% - 1px), var(--pc-line) calc(50% - 1px), var(--pc-line) 50%, transparent 50%) right top / var(--pc-cut) var(--pc-cut) no-repeat,
+    linear-gradient(to top right, transparent 50%, var(--pc-line) 50%, var(--pc-line) calc(50% + 1px), transparent calc(50% + 1px)) left bottom / var(--pc-cut) var(--pc-cut) no-repeat,
+    var(--pc-fill);
+  box-shadow: inset 0 0 0 1px var(--pc-line);
+  clip-path: polygon(0 0, calc(100% - var(--pc-cut)) 0, 100% var(--pc-cut), 100% 100%, var(--pc-cut) 100%, 0 calc(100% - var(--pc-cut)));
+}
+:root[data-theme="cyber"] [data-fx="panel-cut"]::after {
+  content: "" / "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--pc-corner), var(--pc-corner)) left top / 10px 2px no-repeat,
+    linear-gradient(var(--pc-corner), var(--pc-corner)) left top / 2px 10px no-repeat,
+    linear-gradient(var(--pc-corner), var(--pc-corner)) right bottom / 10px 2px no-repeat,
+    linear-gradient(var(--pc-corner), var(--pc-corner)) right bottom / 2px 10px no-repeat,
+    linear-gradient(var(--pc-corner), var(--pc-corner)) right var(--pc-cut) top / 10px 2px no-repeat,
+    linear-gradient(var(--pc-corner), var(--pc-corner)) right top var(--pc-cut) / 2px 10px no-repeat,
+    linear-gradient(var(--pc-corner), var(--pc-corner)) left var(--pc-cut) bottom / 10px 2px no-repeat,
+    linear-gradient(var(--pc-corner), var(--pc-corner)) left bottom var(--pc-cut) / 2px 10px no-repeat,
+    linear-gradient(to top right, transparent calc(50% - 2px), var(--pc-corner) calc(50% - 2px), var(--pc-corner) 50%, transparent 50%) right top / var(--pc-cut) var(--pc-cut) no-repeat,
+    linear-gradient(to top right, transparent 50%, var(--pc-corner) 50%, var(--pc-corner) calc(50% + 2px), transparent calc(50% + 2px)) left bottom / var(--pc-cut) var(--pc-cut) no-repeat;
+}
+
+/* ---------- 按鈕（§5.4）----------
+ * 表單送出鈕的 data-fx 被覆寫成 submit，但 data-variant 仍在，所以兩個都選。disabled 的按鈕不出現 hover 光暈。
+ * 手機底部中央「新增」圓鈕（data-fx="fab"）不是 button 也不在這裡：維持實心。
+ * 框線一律畫成 box-shadow: inset 0 0 0 1px（不用 border——primary／destructive 在標準主題沒有 border，
+ * 加實體框會讓自動寬度的按鈕多出 2px）；hover 光暈與內框合併在「同一個」box-shadow 宣告，兩者才不會互相蓋掉。
+ * secondary 在標準主題本來就有 1px border，維持不動（只改色）。 */
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-variant="primary"] {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent-text);
+}
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-variant="primary"]:hover:not(:disabled) {
+  background-color: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px var(--accent), var(--glow-accent);
+}
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-variant="secondary"]:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-variant="ghost"]:hover:not(:disabled) {
+  color: var(--accent-text);
+}
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-variant="destructive"] {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--critical);
+  color: var(--critical);
+}
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-variant="destructive"]:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 1px var(--critical), var(--glow-critical);
+}
+/* data-fx-tone="danger"：以 secondary variant 實作的紅字紅框按鈕（回收桶「永久刪除」，標準主題靠 border-critical／text-critical class）。
+ * 它的實體 1px border 本來就是 critical 色（標準主題就有），所以框線沿用、不另加內框（否則變 2px）；
+ * 要做的是擋掉上面 secondary 的 hover「青框」，並在 hover 加 critical 光暈。比 secondary 的規則多一個屬性選擇器，特異度較高。 */
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-fx-tone="danger"] {
+  border-color: var(--critical);
+  color: var(--critical);
+}
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-fx-tone="danger"]:hover:not(:disabled) {
+  border-color: var(--critical);
+  box-shadow: var(--glow-critical);
+}
+
+/* ---------- 導覽（§5.2）---------- */
+
+/* 側欄（桌面 ≥ 1024）目前頁：前綴 ">" 畫在項目左側的內距裡（絕對定位、不佔版面，所以其他項目不必保留空白，文字也不會跳動）。
+ * 平板圖示列（768–1023，文字 sr-only）與手機不加前綴。 */
+@media (min-width: 1024px) {
+  :root[data-theme="cyber"] aside [data-fx="nav-item"][aria-current="page"]::before {
+    content: "> " / "";
+    position: absolute;
+    left: 1px;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    font-weight: 700;
+    color: var(--accent-text);
+  }
+}
+/* 平板圖示列（768–1023）目前頁：左側 2px accent 內側直條（靜態；不是 nav-indicator），
+ * 讓目前頁不只靠圖示色與 hover 區分。1024 以上維持 ">" 前綴。 */
+@media (min-width: 768px) and (max-width: 1023px) {
+  :root[data-theme="cyber"] aside [data-fx="nav-item"][aria-current="page"] {
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+}
+/* 側欄項目 hover（靜態）：文字 ink-1、accent-wash 底；目前頁與 disabled 不變 */
+:root[data-theme="cyber"] aside [data-fx="nav-item"]:not([aria-current="page"]):hover:not(:disabled) {
+  background-color: var(--accent-wash);
+  color: var(--ink-1);
+}
+
+/* 群組小標：「// 檢視」 */
+:root[data-theme="cyber"] [data-fx="nav-group"]::before {
+  content: "// " / "";
+  color: var(--ink-muted);
+}
+
+/* 頁面標題：「~/」前綴＋文字光暈（≥ 20px 的字才加）。PageHeader 的 <h1> 在 < 768 是 sr-only（視覺標題是手機頂欄的 <p aria-hidden>），
+ * 所以 h1 的前綴與光暈只在 ≥ 768 套用；手機頂欄的 <p> 只有前綴，沒有光暈（18px，不到 20px）。
+ * 尾端游標延到 P3。 */
+:root[data-theme="cyber"] p[data-fx="page-title"]::before {
+  content: "~/" / "";
+  color: var(--ink-muted);
+}
+@media (min-width: 768px) {
+  :root[data-theme="cyber"] h1[data-fx="page-title"] {
+    text-shadow: var(--text-glow);
+  }
+  :root[data-theme="cyber"] h1[data-fx="page-title"]::before {
+    content: "~/" / "";
+    color: var(--ink-muted);
+    text-shadow: none;
+  }
+}
+
+/* KPI 數字（36px／24px）：文字光暈 */
+:root[data-theme="cyber"] [data-fx="kpi-num"] {
+  text-shadow: var(--text-glow);
+}
+
+/* 品牌 logo 方塊：圖示用 accent-ink（青色漸層底上的深色，標準主題的 text-white 不動） */
+:root[data-theme="cyber"] [data-fx="brand"] {
+  color: var(--accent-ink);
+}
+
+/* ---------- 分段按鈕、多選勾選、錯誤訊息 ---------- */
+
+/* 分段按鈕：選中項改空心終端風——accent-wash 底＋1px accent 內框（inset box-shadow，不改尺寸）＋accent-text 字，
+ * 文字前後各一個 "[" "]"，離文字固定 4px（括號貼著文字，不貼按鈕兩端）。括號有兩種畫法，因為兩種版型的內容排列不同：
+ *   桌面（≥ 768，按鈕是橫排的「標籤＋筆數」）：括號是按鈕自己的 ::before／::after，當作 flex 子項目排進內容前後
+ *     （flex gap 6px，用 -2px margin 修成 4px），包住「標籤＋筆數」。為了選中／未選中時文字位置不跳動、按鈕寬度一致，
+ *     **所有**分段按鈕都有括號，未選中的用 visibility: hidden 佔位（不朗讀、不可見）。
+ *   手機（< 768，按鈕是直排的「標籤／筆數」，欄寬由 auto-cols-fr 等分）：括號絕對定位在標籤 <span>（第一個子元素）兩側，
+ *     不佔版面、不改欄寬；只包標籤、筆數在下一行。括號縮成 10px，並把按鈕最小寬度放大到容得下「括號＋4px 間距」。 */
+:root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"] {
+  background-color: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent-text);
+}
+@media (min-width: 768px) {
+  :root[data-theme="cyber"] [data-fx="seg"] > button::before {
+    content: "[" / "";
+    margin-right: -2px;
+    font-weight: 400;
+    visibility: hidden;
+  }
+  :root[data-theme="cyber"] [data-fx="seg"] > button::after {
+    content: "]" / "";
+    margin-left: -2px;
+    font-weight: 400;
+    visibility: hidden;
+  }
+  :root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"]::before,
+  :root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"]::after {
+    visibility: visible;
+  }
+}
+@media (max-width: 767px) {
+  :root[data-theme="cyber"] [data-fx="seg"] > button {
+    min-width: 52px;
+  }
+  :root[data-theme="cyber"] [data-fx="seg"] > button > span:first-child {
+    position: relative;
+  }
+  :root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"] > span:first-child::before,
+  :root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"] > span:first-child::after {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    font-size: 10px;
+    font-weight: 400;
+    pointer-events: none;
+  }
+  :root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"] > span:first-child::before {
+    content: "[" / "";
+    right: calc(100% + 4px);
+  }
+  :root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"] > span:first-child::after {
+    content: "]" / "";
+    left: calc(100% + 4px);
+  }
+}
+
+/* 多選下拉的勾選：視覺畫成 [x]／[ ]（aria-hidden，語意在 cmdk 的 role="option"＋sr-only「（已選）」）。
+ * 兩種狀態同寬（22px），選項版面不會因為勾選而跳動。 */
+:root[data-theme="cyber"] [data-fx="check"] {
+  width: 22px;
+  border-color: transparent;
+  background-color: transparent;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1;
+}
+:root[data-theme="cyber"] [data-fx="check"] > svg {
+  display: none;
+}
+:root[data-theme="cyber"] [data-fx="check"]::before {
+  content: "[ ]" / "";
+  white-space: pre;
+}
+:root[data-theme="cyber"] [data-fx="check"][data-state="on"] {
+  color: var(--accent-text);
+}
+:root[data-theme="cyber"] [data-fx="check"][data-state="on"]::before {
+  content: "[x]" / "";
+}
+
+/* 錯誤訊息：前綴 "ERR: "（critical 色） */
+:root[data-theme="cyber"] [data-fx="error-msg"]::before {
+  content: "ERR: " / "";
+  color: var(--critical);
+  font-weight: 700;
+}
+
+/* ---------- 嚴重度光暈（§5.5）----------
+ * 4px 同色光暈、透明度 .5；「重大」.7；手機（< 768）半徑 2px、透明度減半。色彩全是嚴重度 token。
+ * 狀態符號 ○ ◐ ● 不加顏色。甜甜圈的弧是 SVG <circle>（box-shadow 對 SVG 無效），改用 filter: drop-shadow。 */
+:root[data-theme="cyber"] [data-fx="sev"] {
+  --sv-c: var(--good);
+  --sv-a: 50%;
+  --sv-k: 1;
+  --sv-r: 4px;
+  --sv-glow: color-mix(in srgb, var(--sv-c) calc(var(--sv-a) * var(--sv-k)), transparent);
+  box-shadow: 0 0 var(--sv-r) var(--sv-glow);
+}
+:root[data-theme="cyber"] circle[data-fx="sev"] {
+  box-shadow: none;
+  filter: drop-shadow(0 0 var(--sv-r) var(--sv-glow));
+}
+:root[data-theme="cyber"] [data-fx="sev"][data-severity="一般"] {
+  --sv-c: var(--warning);
+}
+:root[data-theme="cyber"] [data-fx="sev"][data-severity="嚴重"] {
+  --sv-c: var(--serious);
+}
+:root[data-theme="cyber"] [data-fx="sev"][data-severity="重大"] {
+  --sv-c: var(--critical);
+  --sv-a: 70%;
+}
+@media (max-width: 767px) {
+  :root[data-theme="cyber"] [data-fx="sev"] {
+    --sv-k: 0.5;
+    --sv-r: 2px;
+  }
+}
+
+/* ---------- 浮層：tooltip、sheet、dialog、pop（§7、§4.1 的 --shadow 已是細青框＋深陰影）---------- */
+
+:root[data-theme="cyber"] [data-fx="tooltip"] {
+  background-color: var(--surface-raised);
+  color: var(--ink-1);
+  border: 1px solid var(--accent);
+}
+:root[data-theme="cyber"] :is([data-fx="sheet"], [data-fx="dialog"], [data-fx="pop"]) {
+  background-color: var(--surface-raised);
+  border-color: var(--line-strong);
+}
+/* 永久刪除的確認對話框：上緣 2px critical 線（斜紋是 P2） */
+:root[data-theme="cyber"] [data-fx="dialog"][data-variant="destructive"] {
+  box-shadow: inset 0 2px 0 var(--critical), var(--shadow);
+}
+
+/* ---------- 表單欄位、列表列、長條列 ---------- */
+
+/* 輸入框聚焦時框線變 accent（光暈是 P2）；有錯誤的欄位維持 critical 框 */
+:root[data-theme="cyber"] [data-fx="field"] :is(input, textarea, select):focus:not([aria-invalid="true"]) {
+  border-color: var(--accent);
+}
+:root[data-theme="cyber"] :is([data-fx="row"], [data-fx="bar-row"]):hover {
+  background-color: var(--accent-wash);
+}
+
+/* ---------- 日曆格焦點環 ----------
+ * 焦點環（base 層的 2px accent-text、offset 2px）落在相鄰格上時，對最深的第 3 級（seq-700 淺青）只有約 1.2:1。
+ * 在環的外側墊一圈 --page 色（0 0 0 6px：環的外緣在 4px，所以 6px 才蓋得住）；z-index 讓它蓋在相鄰格上。
+ * box-shadow 畫在 outline 之下，環本身不受影響。 */
+:root[data-theme="cyber"] [data-fx="cal-cell"]:focus-visible {
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 0 0 6px var(--page);
+}
+
+/* ---------- toast（sonner 沒有 data-fx，用它自己的屬性）----------
+ * Toaster 在 cyber 傳 theme="dark"，sonner 的深色主題變數（特異度 0,2,0）會蓋掉 index.css 的 [data-sonner-toaster]（0,1,0）變成純黑底，
+ * 所以在這裡（0,3,0）把底色、框線、字色改回 token：surface-raised 底、1px line-strong 框、ink-1 字。 */
+:root[data-theme="cyber"] [data-sonner-toaster] {
+  --normal-bg: var(--surface-raised);
+  --normal-border: var(--line-strong);
+  --normal-text: var(--ink-1);
+}
+:root[data-theme="cyber"] [data-sonner-toast][data-styled="true"] {
+  border-radius: var(--r-md);
+}
+:root[data-theme="cyber"] [data-sonner-toast][data-styled="true"][data-type="error"] {
+  border-color: var(--critical);
+}
+:root[data-theme="cyber"] [data-sonner-toast][data-type="success"] [data-title]::before {
+  content: "[OK] " / "";
+  color: var(--good);
+  font-weight: 700;
+}
+:root[data-theme="cyber"] [data-sonner-toast][data-type="error"] [data-title]::before {
+  content: "[ERR] " / "";
+  color: var(--critical);
+  font-weight: 700;
+}
+
+/* ---------- 手機（< 768）：切角改小、掃描線更淡、底部分頁列的焦點環往內縮 ---------- */
+@media (max-width: 767px) {
+  /* 底部分頁列貼著螢幕下緣，offset 2px 的外環會有一邊落在螢幕外；cyber 改成內縮（標準主題維持原樣） */
+  :root[data-theme="cyber"] nav [data-fx="nav-item"]:focus-visible {
+    outline-offset: -2px;
+  }
+  :root[data-theme="cyber"] {
+    --scan-opacity: 0.015;
+  }
+  :root[data-theme="cyber"] [data-fx="panel-cut"] {
+    --pc-cut: var(--cut-sm);
+  }
 }
 
 /* ---------- 報表隔離（不是裝飾）----------
@@ -28,15 +410,20 @@
 }
 
 /* ---------- 列印還原（§8）：一定要放在檔尾 ----------
- * 即使使用者在 App 頁面（不是報表）按列印，也不能印出黑底或裝飾。
+ * 即使使用者在 App 頁面（不是報表）按列印，也不能印出黑底或裝飾；驗收是「cyber 列印 ≡ 標準淺色列印」。
  * 之後各期的裝飾（掃描線、點陣、光暈、切角、前綴）都要在這裡被還原。 */
 @media print {
   /* 只動 body，與標準淺色完全一樣：標準的 body 用 var(--page)／var(--ink-1)，html 自己沒有設色（底色由 body 傳給畫布），
    * token 在下面還原成標準淺色值，所以列印時 app 外殼繼承的文字色是 rgb(11,11,11)，不是 #000。 */
   :root[data-theme="cyber"] body {
     background: var(--page);
+    background-image: none;
     color: var(--ink-1);
     font-family: "Noto Sans TC", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  /* 掃描線不印 */
+  :root[data-theme="cyber"] body::after {
+    display: none;
   }
   /* 色彩與圓角 token 還原成標準淺色 :root 的值（cyber 列印 ≡ 標準淺色列印）。值由 cyberCss.test.ts 與 index.css 的 :root 比對；
    * 涵蓋 cyber 區塊的全部 token（扣掉 cyber 專用的光暈、掃描線、點陣、切角 token——那些之後各期的裝飾規則自己在這裡還原）。
@@ -76,5 +463,71 @@
     --r-sm: 6px;
     --r-md: 10px;
     --r-lg: 14px;
+  }
+  /* 所有掛了 data-fx 的元件（含它們的 ::before／::after）：all: revert-layer 把 cyber 的元件層樣式整個退回 Tailwind 層的值，
+   * 也就是標準主題的樣子。cyber.css 沒放進 @layer，revert-layer 會退到最後一個具名層（Tailwind utilities）。
+   * :not(#cyber-print) 把特異度拉高，壓過上面所有 :hover／:not(:disabled) 等較具體的螢幕規則。
+   * （data-fx 元素的標準樣式全來自 Tailwind 層，沒有無層級的樣式，所以這樣是安全的。） */
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx],
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx]::before,
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx]::after {
+    all: revert-layer;
+  }
+  /* 沒有 data-fx 的被選取元素：逐項退回標準值。
+   * 分段按鈕：按鈕本身（選中態的底色／內框／字色、最小寬度）、括號（按鈕的 ::before／::after、標籤 <span> 的 ::before／::after）與標籤 <span> 的 position */
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button {
+    background-color: revert-layer;
+    box-shadow: revert-layer;
+    color: revert-layer;
+    min-width: revert-layer;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button::before,
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button::after,
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button > span:first-child::before,
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button > span:first-child::after {
+    content: none;
+    display: none;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button > span:first-child {
+    position: revert-layer;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="check"] > svg {
+    display: revert-layer;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="field"] :is(input, textarea, select) {
+    border-color: revert-layer;
+  }
+  /* toast：Toaster 在 cyber 傳 theme="dark"（P0 的決定），標準淺色是 sonner 的淺色主題；這裡把 sonner 淺色主題的值寫回去（字面值） */
+  :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toaster] {
+    --normal-bg: #fff;
+    --normal-border: hsl(0, 0%, 93%);
+    --normal-text: hsl(0, 0%, 9%);
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toast][data-styled="true"] {
+    border-radius: 8px;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toast][data-styled="true"][data-type="error"] {
+    border-color: var(--normal-border);
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toast][data-styled="true"] [data-close-button] {
+    color: var(--ink-2);
+  }
+  /* 手機的關閉鈕是 index.css 的透明 44px 按鈕（無框），只有桌面才有底色與框線 */
+  @media (min-width: 768px) {
+    :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toast][data-styled="true"] [data-close-button] {
+      background: var(--surface-raised);
+      border-color: var(--line-strong);
+    }
+  }
+  @media (max-width: 767px) {
+    :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toast][data-styled="true"] [data-close-button] {
+      background-color: transparent;
+      background-position: 0 0;
+      border-color: currentColor;
+    }
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toast] [data-title]::before {
+    content: none;
+    display: none;
   }
 }

@@ -39,7 +39,7 @@ const FOCUS_ORDER: FieldName[] = ["date", "time", "shift", "equipment", "product
 const SEVERITY_OPTIONS: SegmentedOption<Severity>[] = SEVERITY_ORDER.map((s: Severity) => ({
   value: s,
   label: s,
-  prefix: <span aria-hidden="true" className={`h-4 w-1.5 rounded-full ${SEVERITY_BG[s]}`} />,
+  prefix: <span aria-hidden="true" data-fx="sev" data-severity={s} className={`h-4 w-1.5 rounded-full ${SEVERITY_BG[s]}`} />,
 }));
 
 function StatusGlyph({ status }: { status: Status }) {
@@ -573,6 +573,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
             )}
             <Button
               type="submit"
+              data-fx="submit"
               variant="primary"
               className="max-md:flex-1 md:min-w-36"
               disabled={submitting || photos.uploading}

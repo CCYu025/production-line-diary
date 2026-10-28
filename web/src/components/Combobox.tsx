@@ -78,7 +78,7 @@ export function Combobox({
   };
 
   return (
-    <div className="relative">
+    <div data-fx="combobox" className="relative">
       <input
         {...rest}
         id={baseId}
@@ -137,6 +137,7 @@ export function Combobox({
           ref={listRef}
           id={listboxId}
           role="listbox"
+          data-fx="pop"
           aria-label={rest["aria-label"] ?? "建議清單"}
           className="absolute inset-x-0 top-full z-30 mt-1 max-h-60 overflow-auto rounded-md border border-line-strong bg-surface-raised py-1 shadow-pop"
         >

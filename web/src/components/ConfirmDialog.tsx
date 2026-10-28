@@ -71,6 +71,8 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
         }}
       >
         <AlertDialogContent
+          // cyber 主題：永久刪除這類破壞性對話框要有 critical 斜紋上緣（只在 destructive 時輸出）
+          {...(pending?.destructive ? { "data-variant": "destructive" } : {})}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             returnFocusRef.current?.focus();

@@ -67,7 +67,7 @@ export function CalendarPage() {
       {isError ? (
         <ErrorState title="載入紀錄失敗" error={error} onRetry={() => void refetch()} retrying={isRefetching} />
       ) : (
-        <div className="rounded-lg border border-line bg-surface-raised p-2 md:p-5">
+        <div data-fx="panel" className="rounded-lg border border-line bg-surface-raised p-2 md:p-5">
           <div className="mb-3 flex items-center justify-between gap-2 px-1 md:mb-4">
             <h2 className="whitespace-nowrap text-base font-bold" aria-live="polite">
               {label}
@@ -124,6 +124,7 @@ export function CalendarPage() {
                         return (
                           <td key={di} className="p-0 align-top">
                             <div
+                              data-fx="cal-cell"
                               className={cn(cellBase, "border border-line bg-surface text-ink-2")}
                               aria-current={isToday ? "date" : undefined}
                               aria-label={`${dayLabel}，無紀錄`}
@@ -138,6 +139,7 @@ export function CalendarPage() {
                         <td key={di} className="p-0 align-top">
                           <button
                             type="button"
+                            data-fx="cal-cell"
                             data-step={step}
                             data-date={cell.date}
                             className={cn(

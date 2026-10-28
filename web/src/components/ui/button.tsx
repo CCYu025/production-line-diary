@@ -39,6 +39,10 @@ export function Button({ className, variant, size, asChild = false, type, ...pro
   const Comp = asChild ? Slot : "button";
   return (
     <Comp
+      // cyber 主題的掛勾（docs/cyber-theme-spec.md §3.3）：純屬性，放在 {...props} 之前，呼叫端可以覆寫。
+      // data-variant 沒傳 variant 時用 defaultVariants 的 secondary；asChild 時 Slot 會把它們傳給子元素。
+      data-fx="button"
+      data-variant={variant ?? "secondary"}
       className={cn(buttonVariants({ variant, size }), className)}
       {...(asChild ? {} : { type: type ?? "button" })}
       {...props}

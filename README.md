@@ -25,7 +25,7 @@
 - 分類/嚴重度/根本原因/處理狀態等欄位，讓資料照著 5W1H 補齊，而不只是流水帳
 - 設備對照設定：F3/F4/G5/G6/F7/F8 目前對應的品號/原料類別，換線時更新一次，
   之後新增紀錄選了設備會自動帶入
-- 介面主題：預設跟隨系統的淺色／深色；側欄（手機在「更多」面板）的「CYBER 介面」可切換成 Cyber-Terminal 深色主題，選擇會被記住（重新整理不會先閃一下標準主題，多個分頁會同步），列印報表與列印輸出不受影響（目前完成主題骨架與切換，視覺效果分期進行，規格見 [`docs/cyber-theme-spec.md`](docs/cyber-theme-spec.md)）
+- 介面主題：預設跟隨系統的淺色／深色；側欄（手機在「更多」面板）的「CYBER 介面」可切換成 Cyber-Terminal 深色主題，選擇會被記住（重新整理不會先閃一下標準主題，多個分頁會同步），列印報表與列印輸出不受影響（目前已有主題骨架與切換，以及靜態的 Cyber 外觀：切角面板、霓虹強調色、終端機風裝飾前綴、點陣背景與掃描線；動畫與開機效果分期進行，規格見 [`docs/cyber-theme-spec.md`](docs/cyber-theme-spec.md)）
 - 匯出為 Excel：維持跟原始 Excel 相容的 8 欄格式，方便還不用這個 App 的人也看得懂
 - 列印報表：選單日或日期範圍，產生報紙排版風格的報表畫面（襯線字體、分隔線、直角無陰影），
   每筆紀錄為邊欄式版面（上方刊頭條放時間・設備・分類，左側其餘事實、右側標題＝問題＋處理＋根本原因＋依張數排成格的編號照片，
@@ -88,7 +88,7 @@ web/                   前端（網址 /）：React 18 + Vite + TypeScript + Tai
   src/styles/          設計 token（淺色／深色／Cyber）、cyber.css（Cyber 主題的元件層樣式）
 docs/
   refactor-plan.md      重構計畫書（分階段工作包、必須保留的行為、進度表）
-  cyber-theme-spec.md   Cyber-Terminal 主題設計規格書（紅線、token、分期；P0 主題骨架已完成）
+  cyber-theme-spec.md   Cyber-Terminal 主題設計規格書（紅線、token、分期；P0 主題骨架已合併、P1 靜態外觀已實作）
 scripts/
   migrate.js            一次性搬遷腳本
   ensure-web-build.js   npm start 前置：web/dist 不存在或過期時自動建置（失敗時印錯誤並留下 .web-build-error.log，伺服器仍啟動並顯示「介面建置失敗」頁）

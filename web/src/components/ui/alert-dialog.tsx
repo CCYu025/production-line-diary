@@ -20,6 +20,7 @@ export function AlertDialogContent({
         )}
       />
       <AlertDialogPrimitive.Content
+        data-fx="dialog"
         className={cn(
           "fixed left-1/2 top-1/2 z-50 grid w-[calc(100vw-32px)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-4",
           "rounded-lg border border-line bg-surface-raised p-6 shadow-pop",
@@ -57,9 +58,23 @@ export function AlertDialogAction({
   variant,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Action> & { variant?: "primary" | "destructive" }) {
-  return <AlertDialogPrimitive.Action className={cn(buttonVariants({ variant: variant ?? "primary" }), className)} {...props} />;
+  return (
+    <AlertDialogPrimitive.Action
+      data-fx="button"
+      data-variant={variant ?? "primary"}
+      className={cn(buttonVariants({ variant: variant ?? "primary" }), className)}
+      {...props}
+    />
+  );
 }
 
 export function AlertDialogCancel({ className, ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Cancel>) {
-  return <AlertDialogPrimitive.Cancel className={cn(buttonVariants({ variant: "secondary" }), className)} {...props} />;
+  return (
+    <AlertDialogPrimitive.Cancel
+      data-fx="button"
+      data-variant="secondary"
+      className={cn(buttonVariants({ variant: "secondary" }), className)}
+      {...props}
+    />
+  );
 }

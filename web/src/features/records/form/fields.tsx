@@ -37,7 +37,7 @@ export function Field({ name, label, hint, error, review, className, children }:
   const hintId = `${id}-hint`;
   const describedBy = [error ? errorId : null, hint ? hintId : null].filter(Boolean).join(" ") || undefined;
   return (
-    <div className={cn("flex flex-col gap-1.5", className)} data-field={name} data-review={review ? "true" : undefined}>
+    <div data-fx="field" className={cn("flex flex-col gap-1.5", className)} data-field={name} data-review={review ? "true" : undefined}>
       <label htmlFor={id} className="text-sm font-bold text-ink-1">
         {label}
         {review ? <ReviewTag /> : null}
@@ -57,7 +57,10 @@ export function FieldError({ id, children }: { id?: string; children: React.Reac
   return (
     <p id={id} role="alert" className="flex items-start gap-1.5 text-sm font-medium text-critical">
       <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-      <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
+      {/* error-msg 只掛在訊息文字本身（ERR: 前綴用），不掛在含圖示的 <p> 上 */}
+      <span data-fx="error-msg" className="min-w-0 [overflow-wrap:anywhere]">
+        {children}
+      </span>
     </p>
   );
 }

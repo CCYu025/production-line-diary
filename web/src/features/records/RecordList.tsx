@@ -53,7 +53,7 @@ function openHandlers(onOpen: RecordListProps["onOpen"], id: number) {
 function RecordTable({ rows, sortDesc, onToggleSort, onOpen, onCopy }: RecordListProps) {
   const SortIcon = sortDesc ? ArrowDown : ArrowUp;
   return (
-    <div className="overflow-hidden rounded-lg border border-line bg-surface-raised">
+    <div data-fx="panel" className="overflow-hidden rounded-lg border border-line bg-surface-raised">
       <table className="w-full table-fixed border-collapse text-sm">
         <caption className="sr-only">紀錄列表（按 Enter 開啟詳情）</caption>
         <colgroup>
@@ -94,6 +94,7 @@ function RecordTable({ rows, sortDesc, onToggleSort, onOpen, onCopy }: RecordLis
           {rows.map((r) => (
             <tr
               key={r.id}
+              data-fx="row"
               data-record-id={r.id}
               tabIndex={0}
               {...openHandlers(onOpen, r.id)}
@@ -165,11 +166,17 @@ function RecordCards({ rows, onOpen }: RecordListProps) {
         <li key={r.id}>
           <button
             type="button"
+            data-fx="row"
             data-record-id={r.id}
             onClick={(e) => onOpen(r.id, e.currentTarget)}
             className="relative block w-full overflow-hidden rounded-lg border border-line bg-surface-raised py-3 pl-5 pr-3 text-left active:bg-surface"
           >
-            <span aria-hidden="true" className={cn("absolute inset-y-0 left-0 w-1.5", SEVERITY_BG[r.severity])} />
+            <span
+              aria-hidden="true"
+              data-fx="sev"
+              data-severity={r.severity}
+              className={cn("absolute inset-y-0 left-0 w-1.5", SEVERITY_BG[r.severity])}
+            />
             <span className="flex items-start justify-between gap-3">
               <span className="line-clamp-2 min-w-0 flex-1 break-words font-bold">{r.problem}</span>
               <StatusBadge status={r.status} className="shrink-0" />

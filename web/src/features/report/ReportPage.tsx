@@ -142,6 +142,7 @@ export function ReportPage() {
         />
       ) : (
         <form
+          data-fx="panel"
           className="mb-5 max-w-2xl rounded-lg border border-line bg-surface-raised p-4 print:hidden md:p-5"
           onSubmit={(e) => {
             e.preventDefault();
@@ -175,7 +176,7 @@ export function ReportPage() {
             </div>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button type="submit" variant="primary" disabled={isPending} aria-busy={isPending}>
+            <Button type="submit" data-fx="submit" variant="primary" disabled={isPending} aria-busy={isPending}>
               <FileText aria-hidden="true" />
               產生報表
             </Button>

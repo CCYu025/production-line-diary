@@ -25,7 +25,12 @@ const pill = "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bo
 export function SeverityBadge({ severity, compact, className, ...props }: BadgeProps & { severity: Severity }) {
   return (
     <span className={cn(pill, compact && "px-2", className)} data-severity={severity} {...props}>
-      <span aria-hidden="true" className={cn("h-3.5 w-1 shrink-0 rounded-full", SEVERITY_BG[severity])} />
+      <span
+        aria-hidden="true"
+        data-fx="sev"
+        data-severity={severity}
+        className={cn("h-3.5 w-1 shrink-0 rounded-full", SEVERITY_BG[severity])}
+      />
       <span className={cn(compact && "sr-only")}>{severity}</span>
     </span>
   );
