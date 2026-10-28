@@ -41,7 +41,7 @@ describe("cyber.css", () => {
     expect(findContentWithoutAltText(cyberCss)).toEqual([]);
   });
 
-  it("@media print 還原區段在檔尾：html／body 背景回白底、文字回黑色", () => {
+  it("@media print 還原區段在檔尾：html／body 底色與文字色用 var(--page)／var(--ink-1)（與標準淺色相同）", () => {
     const rules = parseCss(cyberCss);
     const printRules = rules.filter((r) => r.context.some((c) => /^@media\s+print\b/.test(c)));
     expect(printRules.length).toBeGreaterThan(0);
@@ -49,10 +49,10 @@ describe("cyber.css", () => {
     const lastScreen = rules.map((r) => r.context.length === 0).lastIndexOf(true);
     const firstPrint = rules.findIndex((r) => r.context.some((c) => /^@media\s+print\b/.test(c)));
     expect(firstPrint).toBeGreaterThan(lastScreen);
-    const restore = printRules.find((r) => r.selectors.includes(CYBER_SCOPE) && r.selectors.includes(`${CYBER_SCOPE} body`));
-    expect(restore, "要有 html／body 的還原規則").toBeDefined();
-    expect(restore!.declarations).toMatch(/background:\s*#fff\b/);
-    expect(restore!.declarations).toMatch(/color:\s*#000\b/);
+    const restore = findRule(cyberCss, `${CYBER_SCOPE} body`, true);
+    expect(restore, "要有 body 的還原規則").toBeDefined();
+    // 與標準淺色 body 相同：用語意 token（print 區段把 token 還原成標準淺色值），不寫死色碼
+    expect(declarationMap(restore!.declarations)).toMatchObject({ background: "var(--page)", color: "var(--ink-1)" });
   });
 });
 
@@ -82,13 +82,14 @@ describe("cyber.css 與報表／列印的隔離（值一律取自 index.css 標�
     expect(extras).toEqual([]);
   });
 
-  it("@media print：保留白底黑字與 body 字型還原", () => {
-    const rule = findRule(cyberCss, CYBER_SCOPE, true);
-    expect(rule).toBeDefined();
-    const both = parseCss(cyberCss).find((r) => r.context.length === 1 && r.selectors.length === 2 && r.selectors.includes(`${CYBER_SCOPE} body`));
-    expect(declarationMap(both!.declarations)).toMatchObject({ background: "#fff", color: "#000" });
-    const body = parseCss(cyberCss).find((r) => r.context.length === 1 && r.selectors.length === 1 && r.selectors[0] === `${CYBER_SCOPE} body`);
-    expect(declarationMap(body!.declarations)["font-family"]).toContain("Noto Sans TC");
+  it("@media print：保留與標準淺色 body 相同的底色／文字色（var(--page)／var(--ink-1)）與 body 字型還原", () => {
+    const body = findRule(cyberCss, `${CYBER_SCOPE} body`, true);
+    expect(body).toBeDefined();
+    const decls = declarationMap(body!.declarations);
+    expect(decls).toMatchObject({ background: "var(--page)", color: "var(--ink-1)" });
+    expect(decls["font-family"]).toContain("Noto Sans TC");
+    // 不寫死 #000／#fff（寫死的 #000 曾讓列印時 app 外殼的文字色跟標準淺色的 rgb(11,11,11) 不同）
+    expect(cyberCss.slice(cyberCss.indexOf("@media print"))).not.toMatch(/(?:background|color)\s*:\s*#(?:000|fff)\b/i);
   });
 });
 

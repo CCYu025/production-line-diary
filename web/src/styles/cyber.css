@@ -31,12 +31,11 @@
  * 即使使用者在 App 頁面（不是報表）按列印，也不能印出黑底或裝飾。
  * 之後各期的裝飾（掃描線、點陣、光暈、切角、前綴）都要在這裡被還原。 */
 @media print {
-  :root[data-theme="cyber"],
+  /* 只動 body，與標準淺色完全一樣：標準的 body 用 var(--page)／var(--ink-1)，html 自己沒有設色（底色由 body 傳給畫布），
+   * token 在下面還原成標準淺色值，所以列印時 app 外殼繼承的文字色是 rgb(11,11,11)，不是 #000。 */
   :root[data-theme="cyber"] body {
-    background: #fff;
-    color: #000;
-  }
-  :root[data-theme="cyber"] body {
+    background: var(--page);
+    color: var(--ink-1);
     font-family: "Noto Sans TC", "Segoe UI", system-ui, -apple-system, sans-serif;
   }
   /* 色彩與圓角 token 還原成標準淺色 :root 的值（cyber 列印 ≡ 標準淺色列印）。值由 cyberCss.test.ts 與 index.css 的 :root 比對；
