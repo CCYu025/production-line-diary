@@ -781,7 +781,7 @@ describe("cyber.css：P2 動畫守門", () => {
   it("FX-21 沒有獨立動畫：detail-body 本身不播 glitch，靠 DetailBody 以 key 重新掛載時 FX-20 的依序淡入重播；總視覺收尾 ≤ 350ms", () => {
     // detail-body 本身沒有 animation（glitch 只剩對話框 FX-22 與錯誤標題 FX-34 在用）
     expect(screenRules.filter((r) => r.selectors.some((x) => x === `${CYBER_SCOPE} [data-fx="detail-body"]`) && decl(r)["animation"] !== undefined)).toEqual([]);
-    const glitchUsers = animationDecls.filter((d) => d.prop === "animation" && d.value.split(/s+/).includes("cyber-glitch")).map((d) => d.rule.selectors.join());
+    const glitchUsers = animationDecls.filter((d) => d.prop === "animation" && d.value.split(/\s+/).includes("cyber-glitch")).map((d) => d.rule.selectors.join());
     expect(glitchUsers.sort()).toEqual([
       `${CYBER_SCOPE} [data-fx="error-title"]`,
     ]);
