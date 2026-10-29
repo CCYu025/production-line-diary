@@ -362,7 +362,7 @@ cyber 沒辦法在執行期改。做法：
 | FX-17 | 篩選 chip（`FilterBar.tsx`） | 新增 | **（P2 實作，僅新增）** 新增：`clip-path` 由左展開（`data-fx="chip"`，150ms）。**移除：直接消失，不做動畫**（移除動畫要延後卸載，與 FX-31 同一個判斷，見 P3） | 150ms | CSS |
 | FX-18 | 多選下拉、日期篩選（`MultiSelectFilter.tsx`、`DateRangeFilter.tsx`、`ui/popover.tsx`） | 開、關 | 從觸發按鈕的位置用 `clip-path` 由上往下展開；關閉反向 | 開 150ms／關 100ms | CSS（Radix `data-state`） |
 | FX-19 | 分段按鈕（`SegmentedControl.tsx`） | 選取 | **（P2 實作，已與括號常駐對齊）** 新選中項的 `[ ]` 括號各從外側 4px 收回定位並淡入（`cyber-bracket-l`／`cyber-bracket-r`，只動 `transform`／`opacity`）；括號最終位置與 P1 相同，沒有「滑過」其他選項的軌跡 | 150ms | CSS |
-| FX-20 | 詳情面板（`RecordDetailSheet.tsx`、`ui/sheet.tsx`） | 開、關 | 由右滑入（現有），加上左側框線一道青色掃描由上往下（`sheet` `data-side="right"` 的 `::after`，`--dur-slow`）；內容區塊（`detail-body` 的直接子元素）依序淡入（標題→標籤→事實格→處理→照片）；關閉時退場縮短為 100ms（`--dur-close`，Radix 等退場動畫結束才卸載） | 每段 200ms、間隔 30ms，延遲分 6 檔（第 8 個之後共用最後一檔），最晚一段收尾 ≤ 350ms | CSS |
+| FX-20 | 詳情面板（`RecordDetailSheet.tsx`、`ui/sheet.tsx`） | 開、關 | 由右滑入（現有），加上一條 2px 青色橫線由面板頂掃到底並淡出（`sheet` `data-side="right"` 的 `::after`，只動 `transform: translateY`，`--dur-slow`，不用 `clip-path`）；內容區塊（`detail-body` 的直接子元素）依序淡入（標題→標籤→事實格→處理→照片）；關閉時退場縮短為 100ms（`--dur-close`，Radix 等退場動畫結束才卸載） | 每段 200ms、間隔 30ms，延遲分 6 檔（第 8 個之後共用最後一檔），最晚一段收尾 ≤ 350ms | CSS |
 | FX-21 | 詳情面板上一筆／下一筆 | 點擊 | **（P2 裁定）改為「切換紀錄時重播 FX-20 的內容依序淡入」**：`DetailBody` 本來就以 `key={r.id}` 重新掛載，所以淡入自然重播；**不分前後方向、沒有獨立的 glitch**，沒有加任何 key，按鈕與標題列行為不變；內容全程可點 | 同 FX-20（最晚 ≤ 350ms） | CSS |
 | FX-22 | 確認對話框（`ConfirmDialog.tsx`、`ui/alert-dialog.tsx`） | 開啟 | 遮罩淡入（Tailwind 現有）；對話框 glitch 進場一次、退場 100ms 淡出；**破壞性的**（`data-variant="destructive"`，所有 destructive 確認框，不只永久刪除；**未新增 `data-fx-tone`**）加 4px `critical` 斜紋上緣（`::before`，不佔版面）與 `--glow-critical`。**進場 glitch 用 `transform`／`opacity`，不用 `clip-path`**（`clip-path` 會讓 hit-test 吞掉進場中的點擊，實測發現並修正）；對話框置中用的是 Tailwind 個別的 `translate` 屬性，與動畫的 `transform` 不衝突 | 開 200ms／關 100ms | CSS |
 | FX-23 | 表單輸入框（`fields.tsx`、`Combobox.tsx`） | 聚焦 | 框線變 `accent`＋`--glow-accent`（輸入框、文字區、下拉都有）。**`>` 提示符只有 `Combobox` 外層（`data-fx="combobox"` 的 `::before`，絕對定位在輸入框左側內距裡，不改版面）有**；其餘輸入框只有框線＋光暈（輸入框本身不能有偽元素） | 150ms | CSS |
@@ -439,7 +439,7 @@ cyber 沒辦法在執行期改。做法：
 | B2 | 螢幕閱讀器（NVDA 或 VoiceOver）在 cyber 與標準主題下，唸出的導覽、按鈕、KPI、列表內容**完全相同**（不會唸出 `>`、`//`、`[OK]`、亂碼數字） |
 | B3 | Tab 走過所有頁面：每個可聚焦元素的焦點環都完整可見（包含切角面板內的元素）；焦點環與背景對比 ≥ 3:1。**判定以「cyber 沒有比標準主題更差」為準**：側欄連結、列表列、趨勢柱的焦點環被 `overflow` 裁掉是標準主題既有狀況，不在 cyber 範圍。日曆格是例外，已處理：`:focus-visible` 時外側墊 `--page` 色外暈（`0 0 0 6px`）並 `z-index: 1`，環對相鄰第 3 級格的緊鄰像素 ≥ 3:1 |
 | B4 | 詳情面板、對話框、手機「更多」面板：焦點鎖定、Esc 關閉、焦點回到觸發元素，行為與標準主題相同（`CLAUDE.md` 手動驗證第 2 點全部重做一次） |
-| B5 | 沒有任何每秒超過 3 次的閃爍（逐一檢查 FX-08、22、24、29、34） |
+| B5 | 沒有任何每秒超過 3 次的閃爍（逐一檢查 FX-08、22、24、29、34）。B5 針對的是自發或循環的閃爍；使用者每次操作觸發的一次性動畫（含連點造成的重播）不受「每秒 3 次」限制 |
 
 ### 9.3 標準主題零差異
 
