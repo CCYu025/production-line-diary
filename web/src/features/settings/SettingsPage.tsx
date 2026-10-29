@@ -262,7 +262,7 @@ function EquipmentMapForm({ meta }: { meta: Meta }) {
         </Button>
         <p aria-live="polite" className="min-h-5 text-sm">
           {dirty ? (
-            <span className="inline-flex items-center gap-1.5 font-medium text-ink-1">
+            <span data-fx="unsaved" className="inline-flex items-center gap-1.5 font-medium text-ink-1">
               <span aria-hidden="true" className="size-2 rounded-full bg-warning" />
               有未儲存的變更
             </span>

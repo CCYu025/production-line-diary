@@ -176,7 +176,7 @@ function DetailBody({ r, position, repeatCount, hasPrev, hasNext, onPrev, onNext
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-4">
+      <div data-fx="detail-body" className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-4">
         <SheetTitle className="break-words text-xl leading-snug">{r.problem}</SheetTitle>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">

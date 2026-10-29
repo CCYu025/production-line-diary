@@ -7,7 +7,8 @@
  *   2. 所有 content 宣告都要加不朗讀的替代文字：content: "> " / "";
  *   3. 不針對 Tailwind class 寫選擇器；要掛外觀請在元件上加 data-fx 屬性。報表（ReportDocument）一律不加 data-fx。
  *   4. 檔尾的 @media print 要把所有裝飾還原。
- *   5. P1 是靜態外觀：沒有 @keyframes、沒有 transition（動態屬於 P2／P3）。
+ *   5. 動態（P2 起）：@keyframes 名稱一律 cyber- 前綴；只動 transform／opacity／clip-path／box-shadow；基礎樣式就是最終狀態
+ *      （減少動態效果時整個收斂成 P1 的靜態外觀）；規則見下方「P2 微互動與浮層」區段開頭。
  *
  * 載入順序：main.tsx 在 index.css 之後 import 這個檔案（沒放進 @layer，所以優先於 Tailwind 的 base／utility 層，
  * 不必比 Tailwind 的特異度）。也因此：焦點環不另外寫規則——index.css base 層的 :focus-visible 已是
@@ -334,9 +335,9 @@
   background-color: var(--surface-raised);
   border-color: var(--line-strong);
 }
-/* 永久刪除的確認對話框：上緣 2px critical 線（斜紋是 P2） */
+/* 永久刪除的確認對話框：critical 光暈（上緣的 4px 斜紋在 P2 區段的 ::before） */
 :root[data-theme="cyber"] [data-fx="dialog"][data-variant="destructive"] {
-  box-shadow: inset 0 2px 0 var(--critical), var(--shadow);
+  box-shadow: var(--glow-critical), var(--shadow);
 }
 
 /* ---------- 表單欄位、列表列、長條列 ---------- */
@@ -395,6 +396,577 @@
   }
   :root[data-theme="cyber"] [data-fx="panel-cut"] {
     --pc-cut: var(--cut-sm);
+  }
+}
+
+/* === P2 START === */
+/* =====================================================================================================
+ * P2 微互動與浮層（規格 §6.2：FX-05、06、10、15、17–24、29、30、33–37）
+ *
+ * 守則（cyberCss.test.ts 把關）：
+ *   - 動畫只動 transform、opacity、clip-path，外加光暈 box-shadow；不動 width／height／top／left／margin／padding，不造成版面位移。
+ *   - 「基礎樣式就是最終狀態」：@keyframes 只寫起始（from）影格，或明確寫出 to 回到基礎樣式；沒有 animation-fill-mode: backwards／both
+ *     （例外：依序淡入的延遲 backwards、退場動畫 forwards，見各處）。這樣 index.css 的 prefers-reduced-motion 全域規則
+ *     （duration 0.01ms、iteration-count 1）一收斂，畫面就等於 P1 的靜態外觀，不會停在 opacity 0 或被 clip 掉。
+ *   - 一律只播一次（iteration-count 1），只有 FX-33 骨架掃光與 FX-35 呼吸是循環（infinite 白名單）。
+ *   - 時間一律用 token（--dur-*、--ease-*、--stagger）；表格裡的特定時間定義在下面的 token 規則，不在 animation 簡寫裡寫死毫秒。
+ *   - 退場動畫上限 120ms（Radix 會等退場動畫結束才卸載，不能延後關閉）。
+ *   - pointer-events: none 只用在偽元素（裝飾蓋在可點元素上時，才不會吃掉點擊）；任何會被點的元素不加。
+ * ===================================================================================================== */
+
+/* P2 專用時間 token（只在 cyber 區塊用；標準主題不引用）。動態 token 本體（--dur-*、--ease-*、--stagger）在 index.css 的 :root。 */
+:root[data-theme="cyber"] {
+  --dur-close: 100ms; /* 退場（FX-18 關 100ms；Radix 會等它結束才卸載，上限 120ms） */
+  --dur-open: 200ms; /* 對話框 glitch 進場（FX-22）、燈箱展開（FX-36） */
+  --dur-type: 200ms; /* 打字式顯示（FX-24 錯誤訊息、FX-29 toast 標題） */
+  --dur-shake: 240ms; /* 驗證錯誤抖動（FX-24） */
+  --dur-err: 280ms; /* 錯誤狀態標題 glitch（FX-34） */
+  --dur-flash: 120ms; /* 〔復原〕按鈕閃一次（FX-30） */
+  --dur-ring: 300ms; /* 中央「新增」鈕擴散環（FX-06） */
+  --dur-sweep: 1.6s; /* 骨架掃光（FX-33，與標準骨架同頻率） */
+  --dur-breathe: 2.4s; /* 「未儲存」色條呼吸（FX-35） */
+  --stagger-sheet: 30ms; /* 詳情面板內容依序淡入的間隔（FX-20） */
+  --dur-sheet-item: 200ms; /* 詳情面板內容每一段淡入的時間：最後一段 5 × 30ms 延遲＋200ms ＝ 350ms，是切換紀錄時的總視覺收尾上限（FX-21） */
+  --ease-type: steps(8, end); /* 打字式顯示 */
+  --press-wash: color-mix(in srgb, var(--accent) 16%, transparent); /* 按壓時背景亮一下（FX-37） */
+  --press-wash-critical: color-mix(in srgb, var(--critical) 16%, transparent);
+}
+
+/* ---------- FX-37 按壓：button／submit／分段按鈕 :active 縮到 .97，背景用 inset 疊色亮一下（不改尺寸）---------- */
+/* transition 清單：沿用 Tailwind transition-colors 的顏色屬性（hover 的顏色變化維持原樣），另加 box-shadow（hover 光暈淡入）與 transform（按壓）。 */
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"]),
+:root[data-theme="cyber"] [data-fx="seg"] > button {
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-instant) var(--ease-out);
+}
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"]):active:not(:disabled),
+:root[data-theme="cyber"] [data-fx="seg"] > button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-variant="primary"]:active:not(:disabled) {
+  box-shadow: inset 0 0 0 1px var(--accent), var(--glow-accent), inset 0 0 0 999px var(--press-wash);
+}
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"]):is([data-variant="secondary"], [data-variant="ghost"]):active:not(:disabled) {
+  box-shadow: inset 0 0 0 999px var(--press-wash);
+}
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-variant="destructive"]:active:not(:disabled) {
+  box-shadow: inset 0 0 0 1px var(--critical), var(--glow-critical), inset 0 0 0 999px var(--press-wash-critical);
+}
+:root[data-theme="cyber"] :is([data-fx="button"], [data-fx="submit"])[data-fx-tone="danger"]:active:not(:disabled) {
+  box-shadow: var(--glow-critical), inset 0 0 0 999px var(--press-wash-critical);
+}
+:root[data-theme="cyber"] [data-fx="seg"] > button:active:not(:disabled) {
+  box-shadow: inset 0 0 0 999px var(--press-wash);
+}
+:root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"]:active:not(:disabled) {
+  box-shadow: inset 0 0 0 1px var(--accent), inset 0 0 0 999px var(--press-wash);
+}
+
+/* ---------- FX-19 分段按鈕：新選中項的 [ ] 括號各從外側 4px 收回定位，同時淡入 ----------
+ * 括號常駐、未選中的 visibility:hidden 佔位，所以「滑到新選項」做不到；改成新選中項（[aria-pressed="true"]）自己播一次收攏。
+ * 動畫只改 transform／opacity，括號的最終位置與 P1 相同。桌面括號是按鈕的 ::before／::after，手機是標籤 <span> 的偽元素。 */
+:root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"]::before,
+:root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"] > span:first-child::before {
+  animation: cyber-bracket-l var(--dur-fast) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"]::after,
+:root[data-theme="cyber"] [data-fx="seg"] > button[aria-pressed="true"] > span:first-child::after {
+  animation: cyber-bracket-r var(--dur-fast) var(--ease-out);
+}
+
+/* ---------- FX-05 側欄／圖示列：hover 時左側 2px 青線由上往下長出（用 ::after；::before 已被目前頁的 ">" 佔用）---------- */
+:root[data-theme="cyber"] aside [data-fx="nav-item"]:not([aria-current="page"]):hover:not(:disabled)::after {
+  content: "" / "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  transform-origin: top;
+  animation: cyber-nav-line var(--dur-fast) var(--ease-out);
+}
+
+/* ---------- FX-06 手機底部分頁列 ----------
+ * 目前頁的分頁上緣出現 2px 青線，由中間向兩側展開；中央「新增」圓鈕按下時外圈擴散一圈青色細環（:active 期間播放，手指放太早環被截斷可接受）。
+ * 分頁是 <a>／<button>，要 position: relative 偽元素才有定位基準（沒有版面影響）。 */
+:root[data-theme="cyber"] nav[aria-label="底部導覽"] [data-fx="nav-item"] {
+  position: relative;
+}
+:root[data-theme="cyber"] nav[aria-label="底部導覽"] [data-fx="nav-item"][aria-current="page"]::before {
+  content: "" / "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--accent);
+  transform-origin: center;
+  animation: cyber-tab-line var(--dur-fast) var(--ease-out);
+}
+/* 擴散環畫在「新增」連結自己的 ::after，位置對齊凸出的圓鈕（size-14＝56px、-top-6＝-24px、水平置中）。
+ * 不直接選圓鈕本身：圓鈕維持實心，P1 起 cyber.css 就不處理它（cyberCss.test.ts 斷言沒有 fab 的選擇器）。 */
+:root[data-theme="cyber"] nav[aria-label="底部導覽"] a[data-fx="nav-item"][href$="/records/new"]:active::after {
+  content: "" / "";
+  position: absolute;
+  left: 50%;
+  top: -24px;
+  width: 56px;
+  height: 56px;
+  margin-left: -28px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  animation: cyber-fab-ring var(--dur-ring) var(--ease-out);
+}
+
+/* ---------- FX-10 長條列：hover／焦點整列 accent-wash（hover 是 P1），長條加光暈 ----------
+ * 長條在 overflow-hidden 的軌道裡，光暈會被裁掉，所以 cyber 下軌道改 overflow: visible（長條寬度本來就 ≤ 軌道）。 */
+:root[data-theme="cyber"] [data-fx="bar-row"]:focus-visible {
+  background-color: var(--accent-wash);
+}
+:root[data-theme="cyber"] [data-fx="bar-track"] {
+  overflow: visible;
+}
+:root[data-theme="cyber"] [data-fx="bar"] {
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx="bar-row"]:is(:hover, :focus-visible) [data-fx="bar"] {
+  box-shadow: var(--glow-accent);
+}
+
+/* ---------- FX-15 日曆格 hover／焦點光暈 ----------
+ * 焦點時要保留 P1 的 0 0 0 6px var(--page) 外暈（焦點環對相鄰格的對比靠它），光暈疊在它外面；環本身是 base 層的 outline，不受影響。
+ * 格子本來就有 Tailwind 的 transition-[filter]（hover:brightness），這裡只補上 box-shadow。 */
+:root[data-theme="cyber"] button[data-fx="cal-cell"] {
+  transition-property: filter, box-shadow;
+}
+:root[data-theme="cyber"] button[data-fx="cal-cell"]:hover {
+  position: relative;
+  z-index: 1;
+  box-shadow: var(--glow-accent);
+}
+:root[data-theme="cyber"] button[data-fx="cal-cell"]:focus-visible {
+  box-shadow: 0 0 0 6px var(--page), var(--glow-accent);
+}
+
+/* ---------- FX-17 篩選 chip：新增時由左展開（移除要延後卸載，屬 JS，直接消失）---------- */
+:root[data-theme="cyber"] [data-fx="chip"] {
+  animation: cyber-chip-in var(--dur-fast) var(--ease-out);
+}
+
+/* ---------- FX-18 浮層：從觸發位置 clip-path 由上往下展開（開 150ms／關 100ms）----------
+ * 蓋掉 Tailwind 的 fade／zoom／slide（animate-in／animate-out）。退場用 forwards 停在收起的狀態，Radix 等它結束就卸載，不會有殘影。
+ * Combobox 的建議清單沒有 data-state，掛載時展開一次。data-side="top" 時從下往上。 */
+:root[data-theme="cyber"] [data-fx="pop"][data-state="open"],
+:root[data-theme="cyber"] [data-fx="pop"]:not([data-state]) {
+  animation: cyber-pop-down var(--dur-fast) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx="pop"][data-state="open"][data-side="top"] {
+  animation-name: cyber-pop-up;
+}
+:root[data-theme="cyber"] [data-fx="pop"][data-state="closed"] {
+  animation: cyber-pop-out-down var(--dur-close) var(--ease-in) forwards;
+}
+:root[data-theme="cyber"] [data-fx="pop"][data-state="closed"][data-side="top"] {
+  animation-name: cyber-pop-out-up;
+}
+
+/* ---------- FX-20 詳情面板（由右滑入是 Tailwind 現有的）----------
+ * 青色掃描線由上往下：2px 高、橫跨面板寬度的偽元素只用 transform（translateY 從面板頂到底，面板是 100dvh 全高，終點在面板內），結束時淡出。
+ * 基礎樣式 opacity 0（減少動態效果時整個不顯示）。
+ * 內容區塊（detail-body 的子元素）依序淡入：標題→標籤→事實格→處理→…，最多 6 段，每段延遲 30ms，每段 200ms（backwards 讓延遲期間維持透明；
+ * 最後一段 5 × 30 ＋ 200 ＝ 350ms 收尾）。
+ * 關閉時退場縮短為 --dur-close（原本 200ms，Radix 會等退場動畫結束才卸載）。 */
+:root[data-theme="cyber"] [data-fx="sheet"][data-side="right"]::after {
+  content: "" / "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  animation: cyber-sheet-sweep var(--dur-slow) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx="sheet"][data-state="closed"] {
+  animation-duration: var(--dur-close);
+}
+:root[data-theme="cyber"] [data-fx="detail-body"] > * {
+  animation: cyber-fade-in var(--dur-sheet-item) var(--ease-out) backwards;
+}
+:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(2) {
+  animation-delay: var(--stagger-sheet);
+}
+:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(n + 3):nth-child(-n + 4) {
+  animation-delay: calc(var(--stagger-sheet) * 2);
+}
+:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(n + 5):nth-child(-n + 6) {
+  animation-delay: calc(var(--stagger-sheet) * 3);
+}
+:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(7) {
+  animation-delay: calc(var(--stagger-sheet) * 4);
+}
+:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(n + 8) {
+  animation-delay: calc(var(--stagger-sheet) * 5);
+}
+
+/* ---------- FX-21 詳情面板上一筆／下一筆 ----------
+ * 沒有獨立動畫。切換紀錄時 DetailBody 本來就以 key={r.id} 重新掛載，所以上面 FX-20 的內容依序淡入自然重播，這就是切換回饋
+ * （不分前後方向；總視覺收尾 ≤ 350ms；內容全程可點）。沒有加任何 key，上一筆／下一筆按鈕與標題列的行為完全沒動。
+ * （開啟面板時內容區塊同樣是掛載，所以開啟與切換長得一樣。） */
+
+/* ---------- FX-22 確認對話框 ----------
+ * 遮罩淡入：遮罩是 Tailwind 的 fade-in／fade-out（沒有 data-fx），本來就有，不重寫。
+ * 對話框 glitch 進場一次（≤ 200ms，只用 transform／opacity，不用 clip-path：clip-path 會讓 hit-test 跟著被裁掉，進場中點不到按鈕）；退場 100ms 淡出。對話框置中用的是 Tailwind 的個別 translate 屬性，和這裡動的 transform 不衝突。
+ * 永久刪除（data-variant="destructive"）：4px 斜紋上緣（critical，偽元素，不佔版面）。 */
+:root[data-theme="cyber"] [data-fx="dialog"][data-state="open"] {
+  animation: cyber-glitch-tx var(--dur-open) var(--ease-glitch);
+}
+:root[data-theme="cyber"] [data-fx="dialog"][data-state="closed"] {
+  animation: cyber-fade-out var(--dur-close) var(--ease-in) forwards;
+}
+:root[data-theme="cyber"] [data-fx="dialog"][data-variant="destructive"]::before {
+  content: "" / "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  background: repeating-linear-gradient(135deg, var(--critical) 0, var(--critical) 6px, transparent 6px, transparent 12px);
+  pointer-events: none;
+}
+
+/* ---------- FX-23 輸入框聚焦、FX-24 驗證錯誤 ----------
+ * 聚焦：框線 accent（P1）＋ --glow-accent 淡入；Combobox 外層的 ">" 提示符亮起（輸入框不能有偽元素，所以畫在 combobox 外層，
+ * 絕對定位在輸入框左側 12px 內距裡，不改版面；其他欄位沒有 ">"）。
+ * 錯誤：aria-invalid 出現時抖動一次（translateX ±4px，3 下，240ms）＋ --glow-critical；ERR: 訊息 clip-path 打字式顯示（文字一開始就在 DOM）。 */
+:root[data-theme="cyber"] [data-fx="field"] :is(input, textarea, select) {
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx="field"] :is(input, textarea, select):focus:not([aria-invalid="true"]) {
+  box-shadow: var(--glow-accent);
+}
+:root[data-theme="cyber"] [data-fx="field"] :is(input, textarea, select)[aria-invalid="true"] {
+  box-shadow: var(--glow-critical);
+  animation: cyber-shake var(--dur-shake) linear;
+}
+:root[data-theme="cyber"] [data-fx="combobox"]::before {
+  content: ">" / "";
+  position: absolute;
+  left: 2px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-text);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx="combobox"]:focus-within::before {
+  opacity: 1;
+}
+:root[data-theme="cyber"] [data-fx="error-msg"] {
+  animation: cyber-type var(--dur-type) var(--ease-type);
+}
+
+/* ---------- FX-29 toast、FX-30〔復原〕----------
+ * 進場／退場的滑動是 sonner 自己的（transition），不覆寫。sonner 在減少動態效果時自己會把 toast 及其直接子元素的 animation／transition 關掉。
+ * 左側 3px 狀態色條：畫在 [data-content] 的 ::before（toast 本身的 ::before／::after 被 sonner 拿去做滑動與展開的感應區），
+ * toast 是 position: absolute，所以絕對定位的偽元素以 toast 為定位基準。標題打字式顯示；錯誤 toast 的紅框光暈淡出一次
+ * （swipe-out 時 sonner 有自己的 animation-name，不要蓋掉它）。
+ * 〔復原〕等動作鈕按下：accent 底＋光暈淡出一次（滑鼠按下後的焦點留到 toast 離開，所以不會被截斷；鍵盤聚焦不觸發）。 */
+:root[data-theme="cyber"] [data-sonner-toast][data-type] {
+  --tb: var(--accent);
+}
+:root[data-theme="cyber"] [data-sonner-toast][data-type="success"] {
+  --tb: var(--good);
+}
+:root[data-theme="cyber"] [data-sonner-toast][data-type="error"] {
+  --tb: var(--critical);
+}
+:root[data-theme="cyber"] [data-sonner-toast][data-type="warning"] {
+  --tb: var(--warning);
+}
+:root[data-theme="cyber"] [data-sonner-toast][data-styled="true"][data-type] [data-content]::before {
+  content: "" / "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--tb);
+}
+:root[data-theme="cyber"] [data-sonner-toast][data-styled="true"] [data-title] {
+  animation: cyber-type var(--dur-type) var(--ease-type);
+}
+:root[data-theme="cyber"] [data-sonner-toast][data-styled="true"][data-type="error"]:not([data-swipe-out="true"]) {
+  animation: cyber-flash-critical var(--dur-base) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-sonner-toast][data-styled="true"] [data-button]:is(:active, :focus:not(:focus-visible)) {
+  background-color: var(--accent);
+  color: var(--accent-ink);
+  animation: cyber-flash-accent var(--dur-flash) var(--ease-out);
+}
+
+/* ---------- FX-33 骨架：line 色上的 ▒ 紋理（靜態斜紋）＋左到右掃光（偽元素 translateX，1.6s 循環）----------
+ * 標準骨架的整塊 opacity 脈動（animate-skeleton）在 cyber 下關掉，改成掃光。掃光的基礎位置在左側外面（被 overflow:hidden 裁掉），
+ * 所以減少動態效果時（iteration-count 1、0.01ms）停在看不見的位置。 */
+:root[data-theme="cyber"] [data-fx="skeleton"] {
+  position: relative;
+  overflow: hidden;
+  animation: none;
+  background-image: repeating-linear-gradient(45deg, var(--line-strong) 0, var(--line-strong) 1px, transparent 1px, transparent 4px);
+}
+:root[data-theme="cyber"] [data-fx="skeleton"]::after {
+  content: "" / "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 22%, transparent), transparent);
+  transform: translateX(-100%);
+  animation: cyber-skeleton-sweep var(--dur-sweep) linear infinite;
+}
+
+/* ---------- FX-34 錯誤狀態：標題 glitch 一次（280ms）---------- */
+:root[data-theme="cyber"] [data-fx="error-title"] {
+  animation: cyber-glitch var(--dur-err) var(--ease-glitch);
+}
+
+/* ---------- FX-35 設備對照設定：「未儲存」提示左側 serious 色條緩慢呼吸（2.4s 循環，透明度 1 ↔ .35，不是閃爍）---------- */
+:root[data-theme="cyber"] [data-fx="unsaved"] {
+  position: relative;
+}
+:root[data-theme="cyber"] [data-fx="unsaved"]::before {
+  content: "" / "";
+  position: absolute;
+  left: -8px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--serious);
+  animation: cyber-breathe var(--dur-breathe) ease-in-out infinite;
+}
+
+/* ---------- FX-36 燈箱：開啟像 CRT 開機（200ms）：scaleY 由 .96 展開並淡入，不用 clip-path（點擊要全程可用）。
+ * 切換照片時 <img> 是同一個元素（只換 src，不會重新掛載），所以不做交叉淡化（見回報）。---------- */
+:root[data-theme="cyber"] [data-fx="lightbox"][data-state="open"] {
+  animation: cyber-crt-open var(--dur-open) var(--ease-out);
+}
+
+/* ---------- 減少動態效果 ----------
+ * index.css 的全域規則把 duration 壓到 0.01ms、iteration-count 壓到 1，但沒有動 animation-delay；
+ * 依序淡入用 backwards 填色，延遲還在的話會多等一下才顯示，所以延遲也歸零。 */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="cyber"] *,
+  :root[data-theme="cyber"] *::before,
+  :root[data-theme="cyber"] *::after {
+    animation-delay: 0ms !important;
+  }
+}
+
+/* ---------- keyframes（名稱一律 cyber- 前綴）---------- */
+@keyframes cyber-bracket-l {
+  from {
+    transform: translateX(-4px);
+    opacity: 0;
+  }
+}
+@keyframes cyber-bracket-r {
+  from {
+    transform: translateX(4px);
+    opacity: 0;
+  }
+}
+@keyframes cyber-nav-line {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes cyber-tab-line {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes cyber-fab-ring {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+@keyframes cyber-chip-in {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes cyber-pop-down {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes cyber-pop-up {
+  from {
+    clip-path: inset(100% 0 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes cyber-pop-out-down {
+  from {
+    clip-path: inset(0 0 0 0);
+  }
+  to {
+    clip-path: inset(0 0 100% 0);
+  }
+}
+@keyframes cyber-pop-out-up {
+  from {
+    clip-path: inset(0 0 0 0);
+  }
+  to {
+    clip-path: inset(100% 0 0 0);
+  }
+}
+@keyframes cyber-sheet-sweep {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  to {
+    transform: translateY(calc(100dvh - 2px));
+    opacity: 0;
+  }
+}
+@keyframes cyber-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes cyber-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes cyber-glitch {
+  from {
+    clip-path: inset(30% 0 45% 0);
+    transform: translateX(-6px);
+    opacity: 0.6;
+  }
+  35% {
+    clip-path: inset(8% 0 62% 0);
+    transform: translateX(5px);
+    opacity: 1;
+  }
+  70% {
+    clip-path: inset(58% 0 10% 0);
+    transform: translateX(-3px);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes cyber-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  16% {
+    transform: translateX(-4px);
+  }
+  33% {
+    transform: translateX(4px);
+  }
+  50% {
+    transform: translateX(-4px);
+  }
+  66% {
+    transform: translateX(4px);
+  }
+  83% {
+    transform: translateX(-2px);
+  }
+}
+@keyframes cyber-type {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes cyber-flash-critical {
+  from {
+    box-shadow: var(--glow-critical);
+  }
+}
+@keyframes cyber-flash-accent {
+  from {
+    box-shadow: var(--glow-accent);
+  }
+}
+@keyframes cyber-skeleton-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes cyber-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes cyber-crt-open {
+  from {
+    transform: scaleY(0.96);
+    opacity: 0;
+  }
+}
+@keyframes cyber-glitch-tx {
+  from {
+    transform: translateX(-4px);
+    opacity: 0.5;
+  }
+  35% {
+    transform: translateX(4px);
+    opacity: 1;
+  }
+  70% {
+    transform: translateX(-2px);
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
   }
 }
 
@@ -473,6 +1045,23 @@
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx]::after {
     all: revert-layer;
   }
+  /* P2：cyber 的動畫與 transition 全部退回標準值。all: revert-layer 只涵蓋有 data-fx 的元素；分段按鈕、欄位輸入框、詳情面板的內容區塊
+   * 沒有 data-fx，所以這裡對所有元素與偽元素再退一次。用 revert-layer 而不是 none：標準主題本來就有的 Tailwind 動畫與 transition
+   * （transition-colors、animate-in、animate-spin…）列印時要保留原樣，cyber 列印才會與標準淺色的計算後樣式逐項相同；
+   * cyber 自己加的動畫在標準層沒有對應值，會退成 none。
+   * 例外 sonner（toast）整棵子樹：它的 transition 與 animation 是 sonner 在執行時插入的「無層級」樣式，revert-layer 會連它自己的一起退掉
+   * （計算後樣式會與標準不同），所以改在下面對 toast 只清掉 cyber 加的 animation（標準的 toast 沒有 animation，值就是 none）。 */
+  :root[data-theme="cyber"]:not(#cyber-print) *:not([data-sonner-toaster], [data-sonner-toaster] *),
+  :root[data-theme="cyber"]:not(#cyber-print) *:not([data-sonner-toaster], [data-sonner-toaster] *)::before,
+  :root[data-theme="cyber"]:not(#cyber-print) *:not([data-sonner-toaster], [data-sonner-toaster] *)::after {
+    animation: revert-layer;
+    transition: revert-layer;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toaster] *,
+  :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toaster] *::before,
+  :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toaster] *::after {
+    animation: none;
+  }
   /* 沒有 data-fx 的被選取元素：逐項退回標準值。
    * 分段按鈕：按鈕本身（選中態的底色／內框／字色、最小寬度）、括號（按鈕的 ::before／::after、標籤 <span> 的 ::before／::after）與標籤 <span> 的 position */
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button {
@@ -496,6 +1085,7 @@
   }
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx="field"] :is(input, textarea, select) {
     border-color: revert-layer;
+    box-shadow: revert-layer;
   }
   /* toast：Toaster 在 cyber 傳 theme="dark"（P0 的決定），標準淺色是 sonner 的淺色主題；這裡把 sonner 淺色主題的值寫回去（字面值） */
   :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toaster] {
@@ -526,7 +1116,8 @@
       border-color: currentColor;
     }
   }
-  :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toast] [data-title]::before {
+  :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toast] [data-title]::before,
+  :root[data-theme="cyber"]:not(#cyber-print) [data-sonner-toast] [data-content]::before {
     content: none;
     display: none;
   }

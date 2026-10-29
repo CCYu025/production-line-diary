@@ -176,6 +176,7 @@ export function FilterBar({
               type="button"
               onClick={c.remove}
               aria-label={`移除 ${c.label}`}
+              data-fx="chip"
               className="inline-flex min-h-11 items-center gap-1 rounded-full border border-accent bg-accent-wash py-0.5 pl-3 pr-2 text-sm text-ink-1 hover:bg-surface md:min-h-8"
             >
               <span className="max-w-[16rem] truncate">{c.label}</span>
