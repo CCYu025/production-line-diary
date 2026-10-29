@@ -781,9 +781,8 @@ describe("cyber.css：P2 動畫守門", () => {
   it("FX-21 沒有獨立動畫：detail-body 本身不播 glitch，靠 DetailBody 以 key 重新掛載時 FX-20 的依序淡入重播；總視覺收尾 ≤ 350ms", () => {
     // detail-body 本身沒有 animation（glitch 只剩對話框 FX-22 與錯誤標題 FX-34 在用）
     expect(screenRules.filter((r) => r.selectors.some((x) => x === `${CYBER_SCOPE} [data-fx="detail-body"]`) && decl(r)["animation"] !== undefined)).toEqual([]);
-    const glitchUsers = animationDecls.filter((d) => d.prop === "animation" && /cyber-glitch/.test(d.value)).map((d) => d.rule.selectors.join());
+    const glitchUsers = animationDecls.filter((d) => d.prop === "animation" && d.value.split(/s+/).includes("cyber-glitch")).map((d) => d.rule.selectors.join());
     expect(glitchUsers.sort()).toEqual([
-      `${CYBER_SCOPE} [data-fx="dialog"][data-state="open"]`,
       `${CYBER_SCOPE} [data-fx="error-title"]`,
     ]);
     // 不分前後方向
@@ -822,6 +821,20 @@ describe("cyber.css：P2 動畫守門", () => {
     expect(ring["pointer-events"]).toBe("none"); // 偽元素蓋在相鄰分頁上，不能吃點擊
     expect(ring["border-radius"]).toBe("50%");
     expect(ring["opacity"]).toBe("0");
+  });
+
+  it("會被點擊的浮層（dialog／lightbox／sheet）進場動畫不用 clip-path：clip-path 會讓 hit-test 跟著被裁掉，動畫期間點不到按鈕", () => {
+    const clipKeyframes = new Set(frames.filter((r) => decl(r)["clip-path"] !== undefined).map(keyframesName));
+    expect(clipKeyframes.size).toBeGreaterThan(0);
+    for (const fx of ["dialog", "lightbox", "sheet"]) {
+      const used = animationDecls
+        .filter((d) => d.rule.selectors.some((q) => q.includes(`[data-fx="${fx}"]`) && !/::(before|after)$/.test(q)))
+        .flatMap((d) => d.value.split(/[\s,]+/))
+        .filter((t) => t.startsWith("cyber-"));
+      for (const n of used) expect(clipKeyframes.has(n), `${fx} 引用了含 clip-path 的 ${n}`).toBe(false);
+    }
+    expect(clipKeyframes.has("cyber-glitch")).toBe(true); // 只剩不可點的錯誤標題在用
+    expect(clipKeyframes.has("cyber-crt-open")).toBe(false);
   });
 
   it("P2 新增的 data-fx 掛勾都在清單內（chip、bar-track、detail-body、lightbox、error-title、unsaved）", () => {

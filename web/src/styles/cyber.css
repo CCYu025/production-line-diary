@@ -624,10 +624,10 @@
 
 /* ---------- FX-22 確認對話框 ----------
  * 遮罩淡入：遮罩是 Tailwind 的 fade-in／fade-out（沒有 data-fx），本來就有，不重寫。
- * 對話框 glitch 進場一次（≤ 200ms）；退場 100ms 淡出。對話框置中用的是 Tailwind 的個別 translate 屬性，和這裡動的 transform 不衝突。
+ * 對話框 glitch 進場一次（≤ 200ms，只用 transform／opacity，不用 clip-path：clip-path 會讓 hit-test 跟著被裁掉，進場中點不到按鈕）；退場 100ms 淡出。對話框置中用的是 Tailwind 的個別 translate 屬性，和這裡動的 transform 不衝突。
  * 永久刪除（data-variant="destructive"）：4px 斜紋上緣（critical，偽元素，不佔版面）。 */
 :root[data-theme="cyber"] [data-fx="dialog"][data-state="open"] {
-  animation: cyber-glitch var(--dur-open) var(--ease-glitch);
+  animation: cyber-glitch-tx var(--dur-open) var(--ease-glitch);
 }
 :root[data-theme="cyber"] [data-fx="dialog"][data-state="closed"] {
   animation: cyber-fade-out var(--dur-close) var(--ease-in) forwards;
@@ -756,7 +756,7 @@
   animation: cyber-breathe var(--dur-breathe) ease-in-out infinite;
 }
 
-/* ---------- FX-36 燈箱：開啟由中心水平線展開（像 CRT 開機，200ms）。
+/* ---------- FX-36 燈箱：開啟像 CRT 開機（200ms）：scaleY 由 .96 展開並淡入，不用 clip-path（點擊要全程可用）。
  * 切換照片時 <img> 是同一個元素（只換 src，不會重新掛載），所以不做交叉淡化（見回報）。---------- */
 :root[data-theme="cyber"] [data-fx="lightbox"][data-state="open"] {
   animation: cyber-crt-open var(--dur-open) var(--ease-out);
@@ -949,10 +949,25 @@
 }
 @keyframes cyber-crt-open {
   from {
-    clip-path: inset(49% 0 49% 0);
+    transform: scaleY(0.96);
+    opacity: 0;
+  }
+}
+@keyframes cyber-glitch-tx {
+  from {
+    transform: translateX(-4px);
+    opacity: 0.5;
+  }
+  35% {
+    transform: translateX(4px);
+    opacity: 1;
+  }
+  70% {
+    transform: translateX(-2px);
   }
   to {
-    clip-path: inset(0 0 0 0);
+    transform: translateX(0);
+    opacity: 1;
   }
 }
 
