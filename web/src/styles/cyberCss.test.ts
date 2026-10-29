@@ -837,6 +837,17 @@ describe("cyber.css：P2 動畫守門", () => {
     expect(clipKeyframes.has("cyber-crt-open")).toBe(false);
   });
 
+  it("FX-20 掃描線只動 transform（translateY 到面板底）並淡出，不含 clip-path；偽元素 pointer-events: none、基礎 opacity 0、沒有 will-change", () => {
+    const own = frames.filter((r) => keyframesName(r) === "cyber-sheet-sweep");
+    expect(own.length).toBeGreaterThanOrEqual(2);
+    for (const r of own) expect(Object.keys(decl(r)).filter((k) => !["transform", "opacity"].includes(k))).toEqual([]);
+    expect(own.some((r) => /translateY\(calc\(100dvh - 2px\)\)/.test(decl(r)["transform"] ?? ""))).toBe(true);
+    expect(decl(own[own.length - 1]!)["opacity"]).toBe("0");
+    const rule = decl(screenRule(`${CYBER_SCOPE} [data-fx="sheet"][data-side="right"]::after`)!);
+    expect(rule).toMatchObject({ height: "2px", opacity: "0", "pointer-events": "none" });
+    expect(stripped).not.toMatch(/will-change/);
+  });
+
   it("P2 新增的 data-fx 掛勾都在清單內（chip、bar-track、detail-body、lightbox、error-title、unsaved）", () => {
     for (const v of ["chip", "bar-track", "detail-body", "lightbox", "error-title", "unsaved"]) expect(stripped, v).toContain(`[data-fx="${v}"]`);
   });

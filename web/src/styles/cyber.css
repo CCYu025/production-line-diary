@@ -578,7 +578,7 @@
 }
 
 /* ---------- FX-20 詳情面板（由右滑入是 Tailwind 現有的）----------
- * 框線一道青色掃描由上往下：偽元素蓋在左側框線上，用 clip-path 開一個會移動的窗口（面板沒有 overflow，所以不靠 translate 加裁切）。
+ * 青色掃描線由上往下：2px 高、橫跨面板寬度的偽元素只用 transform（translateY 從面板頂到底，面板是 100dvh 全高，終點在面板內），結束時淡出。
  * 基礎樣式 opacity 0（減少動態效果時整個不顯示）。
  * 內容區塊（detail-body 的子元素）依序淡入：標題→標籤→事實格→處理→…，最多 6 段，每段延遲 30ms，每段 200ms（backwards 讓延遲期間維持透明；
  * 最後一段 5 × 30 ＋ 200 ＝ 350ms 收尾）。
@@ -587,9 +587,9 @@
   content: "" / "";
   position: absolute;
   top: 0;
-  bottom: 0;
-  left: -1px;
-  width: 2px;
+  left: 0;
+  right: 0;
+  height: 2px;
   background: var(--accent);
   opacity: 0;
   pointer-events: none;
@@ -848,16 +848,15 @@
 }
 @keyframes cyber-sheet-sweep {
   from {
-    clip-path: inset(0 0 100% 0);
+    transform: translateY(0);
     opacity: 1;
   }
-  50% {
-    clip-path: inset(40% 0 40% 0);
+  80% {
     opacity: 1;
   }
   to {
-    clip-path: inset(100% 0 0 0);
-    opacity: 1;
+    transform: translateY(calc(100dvh - 2px));
+    opacity: 0;
   }
 }
 @keyframes cyber-fade-in {
