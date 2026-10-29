@@ -6,6 +6,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useFx, useStagger } from "@/lib/fx";
 import { useRecords } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { useDrillTo } from "@/lib/drill";
@@ -23,6 +24,9 @@ import {
   WEEKDAY_NAMES,
   type YearMonth,
 } from "./calendarModel";
+
+/** 月曆最多 6 列（對角線序號 = 列 + 欄，最大 5 + 6） */
+const WEEKS_MAX = 6;
 
 const cellBase =
   "relative flex h-full min-h-[3.25rem] w-full flex-col rounded-sm p-1 text-left md:min-h-[5.5rem] md:rounded-md md:p-2";
@@ -56,6 +60,16 @@ export function CalendarPage() {
   const weeks = React.useMemo(() => buildMonthGrid(month), [month]);
   const today = todayIso();
   const label = `${month.year} 年 ${month.month} 月`;
+
+  // FX-14：格子沿對角線（列＋欄）依序淡入，換月時整張再水平 glitch 一次。cyber 且允許動態時才有屬性；
+  // 對角線最多 6 列 + 7 欄 = 12 道，間隔 10ms（CSS），總長遠低於 400ms 上限，所以上限用 20 即可
+  const fx = useFx();
+  const diagonal = useStagger(WEEKS_MAX + WEEKDAYS.length, 20);
+  const shownLabel = React.useRef<string | null>(null);
+  const monthChanged = shownLabel.current !== null && shownLabel.current !== label;
+  React.useEffect(() => {
+    shownLabel.current = label;
+  }, [label]);
 
   // 點格子 → 紀錄列表，先清掉其他條件，只帶入那一天（from = to）；與儀表板共用 lib/drill.ts
   const drill = useDrillTo();
@@ -95,7 +109,12 @@ export function CalendarPage() {
               <Skeleton className="h-[26rem] w-full" />
             </div>
           ) : (
-            <table className="w-full table-fixed border-separate border-spacing-0.5 md:border-spacing-1.5" aria-label={label}>
+            <table
+              key={fx ? label : undefined}
+              {...(fx && monthChanged ? { "data-fx-in": "glitch" } : {})}
+              className="w-full table-fixed border-separate border-spacing-0.5 md:border-spacing-1.5"
+              aria-label={label}
+            >
               <thead>
                 <tr>
                   {WEEKDAYS.map((d, i) => (
@@ -125,6 +144,7 @@ export function CalendarPage() {
                           <td key={di} className="p-0 align-top">
                             <div
                               data-fx="cal-cell"
+                              {...diagonal(wi + di)}
                               className={cn(cellBase, "border border-line bg-surface text-ink-2")}
                               aria-current={isToday ? "date" : undefined}
                               aria-label={`${dayLabel}，無紀錄`}
@@ -142,6 +162,7 @@ export function CalendarPage() {
                             data-fx="cal-cell"
                             data-step={step}
                             data-date={cell.date}
+                            {...diagonal(wi + di)}
                             className={cn(
                               cellBase,
                               "cursor-pointer transition-[filter] hover:brightness-110",

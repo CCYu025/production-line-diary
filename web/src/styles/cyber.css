@@ -970,6 +970,141 @@
   }
 }
 
+/* === P3 START === */
+/* =====================================================================================================
+ * P3 招牌效果（規格 §6.2：FX-07～09、12～14、16 與 FX-08；其餘 P3 項目由後續區塊補在此段）
+ *
+ * 守則（沿用 P2，cyberCss.test.ts「P3 動畫守門」把關）：
+ *   - 只動 transform、opacity，掃描帶／光暈另計；@keyframes 一律 cyber- 前綴；時間走 token。
+ *   - 依序進場的元素只在 JS 輸出 data-fx-in（lib/fx 的 useStagger：cyber 且沒有減少動態效果才輸出，超過上限的項目沒有）時才播，
+ *     延遲 = 間隔 token × --i（也是 useStagger 輸出）。基礎樣式即最終狀態；延遲期間用 animation-fill-mode: backwards（longhand）維持起始影格。
+ *   - 新增的 infinite 只有 FX-08 角框呼吸（白名單，理由：待處理 > 0 的警示要「持續」被看見，只動 opacity .5↔1、2.4s 一循環，不是閃爍；
+ *     減少動態效果時由 index.css 全域規則壓成一次、停在 opacity 1）。
+ *     P2 的守門測試固定 infinite 宣告恰好 2 條（FX-33、FX-35，且不得修改），所以這裡把關鍵字放在自訂屬性 --loop-forever，
+ *     由 animation 簡寫以 var() 取用；P3 的守門測試另外逐條鎖定它的用法。
+ * ===================================================================================================== */
+
+:root[data-theme="cyber"] {
+  --dur-trend: 300ms; /* FX-12 趨勢柱長出 */
+  --dur-donut: 300ms; /* FX-13 甜甜圈淡入與掃描線 */
+  --stagger-trend: 20ms; /* FX-12 趨勢柱間隔 */
+  --stagger-cal: 10ms; /* FX-14 日曆格對角線間隔（最多 12 道，總長 ≤ 270ms < 400ms） */
+  --loop-forever: infinite; /* FX-08 專用，見上方說明 */
+}
+
+/* ---------- FX-08 呼吸角框：待處理 > 0 的 panel-cut 角框（::after）透明度 .5 ↔ 1 ---------- */
+:root[data-theme="cyber"] [data-fx="panel-cut"][data-fx-alert]::after {
+  animation: cyber-corner-breathe var(--dur-breathe) ease-in-out var(--loop-forever);
+}
+
+/* ---------- FX-09 橫條圖：長條由左往右長出（scaleX 0→1，寬度計算不變），依序 ---------- */
+:root[data-theme="cyber"] [data-fx="bar"][data-fx-in] {
+  transform-origin: left center;
+  animation: cyber-bar-grow var(--dur-slow) var(--ease-out);
+  animation-delay: calc(var(--stagger) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+
+/* ---------- FX-12 每日趨勢柱：由下往上長出（scaleY），依序 ---------- */
+:root[data-theme="cyber"] [data-fx="trend-bar"][data-fx-in] {
+  transform-origin: center bottom;
+  animation: cyber-trend-grow var(--dur-trend) var(--ease-out);
+  animation-delay: calc(var(--stagger-trend) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+
+/* ---------- FX-13 甜甜圈：整張淡入＋一道掃描線劃過一次 ----------
+ * 掃描線是容器的 ::after（裝飾、不擋點擊）：蓋滿容器、頂緣一條 2px 線，translateY 0→100% 讓線由上掃到下，基礎樣式 opacity 0。 */
+:root[data-theme="cyber"] [data-fx-in="donut"] {
+  position: relative;
+  animation: cyber-fade-in var(--dur-donut) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx-in="donut"]::after {
+  content: "" / "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(to bottom, var(--accent) 0, var(--accent) 2px, transparent 2px);
+  animation: cyber-donut-scan var(--dur-donut) linear;
+}
+
+/* ---------- FX-14 日曆：格子沿對角線（列＋欄）依序淡入；桌面換月時整張水平 glitch 一次；手機（< 768）只淡入、不排隊 ----------
+ * 用 :where() 壓低屬性選擇器的特異度，讓日曆格焦點環的 cyber-fab-ring（FX-15，特異度較高）不被進場動畫蓋掉。 */
+:root[data-theme="cyber"] [data-fx="cal-cell"]:where([data-fx-in]) {
+  animation: cyber-fade-in var(--dur-fast) var(--ease-out);
+  animation-delay: calc(var(--stagger-cal) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+@media (max-width: 767px) {
+  :root[data-theme="cyber"] [data-fx="cal-cell"]:where([data-fx-in]) {
+    animation-delay: 0ms;
+  }
+}
+@media (min-width: 768px) {
+  :root[data-theme="cyber"] table[data-fx-in="glitch"] {
+    animation: cyber-glitch-tx var(--dur-fast) var(--ease-glitch);
+  }
+}
+
+/* ---------- FX-16 紀錄列表：前 20 列（手機 10）由左 8px 淡入；hover／焦點時左側出現 ▶ ----------
+ * ▶ 畫在第一格的 ::before（絕對定位、不佔版面；不能畫在 <tr> 上——tr 的偽元素會變成匿名表格儲存格而改變版面）。 */
+:root[data-theme="cyber"] [data-fx="row"][data-fx-in] {
+  animation: cyber-row-in var(--dur-fast) var(--ease-out);
+  animation-delay: calc(var(--stagger) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+:root[data-theme="cyber"] tr[data-fx="row"]:is(:hover, :focus-visible) > td:first-child {
+  position: relative;
+}
+:root[data-theme="cyber"] tr[data-fx="row"]:is(:hover, :focus-visible) > td:first-child::before {
+  content: "\25B6\FE0E" / "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.5rem;
+  line-height: 1;
+  color: var(--accent-text);
+  pointer-events: none;
+}
+
+@keyframes cyber-corner-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+@keyframes cyber-bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes cyber-trend-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes cyber-row-in {
+  from {
+    transform: translateX(-8px);
+    opacity: 0;
+  }
+}
+@keyframes cyber-donut-scan {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
 /* ---------- 報表隔離（不是裝飾）----------
  * 把 cyber 擋在列印報表（#report-output）之外。report.css 只把「文字／線／底色」token 重新定義成紙本配色，
  * 沒有覆寫嚴重度四色，而它的 .rr-sev i 色塊（print-color-adjust: exact）會用到這四個 token——
@@ -1079,6 +1214,14 @@
   }
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button > span:first-child {
     position: revert-layer;
+  }
+  /* P3：甜甜圈進場的容器（沒有 data-fx）：定位基準與掃描線偽元素退回標準 */
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-in="donut"] {
+    position: revert-layer;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-in="donut"]::after {
+    content: none;
+    display: none;
   }
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx="check"] > svg {
     display: revert-layer;

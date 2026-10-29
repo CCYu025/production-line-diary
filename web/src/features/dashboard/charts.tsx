@@ -1,5 +1,6 @@
 import * as React from "react";
 import { StatusGlyph } from "@/components/badges";
+import { useFx, useStagger, useStaggerCap } from "@/lib/fx";
 import type { Aggregate, RankEntry, Severity, Status } from "@/lib/types";
 import { cn, labelOrUnfilled } from "@/lib/utils";
 
@@ -50,11 +51,14 @@ export function HBarChart({
   /** 例如「查看設備」，用在按鈕的無障礙名稱 */
   actionLabel: string;
 }) {
+  const fx = useFx();
+  const stagger = useStagger(rows.length, useStaggerCap());
   if (rows.length === 0) return <ChartEmpty />;
   const max = Math.max(...rows.map((r) => r.count), 1);
   return (
-    <ul className="flex flex-col gap-0.5">
-      {rows.map((r) => (
+    // FX-09：cyber 下資料內容改變（切換範圍）就重新掛載，長條重播進場；標準主題 key 為 undefined，行為不變
+    <ul key={fx ? rows.map((r) => `${r.label}:${r.count}`).join("|") : undefined} className="flex flex-col gap-0.5">
+      {rows.map((r, i) => (
         <li key={r.label}>
           <button
             type="button"
@@ -70,8 +74,9 @@ export function HBarChart({
             <span data-fx="bar-track" className="h-2.5 overflow-hidden rounded-full bg-line" aria-hidden="true">
               <span
                 data-fx="bar"
+                {...stagger(i)}
                 className="block h-full rounded-full bg-accent"
-                style={{ width: `${Math.max(4, Math.round((r.count / max) * 100))}%` }}
+                style={{ ...stagger(i).style, width: `${Math.max(4, Math.round((r.count / max) * 100))}%` }}
               />
             </span>
             <span className="num text-right text-sm">{r.count} 次</span>
@@ -104,6 +109,7 @@ export function SeverityDonut({
   counts: Aggregate["severityCounts"];
   onSelect: (severity: Severity) => void;
 }) {
+  const fx = useFx();
   const total = counts.reduce((s, r) => s + r.count, 0);
   const cx = 60;
   const cy = 60;
@@ -112,7 +118,12 @@ export function SeverityDonut({
   const circ = 2 * Math.PI * r;
   let offset = 0;
   return (
-    <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center sm:gap-8">
+    // FX-13：整張淡入＋掃描線劃過一次（只在 cyber 且允許動態時輸出 data-fx-in；資料改變時重新掛載重播）
+    <div
+      key={fx ? counts.map((s) => s.count).join("|") : undefined}
+      {...(fx ? { "data-fx-in": "donut" } : {})}
+      className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center sm:gap-8"
+    >
       <svg viewBox="0 0 120 120" role="img" aria-label={`嚴重度分布，共 ${total} 次`} className="size-40 shrink-0">
         <circle cx={cx} cy={cy} r={r} fill="none" strokeWidth={sw} className="stroke-line" />
         <g transform={`rotate(-90 ${cx} ${cy})`}>
@@ -246,6 +257,11 @@ export function TrendChart({
   onSelect: (date: string) => void;
 }) {
   const scroller = React.useRef<HTMLDivElement>(null);
+  const fx = useFx();
+  const cap = useStaggerCap();
+  const stagger = useStagger(trend.length, cap);
+  // FX-12：最新的日子在右邊且一開始就捲到最右，所以「前 cap 項」取最右邊（最新）的 cap 根，由左往右依序長出；更早的直接出現
+  const firstAnimated = Math.max(0, trend.length - cap);
   // 最新的日子在右邊：一開始就捲到最右
   React.useLayoutEffect(() => {
     const el = scroller.current;
@@ -255,8 +271,8 @@ export function TrendChart({
   const max = Math.max(...trend.map((t) => t.count), 1);
   return (
     <div ref={scroller} className="overflow-x-auto pb-1">
-      <ol className="flex min-w-max items-end gap-1">
-        {trend.map((t) => (
+      <ol key={fx ? trend.map((t) => `${t.date}:${t.count}`).join("|") : undefined} className="flex min-w-max items-end gap-1">
+        {trend.map((t, i) => (
           <li key={t.date}>
             <button
               type="button"
@@ -270,8 +286,9 @@ export function TrendChart({
               <span
                 aria-hidden="true"
                 data-fx="trend-bar"
+                {...stagger(i - firstAnimated)}
                 className="block w-5 rounded-sm bg-accent"
-                style={{ height: Math.max(8, Math.round((t.count / max) * TREND_MAX_PX)) }}
+                style={{ ...stagger(i - firstAnimated).style, height: Math.max(8, Math.round((t.count / max) * TREND_MAX_PX)) }}
               />
               <span className="num text-xs text-ink-muted">{fmtDate(t.date)}</span>
             </button>

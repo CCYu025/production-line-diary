@@ -870,3 +870,142 @@ describe("cyber.css：P2 動畫守門", () => {
     expect(printRules.some((x) => decl(x)["box-shadow"] === "revert-layer" && x.selectors.some((s) => s.includes('[data-fx="field"]')))).toBe(true);
   });
 });
+
+/*
+ * P3 動畫的守門（docs/cyber-theme-spec.md §6.1）。以新增方式擴充，不動上面既有的斷言。
+ * P3 區段從 P3 START 標記到報表隔離區塊之前。
+ */
+const P3_MARKER = "/* === P3 START === */";
+const P3_END = "/* ---------- 報表隔離（不是裝飾）----------";
+describe("cyber.css：P3 動畫守門", () => {
+  const p3Start = cyberCss.indexOf(P3_MARKER);
+  const p3Src = cyberCss.slice(p3Start, cyberCss.indexOf(P3_END));
+  const p3Rules = parseCss(p3Src);
+  const p3Frames = p3Rules.filter((r) => r.context.some((c) => /^@keyframes\b/.test(c)));
+  const frameName = (r: { context: string[] }) => /^@keyframes\s+(\S+)/.exec(r.context.find((c) => /^@keyframes\b/.test(c))!)![1]!;
+  const p3Anim = p3Rules
+    .filter((r) => !r.context.some((c) => /^@keyframes\b/.test(c)))
+    .flatMap((r) => Object.entries(decl(r)).filter(([k]) => /^animation(-[a-z-]+)?$/.test(k)).map(([k, v]) => ({ rule: r, prop: k, value: v })));
+  const code = stripComments(p3Src);
+  const p3Tokens = declarationMap(p3Rules.filter((r) => r.selectors.length === 1 && r.selectors[0] === CYBER_SCOPE && r.context.length === 0).map((r) => r.declarations).join(";"));
+  const p3Screen = (selector: string) => p3Rules.find((r) => r.selectors.length === 1 && r.selectors[0] === selector && r.context.length === 0);
+
+  it("P3 標記只有一個，在 P2 區段之後、@media print 之前", () => {
+    expect(cyberCss.split(P3_MARKER).length - 1).toBe(1);
+    expect(p3Start).toBeGreaterThan(cyberCss.indexOf(P2_MARKER));
+    expect(p3Start).toBeLessThan(cyberCss.lastIndexOf("@media print {"));
+    expect(p3Rules.length).toBeGreaterThan(5);
+  });
+
+  it("@keyframes 一律 cyber- 前綴、只動 transform／opacity，而且 P3 定義的每一個都有被引用", () => {
+    expect(p3Frames.length).toBeGreaterThanOrEqual(5);
+    const names = [...new Set(p3Frames.map(frameName))];
+    expect(names.filter((n) => !n.startsWith("cyber-"))).toEqual([]);
+    const bad = p3Frames.flatMap((r) => Object.keys(decl(r)).filter((k) => k !== "transform" && k !== "opacity").map((k) => `${frameName(r)}: ${k}`));
+    expect(bad).toEqual([]);
+    const used = new Set(rules.filter((r) => !r.context.some((c) => /^@keyframes\b/.test(c))).flatMap((r) => (decl(r)["animation"] ?? "").split(/\s+/)));
+    expect(names.filter((n) => !used.has(n))).toEqual([]);
+  });
+
+  it("P3 沒有 clip-path（進場的可點元素不得用 clip-path）、沒有寫死毫秒的 animation 時間、沒有 iteration-count 數字", () => {
+    expect(code).not.toMatch(/clip-path/);
+    const hard = p3Anim
+      .filter((d) => d.prop === "animation" || d.prop === "animation-delay")
+      .map((d) => ({ ...d, value: d.value.replace(/var\([^)]*\)/g, "").replace(/steps\([^)]*\)/g, "") }))
+      .filter((d) => /(^|[\s,(])\d*\.?\d+m?s\b/.test(d.value) && d.value.trim() !== "0ms");
+    expect(hard.map((d) => `${d.rule.selectors[0]}: ${d.value}`)).toEqual([]);
+    expect(p3Anim.filter((d) => d.prop === "animation-iteration-count")).toEqual([]);
+  });
+
+  it("infinite 白名單：只有 FX-08 角框呼吸，關鍵字只出現在 --loop-forever 一處，由 animation 簡寫以 var() 取用", () => {
+    expect((code.match(/\binfinite\b/g) ?? []).length).toBe(1);
+    expect(code).toMatch(/--loop-forever:\s*infinite;/);
+    const loops = p3Anim.filter((d) => /var\(--loop-forever\)/.test(d.value));
+    expect(loops.length).toBe(1);
+    expect(loops[0]!.rule.selectors).toEqual([`${CYBER_SCOPE} [data-fx="panel-cut"][data-fx-alert]::after`]);
+    expect(loops[0]!.value).toBe("cyber-corner-breathe var(--dur-breathe) ease-in-out var(--loop-forever)");
+    // 呼吸是 .5 ↔ 1，起訖影格（0%／100%）= 基礎樣式 opacity 1，不是閃爍
+    const breathe = p3Frames.filter((r) => frameName(r) === "cyber-corner-breathe");
+    expect(breathe.map((r) => decl(r)["opacity"])).toEqual(["1", "0.5"]);
+  });
+
+  it("依序進場（FX-09／12／14／16）：只在 JS 輸出 data-fx-in 的元素上播；延遲 = 間隔 token × --i；延遲期間用 longhand backwards，簡寫不帶 fill-mode", () => {
+    const staggered = p3Anim.filter((d) => d.prop === "animation-delay");
+    expect(staggered.length).toBeGreaterThanOrEqual(4);
+    for (const d of staggered) {
+      if (d.value === "0ms") continue; // 手機日曆不排隊
+      expect(d.value, d.rule.selectors[0]).toMatch(/^calc\(var\(--stagger(-[a-z]+)?\) \* var\(--i, 0\)\)$/);
+      expect(d.rule.selectors.join(), "依序進場只在有 data-fx-in 的元素").toContain("[data-fx-in]");
+      expect(decl(d.rule)["animation-fill-mode"], d.rule.selectors[0]).toBe("backwards");
+      expect(decl(d.rule)["animation"], d.rule.selectors[0]).not.toMatch(/\b(backwards|forwards|both)\b/);
+    }
+    const modes = p3Anim.flatMap((d) => (d.prop === "animation" ? d.value.split(/\s+/) : d.prop === "animation-fill-mode" ? [d.value] : [])).filter((t) => /^(forwards|backwards|both)$/.test(t));
+    expect(new Set(modes)).toEqual(new Set(["backwards"]));
+  });
+
+  it("FX-09 長條 scaleX 由左、FX-12 趨勢柱 scaleY 由下；只動 transform，不改 width／height", () => {
+    const keyframe = (n: string) => p3Frames.find((r) => frameName(r) === n)!;
+    expect(decl(keyframe("cyber-bar-grow"))["transform"]).toBe("scaleX(0)");
+    expect(decl(keyframe("cyber-trend-grow"))["transform"]).toBe("scaleY(0)");
+    const bar = p3Screen(`${CYBER_SCOPE} [data-fx="bar"][data-fx-in]`)!;
+    expect(decl(bar)["transform-origin"]).toBe("left center");
+    expect(decl(bar)["animation"]).toBe("cyber-bar-grow var(--dur-slow) var(--ease-out)");
+    const trend = p3Screen(`${CYBER_SCOPE} [data-fx="trend-bar"][data-fx-in]`)!;
+    expect(decl(trend)["transform-origin"]).toBe("center bottom");
+    expect(Object.keys(decl(bar)).concat(Object.keys(decl(trend))).filter((k) => /^(width|height)$/.test(k))).toEqual([]);
+  });
+
+  it("FX-13 甜甜圈：容器淡入；掃描線是容器的偽元素（基礎 opacity 0、不擋點擊、只動 transform／opacity）", () => {
+    const box = p3Screen(`${CYBER_SCOPE} [data-fx-in="donut"]`)!;
+    expect(decl(box)["animation"]).toBe("cyber-fade-in var(--dur-donut) var(--ease-out)");
+    const scan = p3Screen(`${CYBER_SCOPE} [data-fx-in="donut"]::after`)!;
+    expect(decl(scan)["opacity"]).toBe("0");
+    expect(decl(scan)["pointer-events"]).toBe("none");
+    expect(decl(scan)["animation"]).toBe("cyber-donut-scan var(--dur-donut) linear");
+    expect(decl(scan)["content"]).toMatch(/\/ ""$/);
+  });
+
+  it("FX-14 日曆：格子淡入（:where 壓低特異度，不蓋掉焦點環動畫）；換月 glitch 只在 ≥ 768、手機延遲歸零；總長 ≤ 400ms", () => {
+    const cell = p3Screen(`${CYBER_SCOPE} [data-fx="cal-cell"]:where([data-fx-in])`)!;
+    expect(decl(cell)["animation"]).toBe("cyber-fade-in var(--dur-fast) var(--ease-out)");
+    expect(decl(cell)["animation-delay"]).toBe("calc(var(--stagger-cal) * var(--i, 0))");
+    const mobile = p3Rules.find((r) => inMedia(r, /max-width:\s*767px/) && r.selectors.includes(`${CYBER_SCOPE} [data-fx="cal-cell"]:where([data-fx-in])`))!;
+    expect(decl(mobile)["animation-delay"]).toBe("0ms");
+    const glitch = p3Rules.find((r) => r.selectors.includes(`${CYBER_SCOPE} table[data-fx-in="glitch"]`))!;
+    expect(inMedia(glitch, /min-width:\s*768px/)).toBe(true);
+    expect(decl(glitch)["animation"]).toBe("cyber-glitch-tx var(--dur-fast) var(--ease-glitch)");
+    // 最多 6 列 + 7 欄 = 12 道對角線：最後一道的延遲 11 × 間隔 + 單格時間
+    expect(11 * parseFloat(p3Tokens["--stagger-cal"]!) + parseFloat(lightRoot["--dur-fast"]!)).toBeLessThanOrEqual(400);
+  });
+
+  it("FX-16 紀錄列：由左 8px 淡入；▶ 是第一格的偽元素（hover／焦點才出現、不佔版面、不擋點擊、有 / \"\" 替代文字），不畫在 <tr> 上", () => {
+    const row = p3Screen(`${CYBER_SCOPE} [data-fx="row"][data-fx-in]`)!;
+    expect(decl(row)["animation"]).toBe("cyber-row-in var(--dur-fast) var(--ease-out)");
+    const frame = p3Frames.find((r) => frameName(r) === "cyber-row-in")!;
+    expect(decl(frame)["transform"]).toBe("translateX(-8px)");
+    const arrow = p3Rules.find((r) => r.selectors.some((s) => s.endsWith("> td:first-child::before")))!;
+    expect(arrow.selectors.every((s) => s.includes(":hover") && s.includes(":focus-visible"))).toBe(true);
+    expect(decl(arrow)["position"]).toBe("absolute");
+    expect(decl(arrow)["pointer-events"]).toBe("none");
+    expect(decl(arrow)["content"]).toMatch(/\/ ""$/);
+    expect(p3Rules.flatMap((r) => r.selectors).filter((s) => /\[data-fx="row"\][^ >]*::(before|after)/.test(s))).toEqual([]);
+  });
+
+  it("P3 時間 token 在 cyber 區塊內；P3 不新增 data-fx 值（新掛勾用 data-fx-in 屬性）", () => {
+    for (const n of ["--dur-trend", "--dur-donut", "--stagger-trend", "--stagger-cal", "--loop-forever"]) expect(p3Tokens[n], n).toBeDefined();
+    const known = ["panel-cut", "bar", "trend-bar", "cal-cell", "row"];
+    const used = [...code.matchAll(/\[data-fx="([^"]+)"\]/g)].map((m) => m[1]!);
+    expect(used.filter((v) => !known.includes(v))).toEqual([]);
+  });
+
+  it("@media print：P3 的非 data-fx 裝飾（甜甜圈容器的定位與掃描線）有還原；所有元素的 animation 退回標準值這條規則仍涵蓋 P3", () => {
+    const P = `${CYBER_SCOPE}:not(#cyber-print)`;
+    expect(decl(printRule(`${P} [data-fx-in="donut"]`)!)["position"]).toBe("revert-layer");
+    expect(decl(printRule(`${P} [data-fx-in="donut"]::after`)!)).toEqual({ content: "none", display: "none" });
+    expect(printRules.some((r) => r.selectors.includes(`${P} *:not([data-sonner-toaster], [data-sonner-toaster] *)::after`) && decl(r)["animation"] === "revert-layer")).toBe(true);
+  });
+
+  it("P3 選擇器不碰 #report-output（報表隔離）", () => {
+    expect(code).not.toContain("#report-output");
+  });
+});

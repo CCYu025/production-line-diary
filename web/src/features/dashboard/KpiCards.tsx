@@ -1,6 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import type * as React from "react";
 import { StatusGlyph } from "@/components/badges";
+import { ScrambleNumber } from "@/lib/fx";
 import type { Aggregate, Status } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +31,7 @@ function ActionKpi({
         {status}
       </span>
       <span className="mt-2 flex items-baseline gap-1">
-        <span data-fx="kpi-num" className="num text-4xl font-bold leading-none">{value.toLocaleString()}</span>
+        <span data-fx="kpi-num" className="num text-4xl font-bold leading-none"><ScrambleNumber value={value.toLocaleString()} /></span>
         <span className="text-sm font-medium text-ink-2">筆</span>
       </span>
       <span className="mt-2 block text-xs text-ink-muted">{hint}</span>
@@ -66,7 +67,9 @@ function MiniKpi({ label, value, unit, sub }: { label: string; value: React.Reac
     <div data-fx="panel" className="rounded-lg border border-line bg-surface-raised px-4 py-3">
       <p className="text-xs font-medium text-ink-muted">{label}</p>
       <p className="mt-1 flex items-baseline gap-1">
-        <span data-fx="kpi-num" className="num text-2xl font-bold leading-none">{value}</span>
+        <span data-fx="kpi-num" className="num text-2xl font-bold leading-none">
+          {typeof value === "string" || typeof value === "number" ? <ScrambleNumber value={value} /> : value}
+        </span>
         <span className="text-xs font-medium text-ink-2">{unit}</span>
       </p>
       <p className="mt-1 truncate text-xs text-ink-muted">{sub}</p>
