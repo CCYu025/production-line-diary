@@ -153,6 +153,8 @@ describe("檢查函式本身（反例要抓得到）", () => {
  * P1 靜態外觀的守門（docs/cyber-theme-spec.md §5、§8）。以新增方式擴充，不動上面既有的斷言。
  */
 
+/** cyber.css 裡 P2 區段的起點標記（P1 區段在它之前，必須是靜態外觀） */
+const P2_MARKER = "/* === P2 START === */";
 const rules = parseCss(cyberCss);
 const stripped = stripComments(cyberCss);
 const inPrint = (r: { context: string[] }) => r.context.some((c) => /^@media\s+print\b/.test(c));
@@ -197,7 +199,9 @@ describe("cyber.css：背景點陣與掃描線（§5.1）", () => {
 
 describe("cyber.css：P1 是靜態外觀（沒有動畫與 transition）", () => {
   it("P1 區段（P2 動態區段之前）沒有 @keyframes，也沒有 animation／transition 宣告（P2 起的動態全部集中在後面的 P2 區段，由下方「P2 動畫守門」把關）", () => {
-    const p2Start = cyberCss.indexOf("P2 微互動與浮層（規格");
+    // 分界是 cyber.css 裡明確的標記註解；標記不存在（或出現多次）時這個測試要失敗，不能默默掃整個檔案
+    expect(cyberCss.split(P2_MARKER).length - 1, `cyber.css 要有一個 ${P2_MARKER} 標記`).toBe(1);
+    const p2Start = cyberCss.indexOf(P2_MARKER);
     expect(p2Start).toBeGreaterThan(0);
     const p1Part = stripComments(cyberCss.slice(0, p2Start));
     expect(p1Part).not.toMatch(/@keyframes/i);
@@ -774,9 +778,50 @@ describe("cyber.css：P2 動畫守門", () => {
     expect(delays.map((v) => (v === "var(--stagger-sheet)" ? 1 : Number(/\*\s*(\d)\)/.exec(v)![1]))).sort()).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it("FX-21 內容區塊 glitch 不分前後方向（只有一組 keyframes，沒有 -prev／-next 或 direction）", () => {
-    expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="detail-body"]`)!)["animation"]).toBe("cyber-glitch var(--dur-fast) var(--ease-glitch)");
+  it("FX-21 沒有獨立動畫：detail-body 本身不播 glitch，靠 DetailBody 以 key 重新掛載時 FX-20 的依序淡入重播；總視覺收尾 ≤ 350ms", () => {
+    // detail-body 本身沒有 animation（glitch 只剩對話框 FX-22 與錯誤標題 FX-34 在用）
+    expect(screenRules.filter((r) => r.selectors.some((x) => x === `${CYBER_SCOPE} [data-fx="detail-body"]`) && decl(r)["animation"] !== undefined)).toEqual([]);
+    const glitchUsers = animationDecls.filter((d) => d.prop === "animation" && /cyber-glitch/.test(d.value)).map((d) => d.rule.selectors.join());
+    expect(glitchUsers.sort()).toEqual([
+      `${CYBER_SCOPE} [data-fx="dialog"][data-state="open"]`,
+      `${CYBER_SCOPE} [data-fx="error-title"]`,
+    ]);
+    // 不分前後方向
     expect(definedNames.filter((n) => /prev|next|left|right/.test(n))).toEqual([]);
+    // 內容區塊依序淡入：每段時間走 token；最後一段（5 × 間隔 ＋ 單段）≤ 350ms
+    const each = decl(screenRule(`${CYBER_SCOPE} [data-fx="detail-body"] > *`)!)["animation"]!;
+    expect(each).toContain("var(--dur-sheet-item)");
+    const mult = screenRules
+      .filter((r) => r.selectors.some((x) => x.includes('[data-fx="detail-body"] >')) && decl(r)["animation-delay"] !== undefined)
+      .map((r) => decl(r)["animation-delay"]!)
+      .map((v) => (v === "var(--stagger-sheet)" ? 1 : Number(/\*\s*(\d)\)/.exec(v)![1])));
+    const total = Math.max(...mult) * ms(token("--stagger-sheet")) + ms(token("--dur-sheet-item"));
+    expect(total).toBeLessThanOrEqual(350);
+    expect(Math.max(...mult) + 1, "最多 6 段").toBeLessThanOrEqual(6);
+  });
+
+  it("FX-06 新增鈕擴散環與 MobileChrome 的圓鈕尺寸／位移綁在一起：圓鈕的 size／top class 改了，這裡就要跟著改（也斷言環是偽元素、pointer-events: none）", () => {
+    const src = readFileSync(path.join(here, "../app/MobileChrome.tsx"), "utf8");
+    // 圓鈕是 <NavLink to="/records/new"> 裡的 data-fx="fab"
+    const fab = /to="\/records\/new"[\s\S]*?data-fx="fab"\s+className="([^"]+)"/.exec(src);
+    expect(fab, "MobileChrome.tsx 要有 /records/new 連結內的 data-fx=fab").not.toBeNull();
+    const cls = fab![1]!.split(/\s+/);
+    const size = Number(/^size-(\d+)$/.exec(cls.find((c) => /^size-\d+$/.test(c)) ?? "")?.[1]) * 4; // Tailwind：1 單位 = 4px
+    const top = -Number(/^-top-(\d+)$/.exec(cls.find((c) => /^-top-\d+$/.test(c)) ?? "")?.[1]) * 4;
+    expect(Number.isFinite(size) && size > 0, "圓鈕要有 size-N class").toBe(true);
+    expect(Number.isFinite(top) && top < 0, "圓鈕要有 -top-N class").toBe(true);
+    expect(cls, "水平置中").toEqual(expect.arrayContaining(["left-1/2", "-translate-x-1/2"]));
+    const ringSel = `${CYBER_SCOPE} nav[aria-label="底部導覽"] a[data-fx="nav-item"][href$="/records/new"]:active::after`;
+    const ring = decl(screenRule(ringSel)!);
+    expect(ring["width"]).toBe(`${size}px`);
+    expect(ring["height"]).toBe(`${size}px`);
+    expect(ring["top"]).toBe(`${top}px`);
+    expect(ring["left"]).toBe("50%");
+    expect(ring["margin-left"]).toBe(`${-size / 2}px`);
+    expect(ring["position"]).toBe("absolute");
+    expect(ring["pointer-events"]).toBe("none"); // 偽元素蓋在相鄰分頁上，不能吃點擊
+    expect(ring["border-radius"]).toBe("50%");
+    expect(ring["opacity"]).toBe("0");
   });
 
   it("P2 新增的 data-fx 掛勾都在清單內（chip、bar-track、detail-body、lightbox、error-title、unsaved）", () => {

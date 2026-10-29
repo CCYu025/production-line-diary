@@ -399,6 +399,7 @@
   }
 }
 
+/* === P2 START === */
 /* =====================================================================================================
  * P2 微互動與浮層（規格 §6.2：FX-05、06、10、15、17–24、29、30、33–37）
  *
@@ -425,6 +426,7 @@
   --dur-sweep: 1.6s; /* 骨架掃光（FX-33，與標準骨架同頻率） */
   --dur-breathe: 2.4s; /* 「未儲存」色條呼吸（FX-35） */
   --stagger-sheet: 30ms; /* 詳情面板內容依序淡入的間隔（FX-20） */
+  --dur-sheet-item: 200ms; /* 詳情面板內容每一段淡入的時間：最後一段 5 × 30ms 延遲＋200ms ＝ 350ms，是切換紀錄時的總視覺收尾上限（FX-21） */
   --ease-type: steps(8, end); /* 打字式顯示 */
   --press-wash: color-mix(in srgb, var(--accent) 16%, transparent); /* 按壓時背景亮一下（FX-37） */
   --press-wash-critical: color-mix(in srgb, var(--critical) 16%, transparent);
@@ -578,7 +580,8 @@
 /* ---------- FX-20 詳情面板（由右滑入是 Tailwind 現有的）----------
  * 框線一道青色掃描由上往下：偽元素蓋在左側框線上，用 clip-path 開一個會移動的窗口（面板沒有 overflow，所以不靠 translate 加裁切）。
  * 基礎樣式 opacity 0（減少動態效果時整個不顯示）。
- * 內容區塊（detail-body 的子元素）依序淡入：標題→標籤→事實格→處理→…，最多 6 段，每段延遲 30ms（backwards 讓延遲期間維持透明）。
+ * 內容區塊（detail-body 的子元素）依序淡入：標題→標籤→事實格→處理→…，最多 6 段，每段延遲 30ms，每段 200ms（backwards 讓延遲期間維持透明；
+ * 最後一段 5 × 30 ＋ 200 ＝ 350ms 收尾）。
  * 關閉時退場縮短為 --dur-close（原本 200ms，Radix 會等退場動畫結束才卸載）。 */
 :root[data-theme="cyber"] [data-fx="sheet"][data-side="right"]::after {
   content: "" / "";
@@ -596,7 +599,7 @@
   animation-duration: var(--dur-close);
 }
 :root[data-theme="cyber"] [data-fx="detail-body"] > * {
-  animation: cyber-fade-in var(--dur-base) var(--ease-out) backwards;
+  animation: cyber-fade-in var(--dur-sheet-item) var(--ease-out) backwards;
 }
 :root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(2) {
   animation-delay: var(--stagger-sheet);
@@ -615,11 +618,9 @@
 }
 
 /* ---------- FX-21 詳情面板上一筆／下一筆 ----------
- * 切換紀錄時 DetailBody 本來就以 key={r.id} 重新掛載，所以內容區塊的進場動畫自然會重播；不分前後方向。
- * 沒有加任何 key，上一筆／下一筆按鈕與標題列的行為完全沒動。（開啟面板時內容區塊同樣是掛載，所以也會播一次。） */
-:root[data-theme="cyber"] [data-fx="detail-body"] {
-  animation: cyber-glitch var(--dur-fast) var(--ease-glitch);
-}
+ * 沒有獨立動畫。切換紀錄時 DetailBody 本來就以 key={r.id} 重新掛載，所以上面 FX-20 的內容依序淡入自然重播，這就是切換回饋
+ * （不分前後方向；總視覺收尾 ≤ 350ms；內容全程可點）。沒有加任何 key，上一筆／下一筆按鈕與標題列的行為完全沒動。
+ * （開啟面板時內容區塊同樣是掛載，所以開啟與切換長得一樣。） */
 
 /* ---------- FX-22 確認對話框 ----------
  * 遮罩淡入：遮罩是 Tailwind 的 fade-in／fade-out（沒有 data-fx），本來就有，不重寫。
