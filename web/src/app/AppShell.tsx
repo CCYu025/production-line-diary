@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Outlet, useLocation, useMatches } from "react-router-dom";
+import { consumeBoot } from "./BootScreen";
 import { MobileTabBar, MobileTopBar } from "./MobileChrome";
 import { Sidebar } from "./Sidebar";
 
@@ -27,6 +28,11 @@ export function AppShell() {
   const { pathname } = useLocation();
   const mainRef = React.useRef<HTMLElement>(null);
   const firstRender = React.useRef(true);
+
+  // FX-01：第一個畫面不是儀表板（或已離開）就不再開機；之後回到儀表板也不會出現
+  React.useEffect(() => {
+    if (pathname !== "/" && pathname !== "/dashboard") consumeBoot();
+  }, [pathname]);
 
   React.useEffect(() => {
     document.title = title === "產線日誌" ? title : `${title}｜產線日誌`;

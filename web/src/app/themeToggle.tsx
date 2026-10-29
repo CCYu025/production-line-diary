@@ -1,4 +1,5 @@
 import { Terminal } from "lucide-react";
+import { flushSync } from "react-dom";
 import { switchTheme } from "@/lib/theme";
 import { useThemePreference } from "@/lib/useThemePreference";
 import { cn } from "@/lib/utils";
@@ -12,11 +13,38 @@ import { cn } from "@/lib/utils";
  */
 export const THEME_TOGGLE = { label: "CYBER 介面", icon: Terminal } as const;
 
+type ViewTransitionDoc = Document & { startViewTransition?: (update: () => void) => { finished: Promise<unknown> } };
+
+/**
+ * FX-38：只有「切到 cyber」且沒有減少動態效果、瀏覽器支援 View Transitions 時，用 VT 掃描一次（300ms，cyber.css 的 data-vt="theme"）；
+ * 切回標準、減少動態效果、不支援的瀏覽器都是直接切換。切換前 data-theme 還不是 cyber，所以 useFx() 此時一定是 false，要自己檢查減少動態效果。
+ */
+function switchToCyber(): void {
+  const doc = document as ViewTransitionDoc;
+  const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduced || typeof doc.startViewTransition !== "function") {
+    switchTheme("cyber");
+    return;
+  }
+  const root = document.documentElement;
+  root.dataset.vt = "theme";
+  const clear = () => {
+    delete root.dataset.vt;
+  };
+  try {
+    const transition = doc.startViewTransition(() => flushSync(() => switchTheme("cyber")));
+    void transition.finished.then(clear, clear);
+  } catch {
+    clear();
+    switchTheme("cyber");
+  }
+}
+
 export function useThemeToggle() {
   const isCyber = useThemePreference() === "cyber";
   return {
     isCyber,
-    toggle: () => switchTheme(isCyber ? "standard" : "cyber"),
+    toggle: () => (isCyber ? switchTheme("standard") : switchToCyber()),
   };
 }
 

@@ -1116,6 +1116,158 @@
   --critical: #d03b3b;
 }
 
+/* === P3 B START === */
+/* =====================================================================================================
+ * P3 塊 B：換頁 View Transitions（FX-02）、標題打字與游標（FX-03）、nav-indicator（FX-04）、主題切換掃描（FX-38）、開機畫面（FX-01）。
+ * 放在 P3 區段（塊 A）之後、報表隔離之外：塊 A 的守門測試鎖定 P3 區段「沒有 clip-path」，而打字與 VT 掃描需要 clip-path
+ * （只用在不可點的純文字與整頁快照）。守則不變：@keyframes 一律 cyber- 前綴、時間走 token、infinite 只借 --loop-forever（游標 1 次／秒）。
+ * ===================================================================================================== */
+
+:root[data-theme="cyber"] {
+  --dur-vt-out: 80ms; /* FX-02 舊頁退場（退 80 ＋ 進 170 ＝ 250ms） */
+  --dur-vt-in: 170ms; /* FX-02 新頁掃描線劃過 */
+  --dur-vt-theme: 300ms; /* FX-38 主題切換掃描 */
+  --dur-char: 18ms; /* FX-03 打字：每個字 18ms（字數 ≤ 16，上限 288ms） */
+  --dur-cursor: 1s; /* 標題游標、開機行游標：1 次／秒 */
+  --stagger-boot: 120ms; /* FX-01 每行 120ms */
+}
+
+/* ---------- FX-02 換頁（View Transitions，僅 useFx() 為 true 時由 JS 啟動）----------
+ * 舊頁：水平切片 glitch（steps 位移）淡出；新頁：由上而下的 clip-path 掃描露出。兩張快照不重疊相加（mix-blend-mode: normal）。
+ * 主題切換的 VT 會在 <html> 加 data-vt="theme"，不套用這組。 */
+:root[data-theme="cyber"]:not([data-vt])::view-transition-old(root) {
+  animation: cyber-vt-out var(--dur-vt-out) var(--ease-glitch);
+  animation-fill-mode: forwards; /* 退場結束後要停在透明，否則舊頁快照會在新頁露出前閃回來 */
+  mix-blend-mode: normal;
+}
+:root[data-theme="cyber"]:not([data-vt])::view-transition-new(root) {
+  animation: cyber-vt-in var(--dur-vt-in) var(--ease-out);
+  animation-delay: var(--dur-vt-out); /* 等舊頁退場完才開始掃描露出 */
+  animation-fill-mode: backwards;
+  mix-blend-mode: normal;
+}
+
+/* ---------- FX-38 主題切換（只有切到 cyber 才有 data-vt="theme"）：舊畫面不動，新畫面（cyber）由上往下掃描露出，300ms ---------- */
+:root[data-theme="cyber"][data-vt="theme"]::view-transition-old(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+:root[data-theme="cyber"][data-vt="theme"]::view-transition-new(root) {
+  animation: cyber-vt-in var(--dur-vt-theme) linear;
+  mix-blend-mode: normal;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="cyber"]::view-transition-group(*),
+  :root[data-theme="cyber"]::view-transition-old(*),
+  :root[data-theme="cyber"]::view-transition-new(*) {
+    animation: none;
+  }
+}
+
+/* ---------- FX-03 頁面標題打字（文字一開始就完整在 DOM，只是 clip-path 遮罩逐步退開）＋尾端游標 ----------
+ * 字數 --chars 由 JS 在 useFx() 為 true 時輸出（沒有就當 8）；steps 的步數 = 字數，總長 = 字數 × 18ms。標題不可點，所以可以用 clip-path。
+ * nowrap：游標不能把標題擠成兩行。游標是 ::after（替代文字為空，不進輔助科技），打字完成前被遮罩蓋住；
+ * 常駐閃爍 1 次／秒（steps(1)），減少動態效果時由 index.css 的全域規則停在 opacity 1（常亮）。 */
+:root[data-theme="cyber"] :is(h1, p)[data-fx="page-title"] {
+  white-space: nowrap;
+  animation: cyber-title-type calc(var(--dur-char) * var(--chars, 8)) steps(var(--chars, 8), end);
+}
+:root[data-theme="cyber"] :is(h1, p)[data-fx="page-title"]::after {
+  content: "\2060 \258C" / "";
+  margin-left: 0.15em;
+  color: var(--accent-text);
+  text-shadow: none;
+  font-weight: 400;
+  animation: cyber-cursor var(--dur-cursor) steps(1) var(--loop-forever);
+}
+
+/* ---------- FX-04 nav-indicator：側欄／圖示列的高亮條（只在 cyber 渲染的 aria-hidden <span>）----------
+ * 位置 --nav-y 由 NavIndicator 依目前路由量好寫入；只用 transform 位移（220ms），opacity 淡出（沒有目前頁時）。
+ * 首次量測完成前沒有 transition（data-ready 才啟用），所以首次渲染不播放。元素帶 inert（不可點、不擋下面的連結，瀏覽器依規格視同 pointer-events: none）。
+ * 桌面（≥ 1024）：整個項目高度（h-11 ＝ 2.75rem）的 2px 青線，與 ">" 前綴並存；
+ * 平板圖示列（768–1023）：改成垂直短條（1.25rem），並取代 P1 的 2px 內側直條（兩者位置相同，疊加會變成一條粗線＋短條）；< 768 不顯示。 */
+:root[data-theme="cyber"] aside > nav[aria-label="主要導覽"] {
+  position: relative;
+}
+:root[data-theme="cyber"] [data-fx-indicator] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2px;
+  height: 2.75rem;
+  background: var(--accent);
+  box-shadow: var(--glow-accent);
+  transform: translateY(var(--nav-y, 0px));
+}
+:root[data-theme="cyber"] [data-fx-indicator][data-state="off"] {
+  opacity: 0;
+}
+:root[data-theme="cyber"] [data-fx-indicator][data-ready="true"] {
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+@media (min-width: 768px) and (max-width: 1023px) {
+  :root[data-theme="cyber"] [data-fx-indicator] {
+    height: 1.25rem;
+    transform: translateY(calc(var(--nav-y, 0px) + 0.875rem));
+  }
+  :root[data-theme="cyber"] aside [data-fx="nav-item"][aria-current="page"] {
+    box-shadow: none;
+  }
+}
+@media (max-width: 767px) {
+  :root[data-theme="cyber"] [data-fx-indicator] {
+    display: none;
+  }
+}
+
+/* ---------- FX-01 開機畫面：逐行印出載入步驟（每行 120ms），最後一行帶游標；aria-hidden，資料一到就被內容取代 ---------- */
+:root[data-theme="cyber"] [data-fx-boot] {
+  color: var(--accent-text);
+}
+:root[data-theme="cyber"] [data-fx-boot-line] {
+  animation: cyber-fade-in var(--dur-fast) var(--ease-out);
+  animation-delay: calc(var(--stagger-boot) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+:root[data-theme="cyber"] [data-fx-boot-line]:last-child::after {
+  content: " \258C" / "";
+  animation: cyber-cursor var(--dur-cursor) steps(1) var(--loop-forever);
+}
+
+@keyframes cyber-vt-out {
+  to {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+}
+@keyframes cyber-vt-in {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes cyber-title-type {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes cyber-cursor {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
 /* ---------- 列印還原（§8）：一定要放在檔尾 ----------
  * 即使使用者在 App 頁面（不是報表）按列印，也不能印出黑底或裝飾；驗收是「cyber 列印 ≡ 標準淺色列印」。
  * 之後各期的裝飾（掃描線、點陣、光暈、切角、前綴）都要在這裡被還原。 */
@@ -1221,6 +1373,17 @@
   }
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx-in="donut"]::after {
     content: none;
+    display: none;
+  }
+  /* P3 塊 B：開機畫面（沒有 data-fx）的文字色與游標；nav-indicator 在 print:hidden 的側欄裡，但一併隱藏 */
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-boot] {
+    color: revert-layer;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-boot-line]:last-child::after {
+    content: none;
+    display: none;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-indicator] {
     display: none;
   }
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx="check"] > svg {

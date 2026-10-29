@@ -1009,3 +1009,128 @@ describe("cyber.css：P3 動畫守門", () => {
     expect(code).not.toContain("#report-output");
   });
 });
+
+/*
+ * P3 塊 B 的守門（FX-01／02／03／04／38）。以新增方式擴充。
+ * 區段從 P3 B START 標記到「列印還原」之前（塊 B 需要 clip-path，所以不放在塊 A 的 P3 區段裡）。
+ */
+const P3B_MARKER = "/* === P3 B START === */";
+const P3B_END = "/* ---------- 列印還原（§8）";
+describe("cyber.css：P3 塊 B 守門", () => {
+  const start = cyberCss.indexOf(P3B_MARKER);
+  const src = cyberCss.slice(start, cyberCss.indexOf(P3B_END));
+  const bRules = parseCss(src);
+  const code = stripComments(src);
+  const frames = bRules.filter((r) => r.context.some((c) => /^@keyframes\b/.test(c)));
+  const frameName = (r: { context: string[] }) => /^@keyframes\s+(\S+)/.exec(r.context.find((c) => /^@keyframes\b/.test(c))!)![1]!;
+  const screen = (selector: string) => bRules.find((r) => r.selectors.length === 1 && r.selectors[0] === selector && r.context.length === 0);
+  const tokens = declarationMap(bRules.filter((r) => r.selectors.length === 1 && r.selectors[0] === CYBER_SCOPE && r.context.length === 0).map((r) => r.declarations).join(";"));
+  const px = (v: string) => parseFloat(v);
+
+  it("標記只有一個，在塊 A 的 P3 區段之後、@media print 之前", () => {
+    expect(cyberCss.split(P3B_MARKER).length - 1).toBe(1);
+    expect(start).toBeGreaterThan(cyberCss.indexOf(P3_MARKER));
+    expect(start).toBeLessThan(cyberCss.lastIndexOf("@media print {"));
+    expect(bRules.length).toBeGreaterThan(10);
+  });
+
+  it("@keyframes 一律 cyber- 前綴、每個都有被引用、只動 transform／opacity／clip-path；clip-path 的結尾回到 inset(0 0 0 0)（基礎樣式即最終狀態）", () => {
+    const names = [...new Set(frames.map(frameName))];
+    expect(names.filter((n) => !n.startsWith("cyber-"))).toEqual([]);
+    const used = new Set(rules.filter((r) => !r.context.some((c) => /^@keyframes\b/.test(c))).flatMap((r) => (decl(r)["animation"] ?? "").split(/\s+/)));
+    expect(names.filter((n) => !used.has(n))).toEqual([]);
+    for (const n of ["cyber-vt-in", "cyber-title-type"]) {
+      const last = frames.filter((r) => frameName(r) === n && decl(r)["clip-path"] !== undefined).pop()!;
+      expect(decl(last)["clip-path"], n).toBe("inset(0 0 0 0)");
+    }
+    const bad = frames.flatMap((r) => Object.keys(decl(r)).filter((k) => !["transform", "opacity", "clip-path"].includes(k)).map((k) => `${frameName(r)}: ${k}`));
+    expect(bad).toEqual([]);
+  });
+
+  it("FX-02 換頁：退 80ms ＋ 進 170ms ＝ 250ms；新頁等舊頁退完才開始；舊頁停在透明；不重疊相加；主題切換的 VT（data-vt）不套用這組", () => {
+    expect(px(tokens["--dur-vt-out"]!) + px(tokens["--dur-vt-in"]!)).toBeLessThanOrEqual(250);
+    const old = screen(`${CYBER_SCOPE}:not([data-vt])::view-transition-old(root)`)!;
+    const nw = screen(`${CYBER_SCOPE}:not([data-vt])::view-transition-new(root)`)!;
+    expect(decl(old)["animation"]).toBe("cyber-vt-out var(--dur-vt-out) var(--ease-glitch)");
+    expect(decl(old)["animation-fill-mode"]).toBe("forwards");
+    expect(decl(nw)["animation"]).toBe("cyber-vt-in var(--dur-vt-in) var(--ease-out)");
+    expect(decl(nw)["animation-delay"]).toBe("var(--dur-vt-out)");
+    expect(decl(nw)["animation-fill-mode"]).toBe("backwards");
+    expect(decl(old)["mix-blend-mode"]).toBe("normal");
+    expect(decl(nw)["mix-blend-mode"]).toBe("normal");
+  });
+
+  it("FX-38 主題切換：300ms、只有 data-vt=\"theme\" 時；舊畫面不動、新畫面掃描露出；減少動態效果時整組 VT 動畫關閉", () => {
+    expect(tokens["--dur-vt-theme"]).toBe("300ms");
+    const nw = screen(`${CYBER_SCOPE}[data-vt="theme"]::view-transition-new(root)`)!;
+    expect(decl(nw)["animation"]).toBe("cyber-vt-in var(--dur-vt-theme) linear");
+    expect(decl(screen(`${CYBER_SCOPE}[data-vt="theme"]::view-transition-old(root)`)!)["animation"]).toBe("none");
+    const reduced = bRules.find((r) => r.context.some((c) => /prefers-reduced-motion:\s*reduce/.test(c)) && r.selectors.some((s) => s.includes("::view-transition-new(*)")))!;
+    expect(decl(reduced)["animation"]).toBe("none");
+  });
+
+  it("FX-03 標題打字：steps 步數 = 字數、總長 = 字數 × 18ms 且 ≤ 300ms；nowrap；標題不是可點元素", () => {
+    expect(tokens["--dur-char"]).toBe("18ms");
+    expect(px(tokens["--dur-char"]!) * 16).toBeLessThanOrEqual(300); // titleType.ts 把字數上限壓在 16
+    const t = screen(`${CYBER_SCOPE} :is(h1, p)[data-fx="page-title"]`)!;
+    expect(decl(t)["animation"]).toBe("cyber-title-type calc(var(--dur-char) * var(--chars, 8)) steps(var(--chars, 8), end)");
+    expect(decl(t)["white-space"]).toBe("nowrap");
+    expect(decl(t)["pointer-events"]).toBeUndefined();
+  });
+
+  it("尾端游標：::after、替代文字為空（aria-hidden 等效）、steps(1) 每秒一次、infinite 只借 --loop-forever；塊 B 沒有新增 infinite 關鍵字", () => {
+    expect(tokens["--dur-cursor"]).toBe("1s");
+    const c = screen(`${CYBER_SCOPE} :is(h1, p)[data-fx="page-title"]::after`)!;
+    expect(decl(c)["content"]).toMatch(/\/ ""$/);
+    expect(decl(c)["animation"]).toBe("cyber-cursor var(--dur-cursor) steps(1) var(--loop-forever)");
+    const boot = screen(`${CYBER_SCOPE} [data-fx-boot-line]:last-child::after`)!;
+    expect(decl(boot)["animation"]).toBe("cyber-cursor var(--dur-cursor) steps(1) var(--loop-forever)");
+    expect((code.match(/\binfinite\b/g) ?? []).length).toBe(0);
+    const kf = frames.filter((r) => frameName(r) === "cyber-cursor").map((r) => decl(r)["opacity"]);
+    expect(kf).toEqual(["1", "0"]); // 0%,100% 亮、50% 滅：起訖就是基礎樣式（減少動態效果停在常亮）
+  });
+
+  it("FX-04 nav-indicator：只動 transform（位置由 --nav-y）與 opacity；過渡 220ms 且要 data-ready 才啟用（首次渲染不動畫）；不用 pointer-events（靠 inert）", () => {
+    const base = screen(`${CYBER_SCOPE} [data-fx-indicator]`)!;
+    expect(decl(base)["transform"]).toBe("translateY(var(--nav-y, 0px))");
+    expect(decl(base)["pointer-events"]).toBeUndefined();
+    expect(decl(base)["transition"]).toBeUndefined();
+    const ready = screen(`${CYBER_SCOPE} [data-fx-indicator][data-ready="true"]`)!;
+    expect(decl(ready)["transition"]).toMatch(/^transform var\(--dur-base\) var\(--ease-out\),\s*opacity /);
+    expect(lightRoot["--dur-base"]).toBe("220ms");
+    expect(decl(screen(`${CYBER_SCOPE} [data-fx-indicator][data-state="off"]`)!)["opacity"]).toBe("0");
+    expect(decl(screen(`${CYBER_SCOPE} aside > nav[aria-label="主要導覽"]`)!)["position"]).toBe("relative");
+  });
+
+  it("FX-04 平板（768–1023）：垂直短條取代 P1 的 2px 內側直條；< 768 不顯示", () => {
+    const tablet = bRules.filter((r) => inMedia(r, /min-width:\s*768px\)\s*and\s*\(max-width:\s*1023px/));
+    const shortBar = tablet.find((r) => r.selectors.includes(`${CYBER_SCOPE} [data-fx-indicator]`))!;
+    expect(decl(shortBar)["height"]).toBe("1.25rem");
+    expect(decl(shortBar)["transform"]).toBe("translateY(calc(var(--nav-y, 0px) + 0.875rem))");
+    const replaced = tablet.find((r) => r.selectors.includes(`${CYBER_SCOPE} aside [data-fx="nav-item"][aria-current="page"]`))!;
+    expect(decl(replaced)["box-shadow"]).toBe("none");
+    const mobile = bRules.find((r) => inMedia(r, /max-width:\s*767px/) && r.selectors.includes(`${CYBER_SCOPE} [data-fx-indicator]`))!;
+    expect(decl(mobile)["display"]).toBe("none");
+  });
+
+  it("FX-01 開機行：每行 120ms（stagger token × --i）、longhand backwards；塊 B 不新增 data-fx 值", () => {
+    expect(tokens["--stagger-boot"]).toBe("120ms");
+    const line = screen(`${CYBER_SCOPE} [data-fx-boot-line]`)!;
+    expect(decl(line)["animation-delay"]).toBe("calc(var(--stagger-boot) * var(--i, 0))");
+    expect(decl(line)["animation-fill-mode"]).toBe("backwards");
+    expect(decl(line)["animation"]).not.toMatch(/\b(backwards|forwards|both)\b/);
+    expect([...code.matchAll(/\[data-fx="([^"]+)"\]/g)].map((m) => m[1]!).filter((v) => !["page-title", "nav-item"].includes(v))).toEqual([]);
+  });
+
+  it("@media print：開機畫面文字色與游標、nav-indicator 有還原；標題打字與游標靠 [data-fx] 的 all: revert-layer", () => {
+    const P = `${CYBER_SCOPE}:not(#cyber-print)`;
+    expect(decl(printRule(`${P} [data-fx-boot]`)!)["color"]).toBe("revert-layer");
+    expect(decl(printRule(`${P} [data-fx-boot-line]:last-child::after`)!)).toEqual({ content: "none", display: "none" });
+    expect(decl(printRule(`${P} [data-fx-indicator]`)!)["display"]).toBe("none");
+    expect(printRules.some((r) => r.selectors.includes(`${P} [data-fx]::after`) && decl(r)["all"] === "revert-layer")).toBe(true);
+  });
+
+  it("塊 B 選擇器不碰 #report-output（報表隔離）", () => {
+    expect(code).not.toContain("#report-output");
+  });
+});

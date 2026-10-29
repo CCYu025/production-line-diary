@@ -3,11 +3,13 @@ import * as React from "react";
 import { Link, useMatch } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useFx } from "@/lib/fx";
 import { useTrashCount } from "@/lib/queries";
 import { useIsDesktop } from "@/lib/useMediaQuery";
 import { cn } from "@/lib/utils";
 import { NAV_GROUPS, type NavEntry } from "./nav";
 import { THEME_TOGGLE, ThemeToggleState, useThemeToggle } from "./themeToggle";
+import { NavIndicator } from "./NavIndicator";
 import { useExportAction } from "./useExportAction";
 
 export const navItemClass =
@@ -88,10 +90,12 @@ const RailLink = React.forwardRef<
   Omit<React.ComponentProps<typeof Link>, "children"> & { to: string; end?: boolean; children: (active: boolean) => React.ReactNode }
 >(function RailLink({ to, end, className, children, ...props }, ref) {
   const active = useMatch({ path: to, end: end ?? false }) !== null;
+  const fx = useFx();
   return (
     <Link
       ref={ref}
       to={to}
+      viewTransition={fx}
       data-fx="nav-item"
       aria-current={active ? "page" : undefined}
       className={cn(
@@ -130,6 +134,7 @@ function LinkItem({ entry }: { entry: Extract<NavEntry, { kind: "link" }> }) {
  * 桌面（≥ 1024px）：完整側欄。平板（768–1023px）：收合成圖示列。手機（< 768px）不顯示，改用底部分頁列。
  */
 export function Sidebar() {
+  const fx = useFx();
   return (
     <aside
       className={cn(
@@ -138,6 +143,7 @@ export function Sidebar() {
     >
       <Link
         to="/dashboard"
+        viewTransition={fx}
         aria-label="產線日誌，回到儀表板"
         className="flex items-center justify-center gap-2.5 rounded-md border-b border-line px-1 pb-3 lg:justify-start lg:px-2"
       >
@@ -152,7 +158,7 @@ export function Sidebar() {
 
       <MaybeTooltip label="新增紀錄">
         <Button asChild size="lg" variant="primary" className="w-full px-0 lg:px-5">
-          <Link to="/records/new">
+          <Link to="/records/new" viewTransition={fx}>
             <Plus className="size-5" aria-hidden="true" />
             <span className="sr-only lg:not-sr-only">新增紀錄</span>
           </Link>
@@ -175,6 +181,8 @@ export function Sidebar() {
             ))}
           </div>
         ))}
+        {/* 放在最後：定位的元素依 DOM 順序疊放，才會畫在目前頁項目的底色之上 */}
+        <NavIndicator />
       </nav>
 
       {/* 最底部：與導覽群組之間用分隔線隔開，不屬於任何導覽群組。平板圖示列的線與群組之間的 hr 一樣內縮（mx-2），桌面全寬 */}
