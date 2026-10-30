@@ -1238,6 +1238,15 @@ describe("cyber.css：P3 塊 C 守門", () => {
     expect(decl(screen(`${CYBER_SCOPE} [data-fx-progress-block]`)!)["position"]).toBe("absolute");
   });
 
+  it("FX-25 進度條：版面寬度固定為旋轉圖示的 1rem、向左溢出（按鈕 rect 與標準送出中相同）", () => {
+    const bar = decl(screen(`${CYBER_SCOPE} [data-fx-progress]`)!);
+    expect(bar["width"]).toBe("1rem");
+    expect(bar["justify-content"]).toBe("flex-end");
+    expect(bar["flex-shrink"]).toBe("0");
+    expect(bar["font-size"]).toBe("0.625rem");
+    expect(decl(screen(`${CYBER_SCOPE} [data-fx-progress-track]`)!)["flex-shrink"]).toBe("0"); // 不被 1rem 的外框壓扁
+  });
+
   it("FX-26 掃描帶：旋轉圖示用 visibility: hidden（仍佔位、sr-only 文字不受影響）；掃描帶是 ::after、absolute、不擋點擊、只 translateY", () => {
     expect(decl(screen(`${CYBER_SCOPE} [data-fx-scan] > svg`)!)).toEqual({ visibility: "hidden" });
     const band = screen(`${CYBER_SCOPE} [data-fx-scan]::after`)!;
