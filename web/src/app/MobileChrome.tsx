@@ -28,11 +28,10 @@ const tabClass =
   "flex min-h-14 flex-col items-center justify-center gap-0.5 px-1 text-xs font-medium text-ink-muted transition-colors";
 
 function Tab({ to, label, icon: Icon }: { to: string; label: string; icon: typeof List }) {
-  const fx = useFx();
   return (
     <NavLink
       to={to}
-      viewTransition={fx}
+     
       end={to === "/records"}
       data-fx="nav-item"
       className={({ isActive }) => cn(tabClass, isActive && "font-bold text-accent-text")}
@@ -46,7 +45,6 @@ function Tab({ to, label, icon: Icon }: { to: string; label: string; icon: typeo
 function MoreRow({ entry, onDone }: { entry: NavEntry; onDone: () => void }) {
   const trashCount = useTrashCount();
   const exporter = useExportAction();
-  const fx = useFx();
   const Icon = entry.icon;
   const rowClass =
     "flex min-h-12 w-full items-center gap-3 rounded-md px-3 text-base font-medium text-ink-1 hover:bg-surface";
@@ -75,7 +73,7 @@ function MoreRow({ entry, onDone }: { entry: NavEntry; onDone: () => void }) {
   }
   return (
     <SheetClose asChild>
-      <Link to={entry.to} viewTransition={fx} data-fx="nav-item" className={rowClass}>
+      <Link to={entry.to} data-fx="nav-item" className={rowClass}>
         <Icon className="size-5 text-ink-muted" aria-hidden="true" />
         {entry.label}
         {entry.badge === "trash" && <CountBadge count={trashCount} className="ml-auto" />}
@@ -123,7 +121,6 @@ export function MobileTabBar() {
   }, [pathname]);
   const moreActive = MORE_PATHS.some((p) => pathname.startsWith(p));
   const trashCount = useTrashCount();
-  const fx = useFx();
 
   return (
     <>
@@ -137,7 +134,7 @@ export function MobileTabBar() {
 
           <NavLink
             to="/records/new"
-            viewTransition={fx}
+           
             data-fx="nav-item"
             className={({ isActive }) => cn(tabClass, "relative", isActive && "font-bold text-accent-text")}
           >

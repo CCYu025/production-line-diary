@@ -1073,17 +1073,10 @@ describe("cyber.css：P3 塊 B 守門", () => {
     expect(bad).toEqual([]);
   });
 
-  it("FX-02 換頁：退 80ms ＋ 進 170ms ＝ 250ms；新頁等舊頁退完才開始；舊頁停在透明；不重疊相加；主題切換的 VT（data-vt）不套用這組", () => {
-    expect(px(tokens["--dur-vt-out"]!) + px(tokens["--dur-vt-in"]!)).toBeLessThanOrEqual(250);
-    const old = screen(`${CYBER_SCOPE}:not([data-vt])::view-transition-old(root)`)!;
-    const nw = screen(`${CYBER_SCOPE}:not([data-vt])::view-transition-new(root)`)!;
-    expect(decl(old)["animation"]).toBe("cyber-vt-out var(--dur-vt-out) var(--ease-glitch)");
-    expect(decl(old)["animation-fill-mode"]).toBe("forwards");
-    expect(decl(nw)["animation"]).toBe("cyber-vt-in var(--dur-vt-in) var(--ease-out)");
-    expect(decl(nw)["animation-delay"]).toBe("var(--dur-vt-out)");
-    expect(decl(nw)["animation-fill-mode"]).toBe("backwards");
-    expect(decl(old)["mix-blend-mode"]).toBe("normal");
-    expect(decl(nw)["mix-blend-mode"]).toBe("normal");
+  it("FX-02 已移除（設計師裁定）：換頁沒有 View Transitions 動畫——不留 cyber-vt-out、--dur-vt-out/in、:not([data-vt]) 的 ::view-transition 規則；FX-38 的 data-vt=theme 保留", () => {
+    expect(cyberCss).not.toMatch(/cyber-vt-out|--dur-vt-out|--dur-vt-in/);
+    expect(cyberCss).not.toContain(":not([data-vt])::view-transition");
+    expect(cyberCss).toContain('[data-vt="theme"]::view-transition-new(root)');
   });
 
   it("FX-38 主題切換：300ms、只有 data-vt=\"theme\" 時；舊畫面不動、新畫面掃描露出；減少動態效果時整組 VT 動畫關閉", () => {
@@ -1372,14 +1365,6 @@ describe("cyber.css：P3 裁定後續守門", () => {
     const lastFade = Number(/\*\s*(\d)\)/.exec(decl(screenRule(`${CYBER_SCOPE} [data-fx="detail-body"] > :nth-child(n + 4)`)!)["animation-delay"]!)![1]) * tok("--stagger-sheet") + tok("--dur-sheet-item");
     expect(3 * tok("--stagger-sheet") + tok("--dur-sheet-item")).toBe(lastFade);
     expect(cyberCss).not.toMatch(/:has\(/);
-  });
-
-  it("M3：VT 疊層會吞點擊（pointer-events 無效，實測），所以縮短總長至 ≤150ms，並關掉根群組預設 250ms 動畫（否則 VT 至少 250ms）", () => {
-    const n = (name: string) => parseFloat(new RegExp(name + String.raw`:\s*([\d.]+)ms`).exec(cyberCss)![1]!);
-    expect(n("--dur-vt-out") + n("--dur-vt-in")).toBeLessThanOrEqual(150);
-    const g = screenRule(`${CYBER_SCOPE}:not([data-vt])::view-transition-group(root)`);
-    expect(g, "要有 ::view-transition-group(root) 規則").toBeDefined();
-    expect(decl(g!)["animation"]).toBe("none");
   });
 
   it("@media print：aside > nav 的 position: relative（FX-04）印出時 revert-layer", () => {

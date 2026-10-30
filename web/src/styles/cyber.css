@@ -1450,39 +1450,16 @@
 
 /* === P3 B START === */
 /* =====================================================================================================
- * P3 塊 B：換頁 View Transitions（FX-02）、標題打字與游標（FX-03）、nav-indicator（FX-04）、主題切換掃描（FX-38）、開機畫面（FX-01）。
+ * P3 塊 B：標題打字與游標（FX-03）、nav-indicator（FX-04）、主題切換掃描（FX-38）、開機畫面（FX-01）。
  * 放在 P3 區段（塊 A）之後、報表隔離之外：塊 A 的守門測試鎖定 P3 區段「沒有 clip-path」，而打字與 VT 掃描需要 clip-path
  * （只用在不可點的純文字與整頁快照）。守則不變：@keyframes 一律 cyber- 前綴、時間走 token、infinite 只有游標（1 次／秒）。
  * ===================================================================================================== */
 
 :root[data-theme="cyber"] {
-  --dur-vt-out: 40ms; /* FX-02 舊頁退場（退 40 ＋ 進 100 ＝ 140ms；M3 縮短，見下） */
-  --dur-vt-in: 100ms; /* FX-02 新頁掃描線劃過 */
   --dur-vt-theme: 300ms; /* FX-38 主題切換掃描 */
   --dur-char: 18ms; /* FX-03 打字：每個字 18ms（字數 ≤ 16，上限 288ms） */
   --dur-cursor: 1s; /* 標題游標、開機行游標：1 次／秒 */
   --stagger-boot: 120ms; /* FX-01 每行 120ms */
-}
-
-/* ---------- FX-02 換頁（View Transitions，僅 useFx() 為 true 時由 JS 啟動）----------
- * M3：VT 進行中 ::view-transition 疊層會吞掉點擊（真實 Chrome 實測：對疊層與各偽元素設 pointer-events: none 皆無效，點擊仍落在 <html>，
- * 連點第二下被吞、焦點掉到 BODY），所以改成縮短 VT 總長：退 40 ＋ 進 100 ＝ 140ms，並關掉根快照群組預設的 250ms 動畫
- * （它會把 VT 撐到至少 250ms；根群組尺寸不變，不需要）。
- * 舊頁：水平切片 glitch（steps 位移）淡出；新頁：由上而下的 clip-path 掃描露出。兩張快照不重疊相加（mix-blend-mode: normal）。
- * 主題切換的 VT 會在 <html> 加 data-vt="theme"，不套用這組。 */
-:root[data-theme="cyber"]:not([data-vt])::view-transition-group(root) {
-  animation: none;
-}
-:root[data-theme="cyber"]:not([data-vt])::view-transition-old(root) {
-  animation: cyber-vt-out var(--dur-vt-out) var(--ease-glitch);
-  animation-fill-mode: forwards; /* 退場結束後要停在透明，否則舊頁快照會在新頁露出前閃回來 */
-  mix-blend-mode: normal;
-}
-:root[data-theme="cyber"]:not([data-vt])::view-transition-new(root) {
-  animation: cyber-vt-in var(--dur-vt-in) var(--ease-out);
-  animation-delay: var(--dur-vt-out); /* 等舊頁退場完才開始掃描露出 */
-  animation-fill-mode: backwards;
-  mix-blend-mode: normal;
 }
 
 /* ---------- FX-38 主題切換（只有切到 cyber 才有 data-vt="theme"）：舊畫面不動，新畫面（cyber）由上往下掃描露出，300ms ---------- */
@@ -1574,12 +1551,6 @@
   animation: cyber-cursor var(--dur-cursor) steps(1) infinite;
 }
 
-@keyframes cyber-vt-out {
-  to {
-    opacity: 0;
-    transform: translateX(6px);
-  }
-}
 @keyframes cyber-vt-in {
   from {
     clip-path: inset(0 0 100% 0);

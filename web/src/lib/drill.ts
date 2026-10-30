@@ -1,7 +1,6 @@
 import { emptyFilter } from "@shared/aggregate";
 import { useNavigate } from "react-router-dom";
 import * as React from "react";
-import { useFx } from "./fx";
 import type { RecordFilter } from "./types";
 import { recordFilterToParams } from "./urlQuery";
 
@@ -30,14 +29,10 @@ export function recordsLocation(filter: RecordFilter): { pathname: string; searc
 
 export function useDrillTo() {
   const navigate = useNavigate();
-  const fx = useFx();
-  // FX-02：cyber（且沒有減少動態效果）時帶 View Transitions；標準主題與原本完全相同。
   return React.useCallback(
     (key: DrillKey, value: string) => {
-      const to = recordsLocation(drillFilter(key, value));
-      if (fx) void navigate(to, { viewTransition: true });
-      else void navigate(to);
+      void navigate(recordsLocation(drillFilter(key, value)));
     },
-    [navigate, fx],
+    [navigate],
   );
 }

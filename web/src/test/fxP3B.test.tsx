@@ -9,6 +9,7 @@ import { Sidebar } from "@/app/Sidebar";
 import { useThemeToggle } from "@/app/themeToggle";
 import { PageHeader } from "@/components/PageHeader";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useDrillTo } from "@/lib/drill";
 import { titleTypeProps } from "@/lib/fx/titleType";
 import { createQueryClient } from "@/lib/queryClient";
 import { applyTheme } from "@/lib/theme";
@@ -145,32 +146,55 @@ describe("FX-04 nav-indicator", () => {
   });
 });
 
-describe("FX-02 換頁 View Transitions", () => {
-  it("cyber：點導覽連結會呼叫 document.startViewTransition，並照常換頁", async () => {
-    root.dataset.theme = "cyber";
+describe("FX-02 已移除：換頁不帶 View Transitions", () => {
+  function spyStart() {
     const start = vi.fn((cb: () => void) => {
       cb();
       return { finished: Promise.resolve(), ready: Promise.resolve(), updateCallbackDone: Promise.resolve(), skipTransition: () => {} };
     });
     vtHost.startViewTransition = start;
-    renderSidebar("/dashboard", true);
-    await userEvent.click(screen.getByRole("link", { name: "日曆" }));
-    expect(start).toHaveBeenCalled();
-    expect(screen.getByRole("link", { name: "日曆" })).toHaveAttribute("aria-current", "page");
-  });
+    return start;
+  }
 
-  it("標準主題：點導覽連結不會用 View Transitions", async () => {
-    const start = vi.fn((cb: () => void) => {
-      cb();
-      return { finished: Promise.resolve() };
-    });
-    vtHost.startViewTransition = start;
+  it.each([
+    ["cyber", true],
+    ["標準主題", false],
+  ])("%s：點導覽連結照常換頁，且不呼叫 document.startViewTransition", async (_n, cyber) => {
+    if (cyber) root.dataset.theme = "cyber";
+    const start = spyStart();
     renderSidebar("/dashboard", true);
     await userEvent.click(screen.getByRole("link", { name: "日曆" }));
     expect(start).not.toHaveBeenCalled();
     expect(screen.getByRole("link", { name: "日曆" })).toHaveAttribute("aria-current", "page");
   });
+
+  it("cyber：drill 帶篩選跳轉也不呼叫 startViewTransition", () => {
+    root.dataset.theme = "cyber";
+    const start = spyStart();
+    const router = createMemoryRouter(
+      [
+        {
+          path: "*",
+          element: <DrillHarness />,
+        },
+      ],
+      { initialEntries: ["/dashboard"] },
+    );
+    render(<RouterProvider router={router} />);
+    act(() => void screen.getByRole("button", { name: "drill" }).click());
+    expect(router.state.location.pathname).toBe("/records");
+    expect(start).not.toHaveBeenCalled();
+  });
 });
+
+function DrillHarness() {
+  const drillTo = useDrillTo();
+  return (
+    <button type="button" onClick={() => drillTo("severity", "high")}>
+      drill
+    </button>
+  );
+}
 
 function ToggleHarness() {
   const { isCyber, toggle } = useThemeToggle();
