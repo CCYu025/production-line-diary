@@ -1,6 +1,6 @@
 # 產線日誌 Cyber-Terminal 主題 設計規格書
 
-> 狀態：**P0 已合併（PR #40）；P1 已合併（PR #41）；P2 已實作，待合併（分支 `feat/cyber-p2-motion`，PR #42）；P3 尚未實作**（2026-10-29）。
+> 狀態：**P0 已合併（PR #40）；P1 已合併（PR #41）；P2 已合併（PR #42）；P3 已實作，待合併（分支 `feat/cyber-p3-signature`）**（2026-10-30）。
 > 風格：終端機為骨架、賽博龐克霓虹為強調色的混合風格（「Cyber-Terminal」）。
 > 本文件是之後實作與驗收的唯一依據；實作時若要偏離，先改這份文件再改程式碼。
 
@@ -42,6 +42,8 @@
 **2026-10-28 P1 設計審查**裁定（PR #41 退回一輪修正，本段為修正後的最終做法）：(1) **分段按鈕選中態改空心終端風**——`accent-wash` 底＋1px `accent` 內框（`box-shadow: inset 0 0 0 1px`，不改尺寸）＋`accent-text` 字，保留 `[ ]`，括號**貼著文字**、與文字固定間距 4px（桌面括號是按鈕的 `::before`／`::after` 排進內容前後，手機是標籤 `<span>` 兩側的絕對定位），選中與未選中時文字位置不跳動；嚴重度色條因此在深底上清楚可辨；(2) 回收桶「永久刪除」按鈕不動 variant，加**純屬性 `data-fx-tone="danger"`**（標準主題 0 差異），cyber 下 critical 字與框、hover 為 `--glow-critical`、絕不出現青框；(3) **按鈕框線一律用 `inset box-shadow`**，hover 光暈與內框合併在同一個 `box-shadow` 宣告，不新增實體 `border`，cyber 與標準的按鈕尺寸（rect 寬高）必須相同；(4) 切角面板的角框在兩個切角處改成**連續的「折角括號」**（兩段直邊線＋中間 45° 斜線）；(5) 平板圖示列（768–1023）目前頁左側加 2px `accent` 內側直條（靜態，不是 `nav-indicator`）；(6) 日曆格 `:focus-visible` 在焦點環外側墊 `--page` 色的外暈，並用 `z-index` 蓋在相鄰格上，使焦點環對相鄰第 3 級格 ≥ 3:1；(7) 掃描線色 `--ink-1` 核准；手機頂欄 18px 標題不加光暈（維持 ≥ 20px 才加）；(8) **色盲不在 P1 處理**（嚴重度本來就有文字標籤，狀態用形狀）；(9) 側欄連結、列表列、趨勢柱的焦點環被 `overflow` 裁掉是標準主題既有狀況，**不在 cyber 範圍**（§9.2 B3 的判定以「cyber 沒有比標準主題更差」為準）；(10) 上面 P1 設計裁定的偏離第 1–7 項已核准；多選選項語意（`role="option"`＋sr-only「（已選）」）不變，`[x]`／`[ ]` 只是 `aria-hidden` 的視覺。 修正輪重驗（HEAD `93060a0`）後另裁定接受：(11) **「按鈕 rect 必須與標準相同」只涵蓋 `Button` 元件**（框線用 `inset box-shadow` 不改尺寸）；分段按鈕群組在 cyber 可以變寬（桌面括號佔位約 +24.81px，另有等寬字型的影響），條件是不折行、320–1280 無橫向捲動、觸控目標不比標準小；(12) **已知的緊繃情況**：320 寬五選項嚴重度篩選選中時，括號 ink 離按鈕內框只有約 0.56–0.77px（沒有出框、括號與文字間隙 ≥ 2px 已達成），維持現狀；(13) 狀態符號 ○ ◐ ● 沒有「依狀態而異的色相」，一律跟隨 `currentColor`，所以分段按鈕選中時被 `accent-text` 染色是允許的（§5.5）；(14) 「永久刪除」（`data-fx-tone="danger"`）沿用標準主題本來就是 `critical` 色的實體 1px 框，不另加 inset 內框（否則變 2px）；(15) 既有、非 cyber 造成：375 寬時固定的底部分頁列與中央新增鈕會蓋住被 Tab 聚焦到的下方元素（cyber 與標準相同，不在本期範圍）；(16) **FX-19（P2）要先對齊現況**：分段按鈕目前每顆都有括號、未選中的以 `visibility: hidden` 佔位，P2 的「括號滑到新選項」需據此重新設計。
 
 **2026-10-29 P2 設計簡報**裁定：(1) **FX-19**：括號常駐、未選中的 `visibility: hidden` 佔位，所以「滑到新選項」做不到，改成**新選中項的括號由外側 4px 收回定位並淡入**（只動 `transform`／`opacity`，括號最終位置與 P1 相同）；(2) **FX-17** 只做「新增」（`clip-path` 由左展開），**移除直接消失**（移除動畫要延後卸載，不做）；(3) **FX-31（回收桶溶解）整項移到 P3**：要延後卸載該列，P3 判斷能否不延後 API 呼叫，不行就放棄；(4) **FX-21** 改為「切換紀錄時重播 FX-20 的內容依序淡入」：`DetailBody` 本來就以 `key={r.id}` 重新掛載，所以不分前後方向、沒有獨立的 glitch；每段 200ms、間隔 30ms，延遲分 6 檔（第 8 個之後的區塊共用最後一檔），最晚一段收尾 ≤ 350ms（以實作為準）；(5) **FX-22** 沿用 `data-variant="destructive"`（所有 destructive 確認框都有 4px `critical` 斜紋上緣＋`--glow-critical`，**未新增 `data-fx-tone`**）；進場 glitch 改用 `transform`／`opacity`，**不用 `clip-path`**——`clip-path` 會讓 hit-test 跟著被裁掉、進場中點不到按鈕（實測發現並修正）；(6) **FX-23** 的 `>` 提示符只有 Combobox 外層（`combobox`）有，其餘輸入框只有框線＋光暈；(7) **FX-24** 的抖動在 `aria-invalid` 出現時觸發，同一個錯誤第二次提交不重播；(8) **FX-28 移到 P3**：`SegmentedControl` 的選項沒有「被建議」屬性，要先加 prop；(9) **FX-29** 沿用 sonner 自己的進退場滑動，cyber 只加左側色條、標題打字、錯誤框閃一次；(10) **FX-30** 的 `accent` 底是靜態狀態＋`box-shadow` 閃一次；(11) **FX-33（骨架掃光）與 FX-35（未儲存呼吸）是 P2 唯二的 `infinite` 動畫**；(12) **FX-36** 開啟用 `scaleY`＋`opacity`，**切換照片不做**（`<img>` 只換 `src`、不重新掛載）；(13) **FX-37** 按壓用 `inset` 疊色（`box-shadow: inset 0 0 0 999px`）亮一下，不改尺寸；(14) **FX-06** 的擴散環畫在新增鈕連結 `<a>` 的 `::after`（56px／`top: -24px`，對齊凸出的圓鈕、`pointer-events: none`），**不碰 `data-fx="fab"`**，與 `MobileChrome` 的 FAB class 以測試綁定（P1 起 `cyber.css` 就不處理 `fab`，`cyberCss.test.ts` 斷言沒有 `fab` 的選擇器）；(15) **FX-10** 為了讓長條的光暈不被裁掉，新增 `bar-track` 掛勾，cyber 下軌道改 `overflow: visible`（長條寬度本來就 ≤ 軌道）；(16) **列印還原用 `revert-layer` 而不是 `none`**：保持 computed style 與標準淺色一致（標準主題本來就有的 Tailwind 動畫與 transition 列印時要保留）；sonner 整棵子樹的 transition／animation 是執行期插入的無層級樣式，`revert-layer` 會連它的一起退掉，所以只對那棵子樹做 `animation: none`；(17) **P1 的「不得有動畫」靜態斷言改為只掃 `/* === P2 START === */` 之前**（`cyberCss.test.ts`）；P2 區段另有自己的斷言（只動 `transform`／`opacity`／`clip-path`／光暈 `box-shadow`、`@keyframes` 以 `cyber-` 前綴、`infinite` 白名單等）；(18) **P2 專用動畫時間 token 定義在 `cyber.css` 的 `:root[data-theme="cyber"]` 區塊（P2 區段開頭），不放 `index.css`**：`--dur-close: 100ms`、`--dur-open: 200ms`、`--dur-type: 200ms`、`--dur-shake: 240ms`、`--dur-err: 280ms`、`--dur-flash: 120ms`、`--dur-ring: 300ms`、`--dur-sweep: 1.6s`、`--dur-breathe: 2.4s`、`--stagger-sheet: 30ms`、`--dur-sheet-item: 200ms`、`--ease-type: steps(8, end)`，另有按壓疊色 `--press-wash`、`--press-wash-critical`；§4.4 的 `--dur-*`／`--ease-*`／`--stagger` 仍在 `index.css` 的 `:root`。
+
+**2026-10-30 P3 設計簡報**裁定：(1) **範圍**：FX-01、03、04、07、08、09、11–14、16、25–27、28、31、32、36（含切換照片）、38，以及頁面標題尾端游標（§5.2）與 `nav-indicator`（§3.3，與 FX-04 一起）；**FX-17 的「移除」動畫不做**（要延後卸載，直接消失）；**FX-02 換頁 View Transitions 評估後移除**（見第 10 點）。(2) **infinite 白名單**：FX-33、FX-35（P2）＋ FX-08、頁面標題游標、FX-25、FX-26、FX-32（P3）；理由是它們的語意都是「持續」（警示、游標、進行中），只動 `opacity`／`transform`、不閃爍；**infinite 一律直接寫在 `animation` 簡寫裡**（不用 `--loop-forever` 之類的間接 token）。**授權修改 P2 既有斷言**：「infinite 恰好 2 條」改為依 `@keyframes` 名稱的白名單比對（並加負向測試：白名單外的 infinite 一律失敗）。(3) **授權修改 FX-20 的 `detail-body` 檔數斷言**：詳情面板內容依序淡入由 6 檔減為 4 檔（延遲 0／1×／2×／3× 間隔，第 4 個之後的區塊共用最後一檔，只動 `opacity`、不位移，總長 290ms；斷言由「5 條 delay」改為「3 條」）；FX-20 的掃描線（`cyber-sheet-sweep`）`animation-delay` 延後到淡入全部結束之後（`3 × --stagger-sheet ＋ --dur-sheet-item`＝290ms），兩者不同時觸發（呼應 P2 驗證發現的 4× CPU 降速掉幀，見 §13）。(4) **FX-16**：只讓**新出現的列**進場（前 20 列，手機 10 列；篩選結果變化時，原本就在的列不重播），捲動中不重播；hover 的 `▶` 為 `aria-hidden`、`content` 帶 `/ ""`、不佔版面；虛擬化／分頁行為不變。(5) **不重掛可聚焦元素**：長條（按鈕）、趨勢柱（按鈕）、日曆格等**不以資料簽名或月份當 `key` 重掛**——重掛會讓焦點掉到 `body`；改用 `useReplayPhase(signature)`，簽名改變時 `data-fx-phase` 在 `"a"`／`"b"` 間翻面，CSS 在內容相同、名稱不同的兩組 `@keyframes`（如 `cyber-bar-grow`／`cyber-bar-grow-b`）之間切換 `animation-name` 以重播；簽名不變（例如 refetch 回來資料相同）相位不變。標準主題與減少動態效果時不輸出屬性。(6) **新增的 `data-fx-*` 屬性掛勾**（`data-fx-in`、`-phase`、`-indicator`、`-scan`、`-progress`、`-copied`、`-suggested`、`-ghost`、`-boot` 等）一律納入 §3.3，這些是純屬性、不是 `data-fx` 值，AX 樹與 rect 不變。(7) **FX-03**：標題尾端游標畫在標題的 `::after`，`content: "\2060 \258C" / ""`（替代文字為空，不進輔助科技），標題 `white-space: nowrap`（不會被游標擠成兩行，320 寬已驗），`steps(1)` 1s 閃爍常駐，減少動態效果時停在常亮；打字用 `clip-path`（標題不可點）。(8) **FX-38**：沒有獨立的發光掃描線——只用 View Transitions 的新畫面 `clip-path` 由上往下露出（300ms，舊畫面不動）；僅切到 cyber 且未減少動態效果時播，切回標準不播。(9) **標題打字與 VT 重疊接受**：FX-38 的整頁快照與標題打字可能同時發生（切到 cyber 的當下），不另外錯開。(10) **FX-02 換頁 View Transitions「評估後移除」**：原設計（退 80＋進 170ms）實測後放棄，理由：View Transitions 進行期間**真實 DOM 不可 hit-test**（畫面是 `::view-transition` 快照），縮到最短（退 40＋進 100、關掉根群組預設 250ms 動畫，約 240ms）仍會吞掉點擊約 250ms，違反總原則 2 與 M3「不擋輸入」；`pointer-events: none` 對 `::view-transition-*` 偽元素**無效**（實測，擋不住吞點擊）。因此 Sidebar／MobileChrome 的導覽連結與 `drill.ts` 帶篩選跳轉**都不帶 `viewTransition`**，換頁只剩 FX-03 標題打字與 FX-04 高亮條。**FX-38 保留**（主題切換是使用者主動、低頻的單次操作，300ms 內的吞點擊可接受）；`themeToggle.tsx` 是專案裡**唯一**呼叫 `startViewTransition` 的地方。(11) **FX-11**：長條列 `:active` 時由 CSS（`bar-row::before`）畫洋紅 L 形角框，**鍵盤 Enter 不觸發角框、不加 JS**、不加 `setTimeout`、不延後跳轉；FX-02 移除後角框只在按下的瞬間可見。(12) **FX-31 實作條件與結果**：見下一段（塊 C 後半裁定）——條件全部成立，已實作。(13) **掃描線 `body::after` 維持 P1 設計不改**（不為 P3 加動畫）。(14) **§9.4 P1 目標改為「相對標準主題不低超過 3fps」**（原「≥ 50fps」在 4× CPU 降速下連標準主題都達不到，見 §13；細節數字之後補）。(15) **標準主題零差異的做法**：`nav-indicator`、開機行（`BootScreen`）、FX-25 進度條都**只在 cyber（且 `useFx()`）時渲染**，標準主題 DOM 與 AX 樹與 main 完全相同；標題游標、FX-32 等為純 CSS 偽元素。FX-01 開機畫面只在 App 冷啟動、儀表板資料載入中出現，載入不到 150ms 不顯示，每個分頁只出現一次（`sessionStorage`），按任意鍵或點擊跳過，資料一到立即結束，不延後內容。
 
 **2026-10-30 P3 塊 C 後半裁定**：(1) **FX-27**：`RecordForm` 只多一個純展示狀態 `{ n, fields }`（帶入時 `n+1`、`fields` 為真的被填值的欄位），`Field` 渲染 `data-fx-copied="a"／"b"`（依 `n` 奇偶交替）；屬性值一變，CSS 選到的 keyframes 名稱就換、動畫重播，**輸入框不重新掛載**，表單值、驗證、焦點不變；每欄 200ms、間隔 40ms；復原帶入／重設時清空欄位清單。(2) **FX-28**：`SegmentedControl` 加 optional `suggestedValue`，該選項渲染 `data-fx-suggested=<選項值>`，cyber 下屬性出現（建議值變化）時閃一次對應嚴重度色光暈 300ms；`RecordForm` 接上既有的 `suggestSeverity(duration)`，只做展示，資料流不變；標準主題沒有規則吃這個屬性。(3) **FX-31 實作（條件全部成立）**：API、查詢快取、計數、徽章都照原時機更新（`rows` 不變）；`useGhostRows` 只在 `useFx()===true` 時於原位置多留一個殘影節點 250ms（`inert`＋`aria-hidden`＋`data-fx-ghost`，不可聚焦不可點），復原垂直收起、永久刪除水平收起；標準主題／reduced-motion／jsdom 的 DOM 與原本相同；`TrashPage` 改動約 20 行；焦點落點由原本的程式碼決定、與標準相同。
 
@@ -126,7 +128,7 @@ cyber.css **不針對 Tailwind class 寫選擇器**（class 會變動，也會�
 | `brand` | 側欄 logo 方塊（`<span>`，內含 Factory 圖示，`text-white` 沒動；cyber 下圖示色由 CSS 處理）。手機頂欄沒有 logo，所以只有這一處 |
 | `fab` | 手機底部中央「新增」圓鈕（`<span>`，在 `nav-item` 的 `<a>` 裡，絕對定位凸出）。維持實心樣式（§5.4） |
 | `topbar` | 手機頂欄（`<header>`，`< 768` 才顯示） |
-| `nav-indicator` | **延到 P3 與 FX-04 一起做，P1 不加**（會新增一個 `aria-hidden` 的高亮條元素，是這個表唯一會動到 DOM 結構的項目） |
+| `nav-indicator` | **（P3 實作，FX-04）** 不是 `data-fx` 值，而是屬性 `data-fx-indicator`：`NavIndicator.tsx` 在導覽列內渲染的 `aria-hidden`＋`inert` 高亮條 `<span>`，**只在 cyber 渲染**（標準主題 DOM 不變）；位置由目前頁連結（`aria-current="page"`）的 `offsetTop` 寫進 `--nav-y`，用 `transform` 位移 220ms，首次量測前沒有過渡（`data-ready`）；沒有目前頁時淡出（`data-state="off"`）；桌面為整個項目高度的 2px 青線，768–1023 改為垂直短條並取代 P1 的 2px 內側直條，< 768 不顯示 |
 | `bar-row` / `bar` | `charts.tsx` `HBarChart`：每一列整個按鈕（`<button>`，`bar-row`）與長條的填色（`<span aria-hidden>`，`bar`；寬度是行內 style，FX-09 的 `scaleX` 作用在它上面，它在一個 `overflow-hidden` 的軌道裡）。處理狀態堆疊條與甜甜圈不是 `bar` |
 | `trend-col` / `trend-bar` | 每日趨勢：`trend-col` 是整個柱子按鈕（`<button>`，含數量、柱、日期），`trend-bar` 是裡面的柱（`<span aria-hidden>`，高度是行內 style，FX-12 的 `scaleY` 作用在它上面） |
 | `cal-cell` | 日曆格子：有紀錄的是 `<button>`（另帶 `data-step`、`data-date`），沒有紀錄的是 `<div>`；補位的空格（`<td aria-hidden>`）不是 |
@@ -155,9 +157,25 @@ cyber.css **不針對 Tailwind class 寫選擇器**（class 會變動，也會�
 | `error-title` | `ErrorState.tsx` 的標題 `<p>`（P2，FX-34）：載入失敗時 glitch 一次 |
 | `unsaved` | `SettingsPage.tsx` 設備對照設定「未儲存」提示的文字外層 `<span>`（P2，FX-35）：左側 `::before` 的 `serious` 色條緩慢呼吸 |
 
-**P3 塊 C 新增的純屬性掛勾（不是 `data-fx` 值，AX 樹與 rect 不變）**：`data-fx-scan`（`PhotoThumb` 上傳中覆蓋層，FX-26；旋轉圖示與 sr-only「上傳中」保留）；`data-fx-progress`／`-track`／`-block`（`RecordForm` 送出中 ASCII 進度條，FX-25，**只在 `useFx()` 為 true 時渲染**、`aria-hidden`、取代旋轉圖示；標準主題與減少動態效果仍是旋轉圖示）。FX-11 使用既有的 `bar-row`（`::before` 畫角框）、FX-32 使用既有的 `nav-item[aria-busy="true"]`、FX-36 切換照片使用 `lightbox` 內的 `<img key={src}>`（標準主題也以 src 為 key，視覺不變）。**infinite 白名單（P3 塊 C）**：FX-25、FX-26、FX-32，理由：語意是「進行中、時間不明」，必須持續可見；只動 `transform`、不閃爍，元素只在進行中才存在／匹配；關鍵字不直接出現，以 `var(--loop-forever)` 取用。FX-32 在圖示列（768–1023，只有圖示）不顯示。FX-25 進度條相對旋轉圖示較寬，但送出鈕有 `md:min-w-36`（手機 `flex-1`），內容寬度遠小於最小寬，按鈕 rect 與標準送出中相同。
+**P3 新增的純屬性掛勾（不是 `data-fx` 值，AX 樹與 rect 不變；cyber 規則可以選它們）**：
 
-**刻意沒有掛勾**（P3 需要時再加，加之前先改這張表；`Lightbox`、篩選 chip、「未儲存」提示已在 P2 加入，見上表）：處理狀態堆疊條與甜甜圈的非嚴重度部分、`CopyPicker` 與 `PhotoThumb`／`PhotoField` 的縮圖（FX-26／27）、匯出項目的進行中標記（FX-32，目前只有 `aria-busy`）、日期篩選的快捷 pill（用 `aria-pressed`）、紀錄詳情面板內部（面板本身是 `sheet`）。
+| 屬性 | 位置與用途 |
+|---|---|
+| `data-fx-in` | `useStagger` 輸出（值為 `""`，另有 `style="--i: n"`）：該元素要播依序進場，超過上限（桌面 20、< 768 為 10）的項目沒有。HBar 長條（FX-09）、趨勢柱（FX-12）、日曆格（FX-14）、紀錄列（FX-16）使用；日曆換月（`"glitch"`）與甜甜圈（`"donut"`）以值區分。只在 `useFx()` 為 true 時輸出 |
+| `data-fx-phase` | `useReplayPhase` 輸出（`"a"`／`"b"`）：資料簽名改變時翻面，CSS 在 `-b` 版 `@keyframes` 之間切換 `animation-name` 以重播，**不重掛 DOM**（FX-09 長條 `<ul>`、FX-12 趨勢 `<ol>`、FX-13 甜甜圈、FX-14 日曆）。標準主題與減少動態效果不輸出 |
+| `data-fx-alert` | 「待處理」> 0 的 KPI 卡（P1 起；P3 的 FX-08 呼吸角框使用） |
+| `data-fx-indicator` | FX-04 高亮條（見上表 `nav-indicator` 列），搭配 `data-state`／`data-ready` |
+| `data-fx-boot`／`-boot-line` | FX-01 開機畫面容器與每一行（`aria-hidden`，`style="--i: n"`），只在 cyber 且 `useFx()` 時渲染 |
+| `data-fx-scan` | `PhotoThumb` 上傳中覆蓋層（FX-26）；旋轉圖示與 sr-only「上傳中」保留 |
+| `data-fx-progress`／`-track`／`-block` | `RecordForm` 送出中 ASCII 進度條（FX-25）；**只在 `useFx()` 為 true 時渲染**、`aria-hidden`、取代旋轉圖示（標準主題與減少動態效果仍是旋轉圖示）。送出鈕有 `md:min-w-36`（手機 `flex-1`），內容寬度遠小於最小寬，按鈕 rect 與標準送出中相同 |
+| `data-fx-copied` | `fields.tsx` 的 `Field`（FX-27）：值 `"a"`／`"b"` 依 `RecordForm` 的帶入計數奇偶交替，屬性值一變 CSS 選到的 keyframes 就換、動畫重播，輸入框不重掛 |
+| `data-fx-suggested` | `SegmentedControl` 的被建議選項（FX-28，optional prop `suggestedValue`；值為選項值） |
+| `data-fx-ghost` | `TrashPage` 被移除列的視覺殘影（FX-31，值為 `"restore"`／`"purge"`），同時帶 `inert`＋`aria-hidden`，250ms 後移除 |
+| `data-vt` | `<html data-vt="theme">`：只在「切到 cyber」的主題切換 View Transitions 期間存在（FX-38） |
+
+FX-11 使用既有的 `bar-row`（`::before` 畫角框）、FX-32 使用既有的 `nav-item[aria-busy="true"]`、FX-36 切換照片使用 `lightbox` 內的 `<img key={src}>`（標準主題也以 src 為 key，視覺不變）、FX-03 使用既有的 `page-title`。**infinite 白名單（P3）**：FX-08、頁面標題游標（FX-03）、開機行游標、FX-25、FX-26、FX-32，理由：語意是「持續」或「進行中、時間不明」，必須持續可見；只動 `opacity`／`transform`、不閃爍，元素只在對應狀態才存在／匹配；`infinite` 一律直接寫在 `animation` 簡寫裡。FX-32 在圖示列（768–1023，只有圖示）不顯示。
+
+**刻意沒有掛勾**（需要時再加，加之前先改這張表；`Lightbox`、篩選 chip、「未儲存」提示已在 P2 加入，見上表）：處理狀態堆疊條與甜甜圈的非嚴重度部分、`CopyPicker`、日期篩選的快捷 pill（用 `aria-pressed`）、紀錄詳情面板內部（面板本身是 `sheet`）。
 
 ### 3.4 圓角改成執行期 token（標準主題零視覺差異）
 
@@ -170,16 +188,17 @@ cyber 沒辦法在執行期改。做法：
 
 ### 3.5 FX 小工具（`web/src/lib/fx/`）
 
-只寫三個，不引入動畫套件：
+只寫這幾個（P3 由原本的三個增為六個），不引入動畫套件：
 
 | 工具 | 用途 | 無障礙做法 |
 |---|---|---|
 | `useFx()` | 判斷是否要播 JS 動畫（第 3.1 節） | — |
 | `<ScrambleNumber value>` | 數字先亂跳再鎖定成真實值（FX-07） | 真實數字放在 `sr-only` 的 span；亂跳的那份是 `aria-hidden`，**動畫結束就移除**，之後 DOM 裡只剩一份數字（避免 `getByText` 找到兩個） |
-| `useStagger(count, cap)` | 列表、長條的依序進場延遲，最多套用前 `cap` 項 | 純視覺，不影響 DOM 順序 |
+| `useStagger(count, cap)` | 列表、長條的依序進場延遲，最多套用前 `cap` 項；回傳每項要展開的 `data-fx-in`＋`--i`（`useStaggerCap()` 給桌面 20／< 768 為 10 的上限） | 純視覺，不影響 DOM 順序 |
+| `useReplayPhase(signature)` | 「不重掛的重播」：簽名改變時回傳的相位在 `"a"`／`"b"` 間翻面，呼叫端輸出成 `data-fx-phase`；簽名不變不重播 | 純屬性；DOM 節點與 `key` 不動，可聚焦元素不會被重掛、焦點不會掉 |
+| `useGhostRows(rows, opRef)`／`ghostProps` | FX-31：`useFx()` 為 true 時，為被移除的列在原位置多留一個殘影節點 `GHOST_MS`（250ms）；`rows` 本身不變，API／快取／計數照原時機 | 殘影帶 `inert`＋`aria-hidden`＋`data-fx-ghost`，不可聚焦不可點；標準主題 DOM 不變 |
 
-頁面切換用瀏覽器原生的 View Transitions API（React Router 7 的 `viewTransition` 選項），**只在 `useFx()` 為 true 時開啟**；
-不支援的瀏覽器直接跳過，不加 polyfill。
+View Transitions API **只用於主題切換（FX-38）**：`themeToggle.tsx` 在 `useFx()` 條件成立且「切到 cyber」時才呼叫 `document.startViewTransition`；不支援的瀏覽器直接跳過，不加 polyfill。**換頁不使用 View Transitions（FX-02 已移除，理由見 §1 P3 設計簡報第 10 點）**——VT 進行期間真實 DOM 不可 hit-test，會吞點擊。
 
 ---
 
@@ -283,7 +302,7 @@ cyber 沒辦法在執行期改。做法：
 |---|---|
 | 側欄目前頁面 | 前綴 `>`，青色；**只在桌面側欄（≥ 1024）**。實作：`::before` 絕對定位在項目左側的內距裡，不佔版面，所以其他項目不必保留空白、文字也不會跳動；平板圖示列（文字 sr-only）與手機不加 |
 | 群組小標（檢視／輸出／管理） | `// 檢視` |
-| 頁面標題 | 前綴 `~/`（`ink-muted`）。PageHeader 的 `<h1>` 在 < 768 是 sr-only，視覺標題是手機頂欄的 `<p aria-hidden>`，所以 `h1[data-fx="page-title"]` 的前綴只在 ≥ 768、`p[data-fx="page-title"]` 的前綴全寬度套用。**尾端閃爍游標延到 P3**（`aria-hidden` 元素，1s `steps(1)` 閃爍） |
+| 頁面標題 | 前綴 `~/`（`ink-muted`）。PageHeader 的 `<h1>` 在 < 768 是 sr-only，視覺標題是手機頂欄的 `<p aria-hidden>`，所以 `h1[data-fx="page-title"]` 的前綴只在 ≥ 768、`p[data-fx="page-title"]` 的前綴全寬度套用。**尾端閃爍游標（P3 實作，FX-03）**：標題的 `::after`（`content: "\2060 \258C" / ""`，不進輔助科技），1s `steps(1)` 閃爍，減少動態效果時常亮，標題 `nowrap` |
 | 分段按鈕 | 選中的項目文字兩側 `[ ]`，**貼著文字、與文字固定間距 4px**（不貼按鈕兩端，手機也一樣），選中態另改成空心終端風（見下）。桌面（≥ 768，按鈕是橫排的「標籤＋筆數」）：括號是按鈕自己的 `::before`／`::after`，當作 flex 子項目排進內容前後（flex gap 6px，用 `-2px` margin 修成 4px），包住標籤與筆數；**所有**分段按鈕都有括號，未選中的用 `visibility: hidden` 佔位，所以選中與否文字位置不跳動、按鈕寬度一致。手機（< 768，按鈕直排，欄寬由 `auto-cols-fr` 等分）：括號絕對定位在標籤 `<span>`（第一個子元素）兩側，不佔版面、不改欄寬，括號 10px，按鈕最小寬度放大到 52px 才容得下括號。**選中態**：`accent-wash` 底＋1px `accent` 內框（`box-shadow: inset 0 0 0 1px var(--accent)`，不改尺寸）＋`accent-text` 字，嚴重度色條在深底上才清楚分辨 |
 | 多選下拉的勾選 | 視覺上畫成 `[x]`／`[ ]`（隱藏方塊底、框與 `Check` 圖示；兩種狀態同寬 22px，選項不跳動）；語意（`role="option"`＋sr-only「（已選）」）不變，`[x]`／`[ ]` 只是 `aria-hidden` 的視覺 |
 | 錯誤訊息 | 前綴 `ERR:`（critical 色） |
@@ -295,7 +314,7 @@ cyber 沒辦法在執行期改。做法：
 
 - `data-fx="panel"`：`surface-raised` 底、1px `line` 框、2px 圓角；hover 不變（面板本身不可點）。
 - `data-fx="panel-cut"`（待處理／追蹤中 KPI 卡，可能是可聚焦的 `<button>`，0 筆時是 `<div>`）：右上與左下切角（大小 `--cut-md`，手機 `--cut-sm`），四角各有角框，顏色 `line-strong`：左上與右下兩個直角是 10px 的 L 形，**兩個切角（右上、左下）是連續的「折角括號」**——沿兩條直邊各一段 10px 的線，加上中間沿 45° 切角的 2px 斜線，三段相連成一個完整的角標（不是斷開的兩截）；
-  **「待處理」大於 0 時**（`[data-fx-alert]`），角框改成 `serious` 色（P1 靜態；呼吸效果是 P3 的 FX-08）。
+  **「待處理」大於 0 時**（`[data-fx-alert]`），角框改成 `serious` 色（P1 靜態；呼吸效果是 P3 的 FX-08，已實作）。
 - **實作（P1 設計裁定）**：**元素本身不加 `clip-path`**，cyber 下底色與框線透明，並設 `position: relative; isolation: isolate`（0 筆的 `<div>` 沒有 Tailwind 的 `relative`）；
   切角的底色與 1px 框線畫在 `::before`（`inset: -1px; z-index: -1`；`clip-path: polygon(…)` 在偽元素上；框線用 `box-shadow: inset 0 0 0 1px var(--pc-line)`；切角斜邊的框線用兩條 45° 的 `linear-gradient(to top right, …)` 補連續）；
   角框用 `::after` 的 10 條 `linear-gradient` 畫（每角兩條 10px × 2px 的直線，加上兩個切角各一條 `to top right` 的 2px 斜線，斜線貼在切角邊的內側，與 `::before` 的 1px 斜邊框線重疊）；`::after` 本身不加 `clip-path`；不新增 DOM。hover（可點的按鈕）：框線變 `accent`。局部變數 `--pc-cut／--pc-fill／--pc-line／--pc-corner` 都定義在元素自己身上。
@@ -336,10 +355,12 @@ cyber 沒辦法在執行期改。做法：
 2. **不擋輸入**：動畫期間元素一律可點；中途再點，取消目前動畫、以新操作為準。
 3. **閃爍上限**：任何閃爍或 glitch 每秒不超過 3 次，而且只播一次（游標閃爍是每秒 1 次，例外允許常駐）。
 4. **依序進場最多 20 項**：超過的直接出現，不排隊。
-5. **減少動態效果**：CSS 由 `index.css` 現有的全域規則處理；JS 動畫（`ScrambleNumber`、`useStagger`、View Transitions）在 `useFx()` 為 false 時直接顯示最終狀態。
+5. **減少動態效果**：CSS 由 `index.css` 現有的全域規則處理；JS 動畫（`ScrambleNumber`、`useStagger`、`useReplayPhase`、`useGhostRows`、主題切換的 View Transitions）在 `useFx()` 為 false 時直接顯示最終狀態。
 6. **測試環境**：jsdom 中 `useFx()` 為 false，所有測試看到的都是最終狀態。
 7. **（P2 追加）可點元素的進場不得用 `clip-path`**：`clip-path` 會讓 hit-test 跟著被裁掉，進場中點不到按鈕（FX-22 實測發現）；進場用 `transform`／`opacity`。`clip-path` 只用在不可點的裝飾（偽元素、打字式顯示的純文字）與不會被點擊的浮層展開。
-8. **（P2 追加）基礎樣式即最終狀態**：`@keyframes` 只寫起始影格（或明確 `to` 回到基礎樣式），不用 `animation-fill-mode: both`（依序淡入的 `backwards`、退場的 `forwards` 為例外），這樣減少動態效果把 duration 壓到 0.01ms 後畫面就等於靜態外觀；`@keyframes` 名稱一律 `cyber-` 前綴；`infinite` 只有 FX-33 與 FX-35。
+8. **（P2 追加）基礎樣式即最終狀態**：`@keyframes` 只寫起始影格（或明確 `to` 回到基礎樣式），不用 `animation-fill-mode: both`（依序淡入的 `backwards`、退場的 `forwards` 為例外），這樣減少動態效果把 duration 壓到 0.01ms 後畫面就等於靜態外觀；`@keyframes` 名稱一律 `cyber-` 前綴；`infinite` 只有白名單內的（FX-33、FX-35、FX-08、標題游標、FX-25、FX-26、FX-32，依 `@keyframes` 名稱比對）。
+9. **（P3 追加）不重掛可聚焦元素來重播動畫**：用 `useReplayPhase` 翻面 `data-fx-phase`（或屬性值交替如 `data-fx-copied`）換 `animation-name`，不以資料／月份當 `key`。
+10. **（P3 追加）View Transitions 只用於主題切換**：換頁不使用（FX-02 已移除）；`pointer-events: none` 對 `::view-transition-*` 無效。
 
 ### 6.2 清單
 
@@ -347,23 +368,23 @@ cyber 沒辦法在執行期改。做法：
 
 | ID | 元件（檔案） | 觸發 | 效果 | 時間／曲線 | 做法 |
 |---|---|---|---|---|---|
-| FX-01 | 開機畫面（`AppShell.tsx` 的載入狀態） | 第一次載入、儀表板資料**還在載入時** | 取代骨架：逐行印出**真實的**載入步驟（「讀取紀錄…」→ 收到後顯示「N 筆」）。資料到了就立刻結束、換成內容；按任意鍵或點擊可跳過 | 每行 120ms；**不會延長載入時間** | JS |
-| FX-02 | 換頁（全部路由） | 點導覽連結、`drill.ts` 帶篩選跳轉 | 舊頁：水平切片 glitch 淡出；新頁：由上而下的掃描線劃過後出現 | 退 120ms＋進 220ms，`--ease-glitch`／`--ease-out` | VT |
-| FX-03 | 頁面標題（`PageHeader.tsx`、手機頂欄） | 換頁 | 打字式顯示：`clip-path: inset(0 100% 0 0)` → `inset(0)`，用 steps 分段；文字從一開始就完整存在於 DOM | 字數 × 18ms，上限 300ms | CSS |
-| FX-04 | 側欄／圖示列（`Sidebar.tsx`） | 換頁 | `nav-indicator` 高亮條從舊位置滑到新位置；`>` 前綴淡入 | 220ms `--ease-out` | CSS（位置用 CSS 變數，由目前路由決定） |
+| FX-01 | 開機畫面（`BootScreen.tsx`，由 `AppShell.tsx`／儀表板載入狀態使用） | App 冷啟動、儀表板資料**還在載入時** | **（P3 實作）** 取代骨架的「視覺」：逐行印出終端機風格的載入步驟（`aria-hidden`，最後一行帶游標）；載入狀態的無障礙文字（`role="status"`、`aria-busy`、「載入中…」）與骨架相同。**載入不到 150ms 完全不顯示**；資料一到立刻由內容取代；按任意鍵或點擊跳過（不吞按鍵）；每個瀏覽器分頁只出現一次（`sessionStorage`），換頁、重新整理都不再出現；只在 cyber 且 `useFx()` 時渲染 | 每行 120ms（`--stagger-boot`）；**不會延長載入時間** | JS＋CSS |
+| FX-02 | 換頁（全部路由） | 點導覽連結、`drill.ts` 帶篩選跳轉 | **（評估後移除，P3 未實作）** 原設計為舊頁水平切片 glitch 淡出、新頁由上而下掃描線。移除理由：View Transitions 期間真實 DOM 不可 hit-test，縮到最短（退 40＋進 100，約 240ms）仍吞點擊約 250ms，違反總原則 2 與 M3；`pointer-events: none` 對 `::view-transition` 無效（實測）。Sidebar、MobileChrome、`drill.ts` 都**不帶 `viewTransition`**；換頁只有 FX-03 與 FX-04 | — | — |
+| FX-03 | 頁面標題（`PageHeader.tsx`、手機頂欄） | 換頁 | **（P3 實作）** 打字式顯示：`clip-path: inset(0 100% 0 0)` → `inset(0)`，用 steps 分段（步數＝字數，`--chars` 由 `titleTypeProps` 在 `useFx()` 時輸出，上限 16）；文字從一開始就完整存在於 DOM。尾端游標為 `::after`（`content: "\2060 \258C" / ""`），`steps(1)` 1s 閃爍常駐，減少動態效果時常亮；標題 `nowrap`（不被游標擠成兩行，320 寬已驗）。與 FX-38 的 VT 重疊接受 | 每字 18ms（`--dur-char`），上限 288ms；游標 1 次／秒 | CSS（＋`--chars`） |
+| FX-04 | 側欄／圖示列（`Sidebar.tsx`、`NavIndicator.tsx`） | 換頁 | **（P3 實作）** `nav-indicator`（`data-fx-indicator`）高亮條從舊位置滑到新位置，位置由目前路由量出的 `--nav-y` 決定，首次渲染不播動畫；桌面為整個項目高度的 2px 青線（與 `>` 前綴並存），768–1023 改為垂直短條並取代 P1 內側直條，< 768 不顯示；沒有目前頁時淡出 | 220ms `--ease-out` | CSS＋JS（只量位置） |
 | FX-05 | 導覽項目 hover | 滑鼠移入 | 文字變 `ink-1`，左側 2px 青線由上往下長出 | 150ms | CSS |
 | FX-06 | 手機底部分頁列（`MobileChrome.tsx`） | 點分頁 | 目前頁的分頁上緣出現 2px 青線（由中間向兩側展開）；中央「新增」圓鈕按下時外圈擴散一圈青色細環。**（P2 實作）** 擴散環畫在新增鈕連結 `<a href$="/records/new">` 的 `::after`（56px、`top: -24px`，對齊凸出圓鈕；`pointer-events: none`，`:active` 期間播放），不選 `data-fx="fab"`；與 `MobileChrome` 的 FAB class 以測試綁定 | 150ms／300ms | CSS |
-| FX-07 | KPI 數字（`KpiCards.tsx`） | 資料載入完成、切換範圍（全部／本月／本週） | 數字亂跳 6～8 次後鎖定成真實值 | 400ms | JS（`ScrambleNumber`） |
-| FX-08 | 主要 KPI 卡（待處理） | 待處理 > 0 時持續 | HUD 角框以 `serious` 色緩慢呼吸（透明度 .5 ↔ 1） | 2.4s 一循環；**不是閃爍** | CSS |
-| FX-09 | 橫條圖（`charts.tsx` `HBarChart`） | 進場、切換範圍 | 長條由左往右長出（`scaleX` 0→1），每條依序 | 400ms＋`--stagger` | CSS＋JS（延遲） |
+| FX-07 | KPI 數字（`KpiCards.tsx`、`lib/fx/ScrambleNumber.tsx`） | 資料載入完成、切換範圍（全部／本月／本週） | **（P3 實作）** 數字亂跳 6～8 次後鎖定成真實值；真實數字在 `sr-only` span，亂碼層 `aria-hidden` 並於結束後移除；只套 KPI 數字，切換範圍重播 | 400ms | JS（`ScrambleNumber`） |
+| FX-08 | 主要 KPI 卡（待處理） | 待處理 > 0 時持續 | **（P3 實作）** `[data-fx-alert]` 的 HUD 角框（`::after`）以 `serious` 色緩慢呼吸（透明度 .5 ↔ 1）；`infinite` 白名單之一；減少動態效果時停在 1 | 2.4s 一循環；**不是閃爍** | CSS |
+| FX-09 | 橫條圖（`charts.tsx` `HBarChart`） | 進場、切換範圍 | **（P3 實作）** 長條由左往右長出（`scaleX` 0→1，`transform-origin: left`，寬度計算不變），每條依序（`useStagger`）；切換範圍以 `useReplayPhase` 翻面 `data-fx-phase` 重播，**按鈕不重掛** | 400ms（`--dur-slow`）＋`--stagger` | CSS＋JS（延遲） |
 | FX-10 | 長條列 hover／焦點 | 滑鼠、Tab | 整列 `accent-wash` 底，長條加 `--glow-accent`。**（P2 實作）** 長條原本在 `overflow-hidden` 的軌道裡，光暈會被裁掉，所以新增 `bar-track` 掛勾，cyber 下軌道 `overflow: visible` | 150ms | CSS |
-| FX-11 | 長條列點擊（帶篩選跳到列表） | 點擊、Enter／Space | 四角出現洋紅 L 形角框，由大縮小「鎖定」，**同時**照原本的流程立即跳轉（FX-02 接手）；不延後跳轉。角框主要會出現在 FX-02 舊頁面的退場畫面裡；不支援 View Transitions 的瀏覽器看不到角框，這是可以接受的 | 角框 200ms | CSS（`:active` 與跳轉同步，不加 `setTimeout`） |
-| FX-12 | 每日趨勢柱 | 進場 | 由下往上長出（`scaleY`），依序 | 300ms＋20ms 間隔 | CSS＋JS |
-| FX-13 | 圓餅／其他非長條圖 | 進場 | 整張淡入＋掃描線劃過一次 | 300ms | CSS |
-| FX-14 | 日曆格（`CalendarPage.tsx`） | 進場、換月 | 格子沿對角線依序淡入（左上→右下）；換月時整張先水平 glitch 一次 | 每格 10ms，總長上限 400ms | CSS＋JS |
+| FX-11 | 長條列點擊（帶篩選跳到列表） | 點擊（滑鼠、觸控） | **（P3 實作）** `bar-row` 的 `::before` 在 `:active` 時畫出四角洋紅 L 形角框，由大縮小「鎖定」，與跳轉同步，**不延後跳轉**；FX-02 移除後，角框只在按下的瞬間可見。**鍵盤 Enter 不觸發角框、不加 JS** | 角框 200ms | CSS（`:active`，不加 `setTimeout`） |
+| FX-12 | 每日趨勢柱 | 進場、切換範圍 | **（P3 實作）** 由下往上長出（`scaleY`），依序；切換範圍以 `data-fx-phase` 重播，不重掛 | 300ms＋20ms 間隔 | CSS＋JS |
+| FX-13 | 圓餅／其他非長條圖（甜甜圈） | 進場、切換範圍 | **（P3 實作）** 整張淡入＋掃描線劃過一次；切換範圍以 `data-fx-phase` 重播 | 300ms | CSS |
+| FX-14 | 日曆格（`CalendarPage.tsx`） | 進場、換月 | **（P3 實作）** 格子沿對角線依序淡入（左上→右下，最多 12 道）；換月時整張水平 glitch 一次（`transform`，`data-fx-in="glitch"`），以 `data-fx-phase` 重播、**table 不重掛**；< 768 只淡入 | 每道 10ms，總長 ≤ 270ms（< 400ms） | CSS＋JS |
 | FX-15 | 日曆格 hover／焦點 | 滑鼠、Tab | 格子加 `--glow-accent` 外框 | 150ms | CSS |
-| FX-16 | 紀錄列表列（`RecordList.tsx`） | 進場、篩選結果變化 | 前 20 列依序由左 8px 淡入；hover 時左側出現 `▶`（`aria-hidden`），整列 `accent-wash` | 150ms＋`--stagger` | CSS＋JS |
-| FX-17 | 篩選 chip（`FilterBar.tsx`） | 新增 | **（P2 實作，僅新增）** 新增：`clip-path` 由左展開（`data-fx="chip"`，150ms）。**移除：直接消失，不做動畫**（移除動畫要延後卸載，與 FX-31 同一個判斷，見 P3） | 150ms | CSS |
+| FX-16 | 紀錄列表列（`RecordList.tsx`） | 進場、篩選結果變化 | **（P3 實作）** 前 20 列（< 768 為 10）由左 8px 淡入，**只有新出現的列進場**，捲動中不重播；hover 時左側出現 `▶`（`aria-hidden`，`content` 帶 `/ ""`，不佔版面），整列 `accent-wash`；虛擬化／分頁行為不變 | 150ms＋`--stagger` | CSS＋JS |
+| FX-17 | 篩選 chip（`FilterBar.tsx`） | 新增 | **（P2 實作，僅新增）** 新增：`clip-path` 由左展開（`data-fx="chip"`，150ms）。**移除：直接消失，不做動畫**（移除動畫要延後卸載；**P3 評估後不做**，維持直接消失） | 150ms | CSS |
 | FX-18 | 多選下拉、日期篩選（`MultiSelectFilter.tsx`、`DateRangeFilter.tsx`、`ui/popover.tsx`） | 開、關 | 從觸發按鈕的位置用 `clip-path` 由上往下展開；關閉反向 | 開 150ms／關 100ms | CSS（Radix `data-state`） |
 | FX-19 | 分段按鈕（`SegmentedControl.tsx`） | 選取 | **（P2 實作，已與括號常駐對齊）** 新選中項的 `[ ]` 括號各從外側 4px 收回定位並淡入（`cyber-bracket-l`／`cyber-bracket-r`，只動 `transform`／`opacity`）；括號最終位置與 P1 相同，沒有「滑過」其他選項的軌跡 | 150ms | CSS |
 | FX-20 | 詳情面板（`RecordDetailSheet.tsx`、`ui/sheet.tsx`） | 開、關 | 由右滑入（現有），加上一條 2px 青色橫線由面板頂掃到底並淡出（`sheet` `data-side="right"` 的 `::after`，只動 `transform: translateY`，`--dur-slow`，不用 `clip-path`）；內容區塊（`detail-body` 的直接子元素）依序淡入（標題→標籤→事實格→處理→照片）；關閉時退場縮短為 100ms（`--dur-close`，Radix 等退場動畫結束才卸載） | 每段 200ms、間隔 30ms，延遲分 6 檔（第 8 個之後共用最後一檔），最晚一段收尾 ≤ 350ms | CSS |
@@ -371,24 +392,24 @@ cyber 沒辦法在執行期改。做法：
 | FX-22 | 確認對話框（`ConfirmDialog.tsx`、`ui/alert-dialog.tsx`） | 開啟 | 遮罩淡入（Tailwind 現有）；對話框 glitch 進場一次、退場 100ms 淡出；**破壞性的**（`data-variant="destructive"`，所有 destructive 確認框，不只永久刪除；**未新增 `data-fx-tone`**）加 4px `critical` 斜紋上緣（`::before`，不佔版面）與 `--glow-critical`。**進場 glitch 用 `transform`／`opacity`，不用 `clip-path`**（`clip-path` 會讓 hit-test 吞掉進場中的點擊，實測發現並修正）；對話框置中用的是 Tailwind 個別的 `translate` 屬性，與動畫的 `transform` 不衝突 | 開 200ms／關 100ms | CSS |
 | FX-23 | 表單輸入框（`fields.tsx`、`Combobox.tsx`） | 聚焦 | 框線變 `accent`＋`--glow-accent`（輸入框、文字區、下拉都有）。**`>` 提示符只有 `Combobox` 外層（`data-fx="combobox"` 的 `::before`，絕對定位在輸入框左側內距裡，不改版面）有**；其餘輸入框只有框線＋光暈（輸入框本身不能有偽元素） | 150ms | CSS |
 | FX-24 | 表單驗證錯誤 | 送出失敗、欄位驗證失敗 | 欄位水平抖動一次（±4px，3 下）＋`--glow-critical`；錯誤訊息（`error-msg`）加 `ERR:` 前綴並以 `clip-path` 打字式顯示（文字一開始就在 DOM）。**抖動在 `aria-invalid` 出現時觸發，同一個錯誤第二次提交不重播**（屬性一直存在，animation 不重啟） | 抖 240ms／字 200ms | CSS |
-| FX-25 | 送出按鈕（`RecordForm.tsx`） | 送出中（現有的進行中狀態） | 按鈕文字左側加一條 ASCII 進度條 `[████░░]` 循環跑動（**進度不明，所以是循環動畫，不假裝百分比**）；按鈕原本的文字與 disabled 狀態不變 | 循環 900ms | CSS |
-| FX-26 | 照片上傳（`PhotoField.tsx`、`PhotoThumb.tsx`） | 上傳中 | 縮圖上覆蓋一條來回跑的掃描帶，取代旋轉圖示的視覺（旋轉圖示的無障礙文字保留） | 循環 1.2s | CSS |
-| FX-27 | 「從過去紀錄帶入」（`CopyPicker.tsx`） | 選定、帶入 | 被帶入的欄位依序閃一次 `accent-wash` 底（標示「這些欄位被填了」） | 每欄 200ms，間隔 40ms | CSS＋JS |
-| FX-28 | 嚴重度自動建議 | 打耗時後建議值變化 | 建議的嚴重度選項外框閃一次對應色光暈。**（P2 裁定：移到 P3）** `SegmentedControl` 的選項沒有「被建議」屬性，要先加 prop（影響元件介面，P3 設計簡報再定） | 300ms，一次 | CSS |
+| FX-25 | 送出按鈕（`RecordForm.tsx`） | 送出中（現有的進行中狀態） | **（P3 實作）** 在 cyber 且 `useFx()` 時，以 `aria-hidden` 的 ASCII 進度條 `[████░░]`（`data-fx-progress`）循環跑動取代旋轉圖示（**進度不明，不假裝百分比**）；按鈕文字與 disabled 狀態不變，rect 與標準送出中相同；`infinite` 白名單之一 | 循環 900ms | CSS＋JS（只決定是否渲染） |
+| FX-26 | 照片上傳（`PhotoField.tsx`、`PhotoThumb.tsx`） | 上傳中 | **（P3 實作）** 縮圖上 `data-fx-scan` 覆蓋層，來回跑的掃描帶取代旋轉圖示的視覺（旋轉圖示與 sr-only「上傳中」保留）；`infinite` 白名單之一 | 循環 1.2s | CSS |
+| FX-27 | 「從過去紀錄帶入」（`CopyPicker.tsx`、`RecordForm.tsx`、`fields.tsx`） | 選定、帶入 | **（P3 實作）** 被帶入的欄位依序閃一次 `accent-wash` 底；`RecordForm` 只多一個純展示狀態 `{ n, fields }`，`Field` 渲染 `data-fx-copied="a"／"b"`，屬性值一變 CSS 選到的 keyframes 就換，**不重掛輸入框**，表單值、驗證、焦點不變 | 每欄 200ms，間隔 40ms | CSS＋最少量狀態 |
+| FX-28 | 嚴重度自動建議（`SegmentedControl.tsx`、`RecordForm.tsx`） | 打耗時後建議值變化 | **（P3 實作）** `SegmentedControl` 加 optional `suggestedValue`，該選項渲染 `data-fx-suggested=<選項值>`；cyber 下屬性出現時閃一次對應嚴重度色光暈；`RecordForm` 接既有的 `suggestSeverity(duration)`，只做展示，資料流不變；標準主題沒有規則吃這個屬性 | 300ms，一次 | CSS |
 | FX-29 | Toast（`ui/sonner.tsx`、`lib/feedback.ts` 不動） | 出現 | **（P2 實作）** 進退場的滑動沿用 sonner 自己的（不覆寫）；左側 3px 狀態色條（畫在 `[data-content]::before`，因為 toast 本身的偽元素被 sonner 用掉）；標題打字式顯示（`clip-path`，文字一開始就在 DOM）；錯誤 toast 紅色框閃一次（swipe-out 時不蓋掉 sonner 的 animation） | 打字 ≤ 300ms（實際 200ms）、錯誤框 `--dur-base` | CSS |
 | FX-30 | 可復原 toast 的〔復原〕 | 按下 | 按鈕 `accent` 底（靜態狀態）＋`box-shadow` 光暈閃一次後 toast 照原流程消失（滑鼠按下後的焦點留到 toast 離開，所以不被截斷；鍵盤聚焦不觸發） | 120ms | CSS |
-| FX-31 | 回收桶（`TrashPage.tsx`） | 復原、永久刪除成功後 | **（P2 裁定：整項移到 P3）** 該列「溶解」：`clip-path` 由上下往中間收起＋淡出（復原與刪除方向相反）。要延後卸載該列；P3 判斷能否**不延後 API 呼叫**，不行就放棄 | 250ms | CSS（列表移除前的退場動畫；**不延後 API 呼叫**） |
-| FX-32 | 匯出 Excel（`useExportAction.ts` 的進行中狀態） | 匯出中 | 側欄／更多面板的匯出項目文字旁顯示循環的 `▮▯▯`→`▮▮▯`→`▮▮▮` | 循環 900ms | CSS |
+| FX-31 | 回收桶（`TrashPage.tsx`） | 復原、永久刪除成功後 | **（P3 實作，條件全部成立）** 被移除的列留 250ms 視覺殘影後溶解：復原垂直收起、永久刪除水平收起（`useGhostRows`，`useFx()` 為 true 才產生）；API、查詢快取、計數、徽章都照原時機更新（`rows` 不變）；殘影 `inert`＋`aria-hidden`＋`data-fx-ghost`，不可聚焦不可點；`TrashPage` 改動約 20 行；焦點落點與標準相同；標準主題／reduced-motion／jsdom 的 DOM 與原本相同 | 250ms | CSS＋JS（`useGhostRows`） |
+| FX-32 | 匯出 Excel（`useExportAction.ts` 的進行中狀態；`nav-item[aria-busy="true"]`） | 匯出中 | **（P3 實作）** 依現有 `aria-busy` 用 CSS 在匯出項目文字旁循環 `▮▯▯`→`▮▮▯`→`▮▮▮`，不加任何狀態；`infinite` 白名單之一；768–1023 圖示列不顯示 | 循環 900ms | CSS |
 | FX-33 | 骨架載入（`ui/skeleton.tsx`） | 載入中 | 灰塊改成 `line-strong` 色的斜紋 `▒` 紋理（靜態），左到右掃光（偽元素 `translateX`）循環；標準骨架的整塊 opacity 脈動在 cyber 下關掉。**P2 兩個 `infinite` 動畫之一**；減少動態效果時掃光停在看不見的位置 | 1.6s 循環（與現行同頻率） | CSS |
 | FX-34 | 錯誤狀態（`ErrorState.tsx`） | 載入失敗 | 標題 glitch 一次；重試按鈕照原樣 | 280ms，一次 | CSS |
 | FX-35 | 設備對照設定（`SettingsPage.tsx`） | 有未儲存變更 | 「未儲存」提示（`unsaved`）左側 `serious` 色條緩慢呼吸（透明度 1 ↔ .35，不是閃爍）。**P2 兩個 `infinite` 動畫之一** | 2.4s 循環 | CSS |
-| FX-36 | 燈箱（`Lightbox.tsx`） | 開 | **（P2 實作，僅開啟）** 開啟：`scaleY`（由 .96）＋`opacity` 展開像 CRT 開機（不用 `clip-path`，點擊要全程可用）。**切換照片不做交叉淡化**：`<img>` 只換 `src`、不會重新掛載（若要做，P3 需先讓 `<img>` 以 key 重新掛載） | 200ms | CSS |
+| FX-36 | 燈箱（`Lightbox.tsx`） | 開、切換照片 | **（P2 實作）** 開啟：`scaleY`（由 .96）＋`opacity` 展開像 CRT 開機（不用 `clip-path`）。**（P3 實作）切換照片**：`<img key={src}>` 重新掛載，只做新圖淡入；燈箱焦點、左右鍵、Esc 不變（標準主題也以 src 為 key，視覺不變） | 開 200ms／切換淡入 | CSS |
 | FX-37 | 所有按鈕的按壓 | `:active` | `scale(.97)`＋背景亮一下：用 `inset` 疊色（`box-shadow: inset 0 0 0 999px var(--press-wash)`，與原本的內框、光暈合併成同一個宣告），不改尺寸；涵蓋 `button`／`submit`／分段按鈕，只作用於 `:not(:disabled)` | `--dur-instant` | CSS |
-| FX-38 | 主題切換（D1 的按鈕） | 切換 | 整頁一次掃描線劃過後換色；切回標準時不播 | 300ms | VT |
+| FX-38 | 主題切換（D1 的按鈕，`themeToggle.tsx`） | 切換 | **（P3 實作）** 僅「切到 cyber」且未減少動態效果、瀏覽器支援 VT 時：`<html data-vt="theme">`，新畫面 `clip-path` 由上往下露出一次（舊畫面不動，**無獨立發光線**）；切回標準不播；reduced-motion 不播 | 300ms | VT |
 
 **P2 範圍調整一覽**：FX-28、FX-31 移 P3；FX-17 僅新增；FX-21 與 FX-20 合併；FX-36 僅開啟。其餘 P2 項目照上表實作。
 
-**P3 塊 C 後半（實作）**：FX-27、FX-28、FX-31 皆已實作，細節見 §1「2026-10-30 P3 塊 C 後半裁定」；沒有新增 `infinite`，三者皆只動 `box-shadow`（光暈）、`clip-path`／`opacity`（殘影不可點），列印以 `revert-layer` 還原。
+**P3 實作（一覽）**：FX-01、03、04、07–09、11–14、16、25–28、31、32、36（切換照片）、38 皆已實作；**FX-02 評估後移除**；FX-17 移除動畫不做。FX-27／28／31 細節見 §1「2026-10-30 P3 塊 C 後半裁定」；其中 FX-27／28／31 沒有新增 `infinite`，只動 `box-shadow`（光暈）、`clip-path`／`opacity`（殘影不可點）；列印以 `revert-layer` 還原。
 
 ### 6.3 明確不做的動畫
 
@@ -404,7 +425,7 @@ cyber 沒辦法在執行期改。做法：
 | 寬度 | 差異 |
 |---|---|
 | ≥ 1024（桌面側欄） | 全部效果 |
-| 768–1023（圖示列） | 目前頁（`[aria-current="page"]`）左側 2px `accent` 內側直條（`box-shadow: inset 2px 0 0 var(--accent)`，P1 靜態，不是 `nav-indicator`；1024 以上維持 `>` 前綴）；`nav-indicator`（P3）改成垂直方向的短條；tooltip 用 cyber 外觀（`surface-raised` 底、青框），不再是 `ink-1` 底 |
+| 768–1023（圖示列） | 目前頁（`[aria-current="page"]`）左側 2px `accent` 內側直條（`box-shadow: inset 2px 0 0 var(--accent)`，P1 靜態，不是 `nav-indicator`；1024 以上維持 `>` 前綴）；`nav-indicator`（P3，FX-04）改成垂直方向的短條並取代這條內側直條；tooltip 用 cyber 外觀（`surface-raised` 底、青框），不再是 `ink-1` 底 |
 | < 768（手機） | 掃描線透明度降為 0.015；光暈減半；依序進場上限降為 10 項；FX-14 日曆只淡入不跑對角；切角改小（`--cut-sm`）；**觸控目標 44px 規則不變** |
 | 320 | 不能出現橫向捲動（裝飾前綴要計入寬度；品牌字「產線日誌」不能換行成直排） |
 
@@ -433,7 +454,7 @@ cyber 沒辦法在執行期改。做法：
 | A3 | `theme.ts`：`localStorage` 丟例外時回傳 `"standard"`；`?theme=cyber` 會套用並寫回；`applyTheme` 正確設定或移除 `data-theme` 與 `color-scheme` | 新的 `theme.test.ts` |
 | A4 | `useFx()`：沒有 `data-theme`、或減少動態效果時為 false | 新的 `fx.test.tsx` |
 | A5 | `ScrambleNumber`：可存取名稱與 `getByText` 都是真實數字；`useFx()` 為 false 時不渲染亂碼層；動畫結束後亂碼層已移除 | `fx.test.tsx` |
-| A6 | cyber.css 每條規則都以 `:root[data-theme="cyber"]` 開頭（讀檔、逐條檢查選擇器）；所有 `content:` 宣告都有 `/ ""` 替代文字。P1 的靜態斷言（無 `@keyframes`／`transition`、無 `clip-path` 動畫等）**只掃 `/* === P2 START === */` 之前**；P2 區段另有斷言（動畫只動 `transform`／`opacity`／`clip-path`／光暈 `box-shadow`、`@keyframes` 名稱 `cyber-` 前綴、`infinite` 白名單只有 FX-33／FX-35、可點元素進場不用 `clip-path`、`pointer-events: none` 只用在偽元素、print 區段還原 P2 動畫、沒有 `fab` 的選擇器） | 新的 `cyberCss.test.ts` |
+| A6 | cyber.css 每條規則都以 `:root[data-theme="cyber"]` 開頭（讀檔、逐條檢查選擇器）；所有 `content:` 宣告都有 `/ ""` 替代文字。P1 的靜態斷言（無 `@keyframes`／`transition`、無 `clip-path` 動畫等）**只掃 `/* === P2 START === */` 之前**；P2 區段另有斷言（動畫只動 `transform`／`opacity`／`clip-path`／光暈 `box-shadow`、`@keyframes` 名稱 `cyber-` 前綴、`infinite` 白名單依 `@keyframes` 名稱比對（FX-33、FX-35、FX-08、標題游標、FX-25、FX-26、FX-32，白名單外一律失敗）、可點元素進場不用 `clip-path`、`pointer-events: none` 只用在偽元素、print 區段還原 P2 動畫、沒有 `fab` 的選擇器） | 新的 `cyberCss.test.ts` |
 | A7 | `ReportDocument` 的輸出中沒有任何 `data-fx`／`data-variant`／`data-fx-alert`；`report.css` 的列印選擇器仍在（沿用現有測試） | `ReportDocument.noFx.test.tsx`（新）、`ReportDocument.test.tsx`；整頁（`ReportPage`）版本在 `test/dataFx.test.tsx` |
 | A8 | P0 之前既有的 408 個前端測試、169 個後端測試**不修改就全部通過**（只允許因 `data-fx` 屬性造成的快照差異，若有快照）。前端測試數量基準：P0 前 408 個、P0 後 503 個、P1 後 565 個、P2 後 601 個（32 個檔案；後端 169 個；均為實測；之後各期以實測為準） | — |
 
@@ -458,7 +479,7 @@ cyber 沒辦法在執行期改。做法：
 
 | # | 條件 |
 |---|---|
-| P1 | 中階 Android 手機（或 Chrome DevTools 4× CPU 降速）：捲動紀錄列表、開關詳情面板維持 ≥ 50fps；任何 FX 不造成 > 50ms 的長任務 |
+| P1 | 中階 Android 手機（或 Chrome DevTools 4× CPU 降速）：捲動紀錄列表、開關詳情面板，**相對標準主題不低超過 3fps**（P3 修訂：4× CPU 降速下標準主題本身已低於 50fps，絕對值改以相對差為準；細節數字之後補）；任何 FX 不造成 > 50ms 的長任務 |
 | P2 | cyber 動畫不造成版面位移（CLS = 0） |
 | P3 | 打包大小：`web/dist` 的 JS 增加 ≤ 8KB（gzip），CSS 增加 ≤ 12KB（gzip）；不新增任何 npm 相依套件 |
 | P4 | 冷啟動到內容出現的時間，cyber 與標準主題差異 ≤ 50ms（FX-01 不能延後內容） |
@@ -483,8 +504,10 @@ cyber 沒辦法在執行期改。做法：
 |---|---|---|---|
 | **P0 主題骨架**<br>已合併（PR #40） | `theme.ts`、`useFx()`、D1 切換入口、cyber token 區塊、圓角執行期化、`cyber.css` 空殼與列印還原 | 第 3、4 節 | A1–A4、A6、A8、C1、C2、M4 |
 | **P1 靜態外觀**<br>已合併（PR #41） | `data-fx` 掛勾、面板／切角／按鈕／焦點環／裝飾前綴、背景點陣與掃描線（靜態） | 第 5 節 | A6、A7、B2、B3、C1、M2 |
-| **P2 微互動與浮層**<br>已實作，待合併（分支 `feat/cyber-p2-motion`，PR #42） | hover、按壓、聚焦、彈出選單、面板、對話框、toast、錯誤、骨架等純 CSS 動畫 | FX-05、06、10、15、17（僅新增）、18–24、29、30、33–37（FX-36 僅開啟） | B1、B4、B5、P1、P2、M3 |
-| **P3 招牌效果** | 開機畫面、換頁 View Transitions、數字鎖定、長條／趨勢／日曆／列表依序進場、帶入閃爍 | FX-01–04、07–09、11–14、16、25–27、32、38，以及自 P2 移入的 FX-28（先加「被建議」prop）、FX-31（要延後卸載，P3 判斷能否不延後 API 呼叫，不行就放棄）；FX-17 的「移除」動畫與 FX-36 的「切換照片」交叉淡化同屬需要延後卸載／重新掛載，P3 一併評估，不做也可 | A5、P3、P4、M1、M5 |
+| **P2 微互動與浮層**<br>已合併（PR #42） | hover、按壓、聚焦、彈出選單、面板、對話框、toast、錯誤、骨架等純 CSS 動畫 | FX-05、06、10、15、17（僅新增）、18–24、29、30、33–37（FX-36 僅開啟） | B1、B4、B5、P1、P2、M3 |
+| **P3 招牌效果**<br>已實作，待合併（分支 `feat/cyber-p3-signature`，PR 號之後補） | 開機畫面、數字鎖定、長條／趨勢／日曆／列表依序進場、標題打字與游標、nav-indicator、帶入閃爍、主題切換掃描（**換頁 View Transitions〔FX-02〕評估後移除**，見 §1） | FX-01–04、07–09、11–14、16、25–27、32、38，以及自 P2 移入的 FX-28（先加「被建議」prop）、FX-31（要延後卸載，P3 判斷能否不延後 API 呼叫，不行就放棄）；FX-17 的「移除」動畫評估後不做；FX-36 的「切換照片」以 `<img key={src}>` 淡入實作 | A5、P3、P4、M1、M5 |
+
+**P3 實作時與上文的差異**（都已寫回 §1「P3 設計簡報」、§3.3、§3.5、§6.2）：FX-02 換頁 VT 評估後移除（VT 期間 DOM 不可 hit-test，吞點擊；`pointer-events: none` 無效），VT 只用於 FX-38；infinite 白名單擴為 7 項、改依 `@keyframes` 名稱比對；FX-20 的 `detail-body` 由 6 檔減為 4 檔、掃描線延後到淡入結束後；可聚焦元素不重掛，改 `useReplayPhase`／`data-fx-phase`；FX-16 只讓新出現的列進場；FX-11 鍵盤不觸發角框；FX-38 無獨立發光線；lib/fx 增為六個工具；新增一批 `data-fx-*` 屬性掛勾（§3.3）；§9.4 P1 目標改為相對標準主題。
 
 **P1 實作時與上文的差異**（都已寫回對應章節）：掃描線 `body::after`；切角畫在 `::before`／角框畫在 `::after`（直角 L 形、切角折角括號）、元素本身不加 `clip-path`（§5.3）；`>` 前綴只在桌面側欄且絕對定位、不佔版面（§5.2）；頁面標題游標延到 P3；toast 前綴用 sonner 屬性選擇器，並把 sonner 深色主題的純黑底改回 token（§5.2）；焦點環沿用 `index.css` base 層的規則，不另寫（§5.6）；甜甜圈弧的光暈用 `drop-shadow`（§5.5）；列印還原以 `all: revert-layer` 為主（§8）；手機頂欄標題（18px）不加文字光暈（§4.2）。
 
@@ -498,7 +521,7 @@ cyber 沒辦法在執行期改。做法：
 |---|---|
 | 現場實用性不如預期 | opt-in 設計：切回標準即可，資料與功能完全不受影響 |
 | 某個效果在特定瀏覽器出問題 | 每個 FX 都是獨立的 CSS 規則或 `useFx()` 分支，可以單獨移除 |
-| View Transitions 與換頁後的焦點移動衝突 | P3 驗收 B4 時特別檢查；有衝突就關掉 FX-02（換頁改成只有 FX-03） |
+| View Transitions 吞點擊（真實 DOM 在 VT 期間不可 hit-test） | **已處置**：FX-02 換頁 VT 評估後移除，VT 只留給使用者主動、低頻的主題切換（FX-38） |
 | 未來新增元件忘了 cyber 外觀 | 新元件只要用語意 token，cyber 下就自動有正確配色；只是沒有 `data-fx` 的特效 |
 | 完全放棄這個實驗 | 刪除 `cyber.css`、`lib/fx/`、`theme.ts`、cyber token 區塊與 D1 的按鈕；`data-fx` 屬性無害，可以留著或一併移除 |
 
