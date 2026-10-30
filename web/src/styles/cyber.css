@@ -1396,14 +1396,20 @@
   transform-origin: left center;
 }
 :root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::after {
-  content: "AFAFAF" / "";
+  content: "\25AF\25AF\25AF" / "";
   color: var(--ink-muted);
 }
 :root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::before {
-  content: "AEAEAE" / "";
+  content: "\25AE\25AE\25AE" / "";
   z-index: 1;
   color: var(--accent-text);
   animation: cyber-export-fill var(--dur-loop) steps(1) infinite;
+}
+/* 取代旋轉圖示的視覺：圖示 visibility: hidden（仍佔位、rect 不變；無障礙文字「匯出中…」保留）。圖示列（768–1023）沒有 ▮▯▯，所以保留旋轉圖示。 */
+@media (max-width: 767px), (min-width: 1024px) {
+  :root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"] > svg {
+    visibility: hidden;
+  }
 }
 @media (min-width: 768px) and (max-width: 1023px) {
   :root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::before,

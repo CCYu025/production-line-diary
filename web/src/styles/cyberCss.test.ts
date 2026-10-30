@@ -1372,3 +1372,31 @@ describe("cyber.css：P3 裁定後續守門", () => {
     expect(decl(printRule(`${P} aside > nav[aria-label="主要導覽"]`)!)["position"]).toBe("revert-layer");
   });
 });
+
+/*
+ * P3 驗證後續（只新增）：FX-32 的 content 跳脫曾被吃成字面「AFAFAF」疊「AEAEAE」；匯出中時旋轉圖示視覺隱藏（取代視覺）。
+ * 注意：這裡的反斜線一律用 String.fromCharCode(92) 組出，避免跳脫序列在傳遞過程再次被吃掉。
+ */
+describe("cyber.css：FX-32 content 跳脫與取代視覺", () => {
+  const BS = String.fromCharCode(92);
+  const busy = `${CYBER_SCOPE} [data-fx="nav-item"][aria-busy="true"]`;
+  const contentOf = (selector: string) => decl(screenRule(selector)!)["content"];
+
+  it("::after 是 ▯▯▯、::before 是 ▮▮▮，以 Unicode 跳脫書寫（不是字面 AF／AE）", () => {
+    expect(contentOf(`${busy}::after`)).toBe(`"${BS}25AF${BS}25AF${BS}25AF" / ""`);
+    expect(contentOf(`${busy}::before`)).toBe(`"${BS}25AE${BS}25AE${BS}25AE" / ""`);
+  });
+
+  it("cyber.css 沒有控制字元（跳脫被吃成控制碼的症狀），content 字串裡沒有連續 AF／AE 字面", () => {
+    expect(cyberCss).not.toMatch(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/);
+    const contents = [...cyberCss.matchAll(/content:\s*("(?:[^"\\]|\\.)*")/g)].map((m) => m[1]!);
+    expect(contents.length).toBeGreaterThan(10);
+    for (const c of contents) expect(c).not.toMatch(/AFAF|AEAE/);
+  });
+
+  it("匯出中（側欄與手機更多面板）旋轉圖示 visibility: hidden；圖示列（768–1023）沒有 ▮▯▯ 所以保留旋轉圖示", () => {
+    const r = parseCss(cyberCss).find((x) => x.selectors.length === 1 && x.selectors[0] === `${busy} > svg`);
+    expect(r && decl(r)).toEqual({ visibility: "hidden" });
+    expect(r!.context).toEqual(["@media (max-width: 767px), (min-width: 1024px)"]);
+  });
+});
