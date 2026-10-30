@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { notify } from "@/lib/feedback";
+import { ghostProps, useGhostRows } from "@/lib/fx";
 import { invalidateRecordData } from "@/lib/queryKeys";
 import { usePurgeRecord, useRecords, useRestoreRecord } from "@/lib/queries";
 import type { DiaryRecord } from "@/lib/types";
@@ -27,6 +28,9 @@ export function TrashPage() {
   const regionRef = React.useRef<HTMLDivElement>(null);
 
   const rows = React.useMemo(() => (records ? trashRows(records) : []), [records]);
+  // cyber FX-31：被移除的列留 250ms 視覺殘影（inert、aria-hidden）；API、快取、計數都照原時機，標準主題 list === rows
+  const opRef = React.useRef("restore");
+  const { list, kindOf } = useGhostRows(rows, opRef);
 
   const description = !records
     ? "刪除的紀錄會先移到這裡，可復原或永久刪除，避免手滑遺失資料"
@@ -40,6 +44,7 @@ export function TrashPage() {
   const onRestore = async (record: DiaryRecord) => {
     if (busyId !== null) return;
     setBusyId(record.id);
+    opRef.current = "restore";
     try {
       await restore.mutateAsync(record.id);
       notify.success("已復原紀錄");
@@ -70,6 +75,7 @@ export function TrashPage() {
     });
     if (!ok) return;
     setBusyId(record.id);
+    opRef.current = "purge";
     try {
       await purge.mutateAsync(record.id);
       notify.success("已永久刪除，無法復原");
@@ -100,9 +106,9 @@ export function TrashPage() {
             <p className="font-bold">目前沒有已刪除的紀錄</p>
           </div>
         ) : isWide ? (
-          <TrashTable rows={rows} busyId={busyId} onRestore={onRestore} onPurge={onPurge} />
+          <TrashTable rows={list} kindOf={kindOf} busyId={busyId} onRestore={onRestore} onPurge={onPurge} />
         ) : (
-          <TrashCards rows={rows} busyId={busyId} onRestore={onRestore} onPurge={onPurge} />
+          <TrashCards rows={list} kindOf={kindOf} busyId={busyId} onRestore={onRestore} onPurge={onPurge} />
         )}
       </div>
     </>
@@ -111,12 +117,13 @@ export function TrashPage() {
 
 interface ListProps {
   rows: DiaryRecord[];
+  kindOf: (id: number) => string | undefined;
   busyId: number | null;
   onRestore: (r: DiaryRecord) => void;
   onPurge: (r: DiaryRecord) => void;
 }
 
-function RowActions({ record, busyId, onRestore, onPurge }: Omit<ListProps, "rows"> & { record: DiaryRecord }) {
+function RowActions({ record, busyId, onRestore, onPurge }: Pick<ListProps, "busyId" | "onRestore" | "onPurge"> & { record: DiaryRecord }) {
   const busy = busyId === record.id;
   const label = `${record.date} ${record.equipment} ${record.problem}`;
   return (
@@ -141,7 +148,7 @@ function RowActions({ record, busyId, onRestore, onPurge }: Omit<ListProps, "row
   );
 }
 
-function TrashTable({ rows, ...actions }: ListProps) {
+function TrashTable({ rows, kindOf, ...actions }: ListProps) {
   return (
     <div data-fx="panel" className="overflow-hidden rounded-lg border border-line bg-surface-raised">
       <table className="w-full table-fixed text-sm">
@@ -166,7 +173,7 @@ function TrashTable({ rows, ...actions }: ListProps) {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id} className="border-b border-line last:border-b-0">
+            <tr key={r.id} className="border-b border-line last:border-b-0" {...ghostProps(kindOf(r.id))}>
               <td className="num whitespace-nowrap px-4 py-3 align-top">{r.date}</td>
               <td className="px-3 py-3 align-top">
                 <span className="inline-block max-w-full truncate rounded-sm bg-surface px-1.5 py-0.5 font-medium">
@@ -188,11 +195,11 @@ function TrashTable({ rows, ...actions }: ListProps) {
   );
 }
 
-function TrashCards({ rows, ...actions }: ListProps) {
+function TrashCards({ rows, kindOf, ...actions }: ListProps) {
   return (
     <ul className="flex flex-col gap-3">
       {rows.map((r) => (
-        <li key={r.id} data-fx="panel" className="rounded-lg border border-line bg-surface-raised p-4">
+        <li key={r.id} data-fx="panel" className="rounded-lg border border-line bg-surface-raised p-4" {...ghostProps(kindOf(r.id))}>
           <p className="break-words font-bold">{r.problem}</p>
           <p className="mt-1 text-sm text-ink-2">
             <span className="font-medium">{r.equipment}</span>

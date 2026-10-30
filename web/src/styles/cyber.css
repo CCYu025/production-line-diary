@@ -1192,6 +1192,100 @@
   --critical: #d03b3b;
 }
 
+/* === P3 C2 START === */
+/* =====================================================================================================
+ * P3 塊 C（後半）：FX-27 帶入閃爍、FX-28 嚴重度建議、FX-31 回收桶溶解。
+ * 位置在塊 A／塊 C（前半）／塊 B 各區段的守門切片之外（報表隔離之後、P3 C START 之前），它們各自的 @keyframes 計數不受影響。
+ * 守則同 P3：@keyframes 一律 cyber- 前綴、時間走 token、沒有 infinite、基礎樣式就是最終狀態、不加 animation-fill-mode。
+ * ===================================================================================================== */
+:root[data-theme="cyber"] {
+  --dur-copied: 200ms; /* FX-27 每欄閃一次 */
+  --stagger-copied: 40ms; /* FX-27 欄位之間的間隔 */
+  --dur-suggest: 300ms; /* FX-28 建議的嚴重度閃一次 */
+  --dur-dissolve: 220ms; /* FX-31 溶解（JS 殘影留 250ms） */
+}
+
+/* ---------- FX-27 帶入閃爍：被帶入的欄位依序閃一次光暈＋accent-wash ----------
+ * data-fx-copied 由 RecordForm 在每次帶入時於 "a"／"b" 之間交替：屬性值一變，選到的動畫名稱就換，瀏覽器會重播（輸入框不重新掛載，焦點與值不受影響）。
+ * 兩組 keyframes 內容相同；只有 from 影格，結束後回到欄位原本的樣子。依 DOM 欄位順序延遲（問題、分類、耗時、處理、根本原因）。 */
+:root[data-theme="cyber"] [data-fx="field"][data-fx-copied="a"] {
+  animation: cyber-copied-a var(--dur-copied) var(--ease-out);
+  animation-delay: calc(var(--stagger-copied) * var(--copied-i, 0));
+}
+:root[data-theme="cyber"] [data-fx="field"][data-fx-copied="b"] {
+  animation: cyber-copied-b var(--dur-copied) var(--ease-out);
+  animation-delay: calc(var(--stagger-copied) * var(--copied-i, 0));
+}
+:root[data-theme="cyber"] [data-fx="field"][data-field="category"] {
+  --copied-i: 1;
+}
+:root[data-theme="cyber"] [data-fx="field"][data-field="duration"] {
+  --copied-i: 2;
+}
+:root[data-theme="cyber"] [data-fx="field"][data-field="action"] {
+  --copied-i: 3;
+}
+:root[data-theme="cyber"] [data-fx="field"][data-field="rootCause"] {
+  --copied-i: 4;
+}
+@keyframes cyber-copied-a {
+  from {
+    box-shadow: var(--glow-accent), inset 0 0 0 999px var(--press-wash);
+  }
+}
+@keyframes cyber-copied-b {
+  from {
+    box-shadow: var(--glow-accent), inset 0 0 0 999px var(--press-wash);
+  }
+}
+
+/* ---------- FX-28 嚴重度建議：選項變成「被建議」（data-fx-suggested=選項值）時，閃一次對應嚴重度色的光暈 ----------
+ * 選項節點一直都在，只是屬性出現就開始播（選項換人時新的那顆開始播）；只動 box-shadow（光暈），不改尺寸。標準主題沒有任何規則吃這個屬性。 */
+:root[data-theme="cyber"] [data-fx="seg"] > button[data-fx-suggested] {
+  --sug: var(--good);
+  animation: cyber-suggest var(--dur-suggest) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx="seg"] > button[data-fx-suggested="一般"] {
+  --sug: var(--warning);
+}
+:root[data-theme="cyber"] [data-fx="seg"] > button[data-fx-suggested="嚴重"] {
+  --sug: var(--serious);
+}
+:root[data-theme="cyber"] [data-fx="seg"] > button[data-fx-suggested="重大"] {
+  --sug: var(--critical);
+}
+@keyframes cyber-suggest {
+  from {
+    box-shadow: 0 0 0 1px var(--sug), 0 0 12px var(--sug);
+  }
+}
+
+/* ---------- FX-31 回收桶溶解：被移除的列只是 250ms 的視覺殘影（TrashPage 的 inert＋aria-hidden 節點，不可聚焦、不可點） ----------
+ * 基礎樣式就是溶解後的狀態（看不見），keyframes 從完整顯示收起，所以不需要 fill-mode。復原：上下往中間收起；永久刪除：左右往中間收起（方向相反）。 */
+:root[data-theme="cyber"] [data-fx-ghost] {
+  opacity: 0;
+}
+:root[data-theme="cyber"] [data-fx-ghost="restore"] {
+  clip-path: inset(50% 0 50% 0);
+  animation: cyber-dissolve-v var(--dur-dissolve) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx-ghost="purge"] {
+  clip-path: inset(0 50% 0 50%);
+  animation: cyber-dissolve-h var(--dur-dissolve) var(--ease-out);
+}
+@keyframes cyber-dissolve-v {
+  from {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+}
+@keyframes cyber-dissolve-h {
+  from {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+}
+
 /* === P3 C START === */
 /* =====================================================================================================
  * P3 塊 C（位置在報表隔離之後、塊 B 之前，這樣塊 A／塊 B 的區段守門測試各自的範圍不會涵蓋到本段）：FX-11 長條鎖定角框、FX-25 送出中 ASCII 進度條、FX-26 照片上傳掃描帶、FX-32 匯出中 ▮▯▯、FX-36 切換照片淡入。
@@ -1631,6 +1725,11 @@
   /* P3 塊 C：沒有 data-fx 的新裝飾——送出中進度條（印出時不顯示）、上傳掃描帶與被隱藏的旋轉圖示 */
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx-progress] {
     display: none;
+  }
+  /* P3 塊 C 後半：回收桶殘影的基礎樣式是「溶解後看不見」，印出時退回 */
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-ghost] {
+    opacity: revert-layer;
+    clip-path: revert-layer;
   }
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx-scan] > svg {
     visibility: revert-layer;

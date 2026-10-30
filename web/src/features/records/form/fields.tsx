@@ -25,19 +25,21 @@ interface FieldProps {
   error?: string | undefined;
   /** 複製帶入後等待使用者確認 */
   review?: boolean;
+  /** cyber 主題 FX-27 帶入閃爍：帶入時由 "a"／"b" 交替，屬性值一變動畫就重播（不重新掛載輸入框）。純展示 */
+  copied?: "a" | "b" | undefined;
   className?: string;
   /** 自訂輸入元件。拿到要放在元素上的 id／aria 屬性 */
   children: (props: { id: string; "aria-invalid": boolean; "aria-describedby": string | undefined }) => React.ReactNode;
 }
 
 /** 標籤＋說明＋輸入元件＋欄位旁的錯誤訊息。錯誤同時以 aria-describedby / role=alert 傳給輔助科技。 */
-export function Field({ name, label, hint, error, review, className, children }: FieldProps) {
+export function Field({ name, label, hint, error, review, copied, className, children }: FieldProps) {
   const id = fieldId(name);
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
   const describedBy = [error ? errorId : null, hint ? hintId : null].filter(Boolean).join(" ") || undefined;
   return (
-    <div data-fx="field" className={cn("flex flex-col gap-1.5", className)} data-field={name} data-review={review ? "true" : undefined}>
+    <div data-fx="field" className={cn("flex flex-col gap-1.5", className)} data-field={name} data-review={review ? "true" : undefined} data-fx-copied={copied}>
       <label htmlFor={id} className="text-sm font-bold text-ink-1">
         {label}
         {review ? <ReviewTag /> : null}

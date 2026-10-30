@@ -20,6 +20,7 @@ import { Field, FieldError, fieldId, textareaClass } from "./fields";
 import { formReducer, initialEditState, initialNewState, isFormDirty } from "./formReducer";
 import {
   buildRecordInput,
+  copiedFieldsOf,
   categorySuggestions,
   equipmentSuggestions,
   findEquipmentMapEntry,
@@ -109,6 +110,12 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
   const [existing, setExisting] = React.useState<ExistingPhoto[]>(() => toExisting(record));
   const originalExisting = React.useRef(existing);
   const fx = useFx();
+  // FX-27 帶入閃爍（純展示）：每次帶入遞增，被帶入的欄位以 a／b 交替的屬性值觸發 CSS 動畫；不影響表單值、不重新掛載輸入框
+  const [copiedFx, setCopiedFx] = React.useState<{ n: number; fields: readonly FieldName[] }>(() =>
+    !isEdit && copyFrom ? { n: 1, fields: copiedFieldsOf(copyFrom) } : { n: 0, fields: [] },
+  );
+  const copiedAttr = (name: FieldName): "a" | "b" | undefined =>
+    copiedFx.fields.includes(name) ? (copiedFx.n % 2 ? "a" : "b") : undefined;
   const [submitting, setSubmitting] = React.useState(false);
   const submittingRef = React.useRef(false);
   const [formErrors, setFormErrors] = React.useState<string[]>([]);
@@ -183,6 +190,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
     (rec: DiaryRecord, focus = true) => {
       // 已上傳照片時不可改日期／時間／班別（照片依當時日期存放）
       dispatch({ type: "applyCopy", record: rec, lockDateTime: photos.hasLive });
+      setCopiedFx((prev) => ({ n: prev.n + 1, fields: copiedFieldsOf(rec) }));
       setFormErrors([]);
       if (focus) requestFocus("equipment");
     },
@@ -209,6 +217,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
 
   const undoCopy = () => {
     dispatch({ type: "undoCopy" });
+    setCopiedFx((prev) => ({ n: prev.n, fields: [] }));
     clearCopyParam();
   };
 
@@ -216,6 +225,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
   const reset = () => {
     photos.abandonAll(); // 已上傳未送出的立刻刪；上傳中的標記「已放棄」（不中止請求），回應回來後補刪
     dispatch({ type: "reset" }); // 日期／時間回到「現在」
+    setCopiedFx((prev) => ({ n: prev.n, fields: [] }));
     setFormErrors([]);
     clearCopyParam();
     requestFocus("equipment");
@@ -429,7 +439,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
           </div>
         ) : null}
 
-        <Field name="problem" label="問題" error={errors.problem}>
+        <Field name="problem" label="問題" error={errors.problem} copied={copiedAttr("problem")}>
           {(p) => (
             <input
               {...p}
@@ -442,7 +452,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
           )}
         </Field>
 
-        <Field name="category" label="問題分類" hint="可直接輸入新分類，沒填會存成「其他」" error={errors.category}>
+        <Field name="category" label="問題分類" hint="可直接輸入新分類，沒填會存成「其他」" error={errors.category} copied={copiedAttr("category")}>
           {(p) => (
             <Combobox
               {...p}
@@ -455,7 +465,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
         </Field>
 
         <div className="grid gap-4 md:grid-cols-[11rem_1fr]">
-          <Field name="duration" label="耗時" hint="分鐘，整數" error={errors.duration} review={review.includes("duration")}>
+          <Field name="duration" label="耗時" hint="分鐘，整數" error={errors.duration} review={review.includes("duration")} copied={copiedAttr("duration")}>
             {(p) => (
               <input
                 {...p}
@@ -482,6 +492,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
               value={values.severity}
               onChange={(v) => set("severity")(v)}
               options={SEVERITY_OPTIONS}
+              suggestedValue={suggested}
             />
             {showSuggestHint ? (
               <p className="text-xs text-ink-2">
@@ -498,7 +509,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
           </div>
         </div>
 
-        <Field name="action" label="處理" error={errors.action}>
+        <Field name="action" label="處理" error={errors.action} copied={copiedAttr("action")}>
           {(p) => (
             <textarea
               {...p}
@@ -518,6 +529,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
             </>
           }
           error={errors.rootCause}
+          copied={copiedAttr("rootCause")}
         >
           {(p) => (
             <textarea

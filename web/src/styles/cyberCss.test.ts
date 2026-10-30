@@ -1281,3 +1281,81 @@ describe("cyber.css：P3 塊 C 守門", () => {
     expect(code).not.toContain("#report-output");
   });
 });
+
+/*
+ * P3 塊 C（後半）的守門：FX-27／28／31。以新增方式擴充。
+ * 區段從 P3 C2 START 標記到 P3 C START 標記（位在塊 A、塊 C 前半、塊 B 的切片之外，不影響它們各自的計數）。
+ */
+const P3C2_MARKER = "/* === P3 C2 START === */";
+describe("cyber.css：P3 塊 C 後半守門（FX-27／28／31）", () => {
+  const start = cyberCss.indexOf(P3C2_MARKER);
+  const src = cyberCss.slice(start, cyberCss.indexOf(P3C_MARKER));
+  const rs = parseCss(src);
+  const code = stripComments(src);
+  const frames = rs.filter((r) => r.context.some((c) => /^@keyframes\b/.test(c)));
+  const frameName = (r: { context: string[] }) => /^@keyframes\s+(\S+)/.exec(r.context.find((c) => /^@keyframes\b/.test(c))!)![1]!;
+  const screen = (selector: string) => rs.find((r) => r.selectors.length === 1 && r.selectors[0] === selector && r.context.length === 0);
+  const tokens = declarationMap(rs.filter((r) => r.selectors.length === 1 && r.selectors[0] === CYBER_SCOPE && r.context.length === 0).map((r) => r.declarations).join(";"));
+
+  it("標記只有一個，在塊 C 前半之前、報表隔離之後；每條規則都以 cyber 範圍開頭", () => {
+    expect(cyberCss.split(P3C2_MARKER).length - 1).toBe(1);
+    expect(start).toBeGreaterThan(cyberCss.indexOf(P3_END));
+    expect(start).toBeLessThan(cyberCss.indexOf(P3C_MARKER));
+    for (const r of rs.filter((x) => x.context.length === 0)) for (const s of r.selectors) expect(s.startsWith(CYBER_SCOPE), s).toBe(true);
+  });
+
+  it("@keyframes cyber- 前綴、各自被引用；只動 box-shadow（光暈）／clip-path／opacity；沒有 infinite、沒有 fill-mode、沒有寫死毫秒、時間走 token", () => {
+    const names = [...new Set(frames.map(frameName))].sort();
+    expect(names).toEqual(["cyber-copied-a", "cyber-copied-b", "cyber-dissolve-h", "cyber-dissolve-v", "cyber-suggest"]);
+    const allowed = new Set(["box-shadow", "clip-path", "opacity"]);
+    expect(frames.flatMap((r) => Object.keys(decl(r)).filter((k) => !allowed.has(k)))).toEqual([]);
+    const used = new Set(rs.filter((r) => !r.context.some((c) => /^@keyframes\b/.test(c))).flatMap((r) => (decl(r)["animation"] ?? "").split(/\s+/)));
+    expect(names.filter((n) => !used.has(n))).toEqual([]);
+    expect(code).not.toMatch(/\binfinite\b|animation-fill-mode|\b(forwards|backwards|both)\b|setTimeout/);
+    const anims = rs.filter((r) => !r.context.some((c) => /^@keyframes\b/.test(c))).flatMap((r) => ["animation", "animation-delay"].map((k) => decl(r)[k]).filter((v): v is string => v !== undefined));
+    expect(anims.map((v) => v.replace(/var\([^)]*\)/g, "")).filter((v) => /(^|[\s,(])\d*\.?\d+m?s\b/.test(v))).toEqual([]);
+    expect(tokens).toMatchObject({ "--dur-copied": "200ms", "--stagger-copied": "40ms", "--dur-suggest": "300ms", "--dur-dissolve": "220ms" });
+  });
+
+  it("FX-27：data-fx-copied 的 a／b 兩組動畫名稱不同（屬性值一變就重播）、內容相同；欄位依序延遲（問題 0、分類 1、耗時 2、處理 3、根本原因 4 格）", () => {
+    expect(decl(screen(`${CYBER_SCOPE} [data-fx="field"][data-fx-copied="a"]`)!)["animation"]).toContain("cyber-copied-a");
+    expect(decl(screen(`${CYBER_SCOPE} [data-fx="field"][data-fx-copied="b"]`)!)["animation"]).toContain("cyber-copied-b");
+    const a = frames.filter((r) => frameName(r) === "cyber-copied-a").map((r) => decl(r));
+    const b = frames.filter((r) => frameName(r) === "cyber-copied-b").map((r) => decl(r));
+    expect(a).toEqual(b);
+    expect(a).toHaveLength(1); // 只有 from；結束回到欄位原本的樣子
+    expect(a[0]!["box-shadow"]).toContain("var(--glow-accent)");
+    const idx = (n: string) => decl(screen(`${CYBER_SCOPE} [data-fx="field"][data-field="${n}"]`)!)["--copied-i"];
+    expect(["category", "duration", "action", "rootCause"].map(idx)).toEqual(["1", "2", "3", "4"]);
+  });
+
+  it("FX-28：建議的選項閃一次對應嚴重度色（輕微 good、一般 warning、嚴重 serious、重大 critical）的光暈；不改尺寸", () => {
+    const base = `${CYBER_SCOPE} [data-fx="seg"] > button[data-fx-suggested]`;
+    expect(decl(screen(base)!)["animation"]).toBe("cyber-suggest var(--dur-suggest) var(--ease-out)");
+    expect(decl(screen(base)!)["--sug"]).toBe("var(--good)");
+    const color = (v: string) => decl(screen(`${CYBER_SCOPE} [data-fx="seg"] > button[data-fx-suggested="${v}"]`)!)["--sug"];
+    expect([color("一般"), color("嚴重"), color("重大")]).toEqual(["var(--warning)", "var(--serious)", "var(--critical)"]);
+    const f = frames.filter((r) => frameName(r) === "cyber-suggest");
+    expect(f).toHaveLength(1);
+    expect(Object.keys(decl(f[0]!))).toEqual(["box-shadow"]);
+  });
+
+  it("FX-31：殘影基礎樣式即溶解後狀態（看不見）；復原（垂直收起）與永久刪除（水平收起）方向相反；不碰 pointer-events（殘影靠 inert）", () => {
+    expect(decl(screen(`${CYBER_SCOPE} [data-fx-ghost]`)!)).toEqual({ opacity: "0" });
+    const restore = decl(screen(`${CYBER_SCOPE} [data-fx-ghost="restore"]`)!);
+    const purge = decl(screen(`${CYBER_SCOPE} [data-fx-ghost="purge"]`)!);
+    expect(restore["clip-path"]).toBe("inset(50% 0 50% 0)");
+    expect(purge["clip-path"]).toBe("inset(0 50% 0 50%)");
+    expect(restore["animation"]).toContain("cyber-dissolve-v");
+    expect(purge["animation"]).toContain("cyber-dissolve-h");
+    expect(code).not.toMatch(/pointer-events/);
+  });
+
+  it("@media print：殘影的基礎樣式還原；塊 C 後半不碰 #report-output", () => {
+    const P = `${CYBER_SCOPE}:not(#cyber-print)`;
+    const printRules = parseCss(cyberCss).filter((r) => r.context.some((c) => /^@media print/.test(c)));
+    const ghost = printRules.find((r) => r.selectors.includes(`${P} [data-fx-ghost]`));
+    expect(ghost && decl(ghost)).toEqual({ opacity: "revert-layer", "clip-path": "revert-layer" });
+    expect(code).not.toContain("#report-output");
+  });
+});
