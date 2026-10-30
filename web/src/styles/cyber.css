@@ -1116,6 +1116,172 @@
   --critical: #d03b3b;
 }
 
+/* === P3 C START === */
+/* =====================================================================================================
+ * P3 塊 C（位置在報表隔離之後、塊 B 之前，這樣塊 A／塊 B 的區段守門測試各自的範圍不會涵蓋到本段）：FX-11 長條鎖定角框、FX-25 送出中 ASCII 進度條、FX-26 照片上傳掃描帶、FX-32 匯出中 ▮▯▯、FX-36 切換照片淡入。
+ * （FX-27／28／31 由後續區塊補。）守則同 P3：只動 transform、opacity；@keyframes 一律 cyber- 前綴；時間走 token；
+ * 本段不出現 infinite 關鍵字——FX-25／26／32 三個循環動畫都以 var(--loop-forever) 取用（P3 塊 C 的守門測試逐條鎖定）。
+ * 循環白名單理由：它們的語意就是「進行中、時間不明」，必須在進行中持續可見；都只動 transform（不閃爍、每秒變化 ≤ 3 次的步進或平滑位移），
+ * 進行中狀態結束（按鈕不再 aria-busy／縮圖不再 uploading）元素就消失或不再匹配，所以不會常駐；減少動態效果時由 index.css 的全域規則壓成一次、停在最終影格。
+ * ===================================================================================================== */
+
+:root[data-theme="cyber"] {
+  --dur-lock: 200ms; /* FX-11 角框由大縮小 */
+  --dur-loop: 900ms; /* FX-25 進度條、FX-32 ▮▯▯ 一圈 */
+  --dur-scan-band: 1.2s; /* FX-26 掃描帶一個來回 */
+}
+
+/* ---------- FX-11 長條鎖定角框：按下（:active）時四角出現洋紅 L 形角框，由大縮小到定位 ----------
+ * 純 CSS、與跳轉同步（click 在放開時才觸發，角框在按住期間就開始播）；不加 setTimeout、不延後跳轉。
+ * 畫在按鈕的 ::before（absolute、inset: 0，不佔版面、不擋點擊）；position: relative 不改變按鈕的 rect。
+ * 沒有按下時 opacity 0，所以平常看不到；:active 的最終狀態（opacity 1、scale 1）就是鎖定後的樣子。 */
+:root[data-theme="cyber"] [data-fx="bar-row"] {
+  position: relative;
+}
+:root[data-theme="cyber"] [data-fx="bar-row"]::before {
+  content: "" / "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background-image:
+    linear-gradient(var(--accent-2), var(--accent-2)), linear-gradient(var(--accent-2), var(--accent-2)),
+    linear-gradient(var(--accent-2), var(--accent-2)), linear-gradient(var(--accent-2), var(--accent-2)),
+    linear-gradient(var(--accent-2), var(--accent-2)), linear-gradient(var(--accent-2), var(--accent-2)),
+    linear-gradient(var(--accent-2), var(--accent-2)), linear-gradient(var(--accent-2), var(--accent-2));
+  background-repeat: no-repeat;
+  background-size:
+    10px 2px, 2px 10px,
+    10px 2px, 2px 10px,
+    10px 2px, 2px 10px,
+    10px 2px, 2px 10px;
+  background-position:
+    0 0, 0 0,
+    100% 0, 100% 0,
+    0 100%, 0 100%,
+    100% 100%, 100% 100%;
+}
+:root[data-theme="cyber"] [data-fx="bar-row"]:active:not(:disabled)::before {
+  opacity: 1;
+  animation: cyber-lock-on var(--dur-lock) var(--ease-out);
+}
+
+/* ---------- FX-25 送出中 ASCII 進度條 [██░░░░]（RecordForm 的 <SubmitProgress>，只在 cyber 且允許動態時渲染，aria-hidden）----------
+ * 取代旋轉圖示的視覺，放在同一個位置（按鈕文字左側）；按鈕有 md:min-w-36（手機是 flex-1），內容寬度遠小於最小寬，所以按鈕 rect 與標準送出中相同。
+ * 進度不明：一個 2 格寬的實心區塊在 6 格軌道裡循環跑動（steps，不是百分比）。 */
+:root[data-theme="cyber"] [data-fx-progress] {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  line-height: 1;
+  white-space: pre;
+}
+:root[data-theme="cyber"] [data-fx-progress-track] {
+  position: relative;
+  display: inline-block;
+  width: 6ch;
+  overflow: hidden;
+}
+:root[data-theme="cyber"] [data-fx-progress-block] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  animation: cyber-progress-run var(--dur-loop) steps(4, end) var(--loop-forever);
+}
+
+/* ---------- FX-26 照片上傳掃描帶：上傳中縮圖（PhotoThumb 的 [data-fx-scan] 覆蓋層，spinner 與 sr-only「上傳中」都保留在 DOM）----------
+ * 視覺上用掃描帶取代旋轉圖示（圖示 visibility: hidden，仍佔位、仍在輔助科技樹裡的是 sr-only 文字）。縮圖容器本身 overflow-hidden，掃描帶不會超出。 */
+:root[data-theme="cyber"] [data-fx-scan] > svg {
+  visibility: hidden;
+}
+:root[data-theme="cyber"] [data-fx-scan]::after {
+  content: "" / "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 30%;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--accent) 50%, transparent);
+  opacity: 0.8;
+  transform: translateY(-100%);
+  animation: cyber-scan-band var(--dur-scan-band) linear alternate var(--loop-forever);
+}
+
+/* ---------- FX-32 匯出中：匯出項目（nav-item，aria-busy="true"）文字旁的循環 ▮▯▯ → ▮▮▯ → ▮▮▮ ----------
+ * 不加狀態，直接吃現有的 aria-busy。兩個偽元素疊在同一處（absolute，不佔版面）：::after 是暗的 ▯▯▯ 底，::before 是亮的 ▮▮▮ 以 scaleX 一格一格露出。
+ * 圖示列（768–1023）只有圖示、沒有位置，不顯示；側欄與手機「更多」面板顯示。 */
+:root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"] {
+  position: relative;
+}
+:root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::before,
+:root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0.75rem;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  transform-origin: left center;
+}
+:root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::after {
+  content: "AFAFAF" / "";
+  color: var(--ink-muted);
+}
+:root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::before {
+  content: "AEAEAE" / "";
+  z-index: 1;
+  color: var(--accent-text);
+  animation: cyber-export-fill var(--dur-loop) steps(1) var(--loop-forever);
+}
+@media (min-width: 768px) and (max-width: 1023px) {
+  :root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::before,
+  :root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::after {
+    display: none;
+  }
+}
+
+/* ---------- FX-36 切換照片：<img key={src}> 重新掛載，新圖淡入（opacity 一次）。燈箱開啟本身的展開是 P2 ---------- */
+:root[data-theme="cyber"] [data-fx="lightbox"] > img {
+  animation: cyber-fade-in var(--dur-fast) var(--ease-out);
+}
+
+@keyframes cyber-lock-on {
+  from {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+}
+@keyframes cyber-progress-run {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(4ch);
+  }
+}
+@keyframes cyber-scan-band {
+  to {
+    transform: translateY(333%);
+  }
+}
+@keyframes cyber-export-fill {
+  0% {
+    transform: scaleX(0.34);
+  }
+  33% {
+    transform: scaleX(0.67);
+  }
+  66% {
+    transform: scaleX(1);
+  }
+}
+
 /* === P3 B START === */
 /* =====================================================================================================
  * P3 塊 B：換頁 View Transitions（FX-02）、標題打字與游標（FX-03）、nav-indicator（FX-04）、主題切換掃描（FX-38）、開機畫面（FX-01）。
@@ -1384,6 +1550,17 @@
     display: none;
   }
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx-indicator] {
+    display: none;
+  }
+  /* P3 塊 C：沒有 data-fx 的新裝飾——送出中進度條（印出時不顯示）、上傳掃描帶與被隱藏的旋轉圖示 */
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-progress] {
+    display: none;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-scan] > svg {
+    visibility: revert-layer;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-scan]::after {
+    content: none;
     display: none;
   }
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx="check"] > svg {

@@ -1134,3 +1134,124 @@ describe("cyber.css：P3 塊 B 守門", () => {
     expect(code).not.toContain("#report-output");
   });
 });
+
+/*
+ * P3 塊 C（前半）的守門：FX-11／25／26／32／36。以新增方式擴充。
+ * 區段從 P3 C START 標記到 P3 B START 標記（本段位在報表隔離與塊 B 之間，塊 A、塊 B 的區段切片都不含它）。
+ * infinite 白名單（理由見 cyber.css 該段開頭）：只有 FX-25、FX-26、FX-32，關鍵字本身不出現，一律以 var(--loop-forever) 取用。
+ */
+const P3C_MARKER = "/* === P3 C START === */";
+describe("cyber.css：P3 塊 C 守門", () => {
+  const start = cyberCss.indexOf(P3C_MARKER);
+  const src = cyberCss.slice(start, cyberCss.indexOf(P3B_MARKER));
+  const cRules = parseCss(src);
+  const code = stripComments(src);
+  const frames = cRules.filter((r) => r.context.some((c) => /^@keyframes\b/.test(c)));
+  const frameName = (r: { context: string[] }) => /^@keyframes\s+(\S+)/.exec(r.context.find((c) => /^@keyframes\b/.test(c))!)![1]!;
+  const screen = (selector: string) => cRules.find((r) => r.selectors.length === 1 && r.selectors[0] === selector && r.context.length === 0);
+  const tokens = declarationMap(cRules.filter((r) => r.selectors.length === 1 && r.selectors[0] === CYBER_SCOPE && r.context.length === 0).map((r) => r.declarations).join(";"));
+  const anim = cRules
+    .filter((r) => !r.context.some((c) => /^@keyframes\b/.test(c)))
+    .flatMap((r) => Object.entries(decl(r)).filter(([k]) => /^animation(-[a-z-]+)?$/.test(k)).map(([k, v]) => ({ rule: r, prop: k, value: v })));
+
+  it("標記只有一個，在報表隔離之後、塊 B 之前", () => {
+    expect(cyberCss.split(P3C_MARKER).length - 1).toBe(1);
+    expect(start).toBeGreaterThan(cyberCss.indexOf(P3_END));
+    expect(start).toBeLessThan(cyberCss.indexOf(P3B_MARKER));
+    expect(cRules.length).toBeGreaterThan(10);
+  });
+
+  it("@keyframes 一律 cyber- 前綴、只動 transform／opacity、每個都有被引用；沒有 clip-path、沒有寫死毫秒、沒有 iteration-count 數字", () => {
+    const names = [...new Set(frames.map(frameName))];
+    expect(names.length).toBe(4);
+    expect(names.filter((n) => !n.startsWith("cyber-"))).toEqual([]);
+    const bad = frames.flatMap((r) => Object.keys(decl(r)).filter((k) => k !== "transform" && k !== "opacity").map((k) => `${frameName(r)}: ${k}`));
+    expect(bad).toEqual([]);
+    const used = new Set(rules.filter((r) => !r.context.some((c) => /^@keyframes\b/.test(c))).flatMap((r) => (decl(r)["animation"] ?? "").split(/\s+/)));
+    expect(names.filter((n) => !used.has(n))).toEqual([]);
+    expect(code).not.toMatch(/clip-path/);
+    const hard = anim
+      .filter((d) => d.prop === "animation" || d.prop === "animation-delay")
+      .map((d) => ({ ...d, value: d.value.replace(/var\([^)]*\)/g, "").replace(/steps\([^)]*\)/g, "") }))
+      .filter((d) => /(^|[\s,(])\d*\.?\d+m?s\b/.test(d.value));
+    expect(hard.map((d) => `${d.rule.selectors[0]}: ${d.value}`)).toEqual([]);
+    expect(anim.filter((d) => d.prop === "animation-iteration-count")).toEqual([]);
+    expect(code).not.toMatch(/setTimeout/);
+  });
+
+  it("infinite 白名單：只有 FX-25 進度條、FX-26 掃描帶、FX-32 匯出 ▮▯▯；關鍵字不出現，一律 var(--loop-forever)", () => {
+    expect((code.match(/\binfinite\b/g) ?? []).length).toBe(0);
+    const loops = anim.filter((d) => /var\(--loop-forever\)/.test(d.value));
+    expect(loops.map((d) => [d.rule.selectors, d.value])).toEqual([
+      [[`${CYBER_SCOPE} [data-fx-progress-block]`], "cyber-progress-run var(--dur-loop) steps(4, end) var(--loop-forever)"],
+      [[`${CYBER_SCOPE} [data-fx-scan]::after`], "cyber-scan-band var(--dur-scan-band) linear alternate var(--loop-forever)"],
+      [[`${CYBER_SCOPE} [data-fx="nav-item"][aria-busy="true"]::before`], "cyber-export-fill var(--dur-loop) steps(1) var(--loop-forever)"],
+    ]);
+    // 都只在「進行中」才匹配：FX-25 元素只在送出中渲染、FX-26 只在 uploading、FX-32 要 aria-busy="true"
+    expect(tokens["--dur-loop"]).toBe("900ms");
+    expect(tokens["--dur-scan-band"]).toBe("1.2s");
+    // 匯出：900ms 一圈走 3 格（steps(1) 逐格切換），只動 transform、沒有明暗閃爍
+    expect(frames.filter((r) => frameName(r) === "cyber-export-fill").map((r) => decl(r)["transform"])).toEqual(["scaleX(0.34)", "scaleX(0.67)", "scaleX(1)"]);
+  });
+
+  it("FX-11 長條鎖定角框：洋紅（--accent-2）L 形、::before、不佔版面、不擋點擊；只在 :active 且未 disabled 時播；按鈕 rect 不變", () => {
+    const base = screen(`${CYBER_SCOPE} [data-fx="bar-row"]::before`)!;
+    expect(decl(base)["position"]).toBe("absolute");
+    expect(decl(base)["inset"]).toBe("0");
+    expect(decl(base)["pointer-events"]).toBe("none");
+    expect(decl(base)["opacity"]).toBe("0");
+    expect(decl(base)["content"]).toMatch(/\/ ""$/);
+    expect(decl(base)["background-image"]!.match(/var\(--accent-2\)/g)!.length).toBe(16); // 四角 × 2 臂 × 2 個色標
+    const active = screen(`${CYBER_SCOPE} [data-fx="bar-row"]:active:not(:disabled)::before`)!;
+    expect(decl(active)["animation"]).toBe("cyber-lock-on var(--dur-lock) var(--ease-out)");
+    expect(decl(active)["opacity"]).toBe("1");
+    expect(tokens["--dur-lock"]).toBe("200ms");
+    expect(frames.filter((r) => frameName(r) === "cyber-lock-on").map((r) => decl(r)["transform"])).toEqual(["scale(1.12)"]); // 由大縮小
+    // 按鈕本身只加 position: relative（不改 rect），不碰 display／尺寸／margin
+    expect(Object.keys(decl(screen(`${CYBER_SCOPE} [data-fx="bar-row"]`)!))).toEqual(["position"]);
+  });
+
+  it("FX-25 進度條：軌道固定 6ch、溢出隱藏；區塊只 translateX 位移（循環，沒有百分比）", () => {
+    const track = screen(`${CYBER_SCOPE} [data-fx-progress-track]`)!;
+    expect(decl(track)["width"]).toBe("6ch");
+    expect(decl(track)["overflow"]).toBe("hidden");
+    expect(frames.filter((r) => frameName(r) === "cyber-progress-run").map((r) => decl(r)["transform"])).toEqual(["translateX(0)", "translateX(4ch)"]);
+    expect(decl(screen(`${CYBER_SCOPE} [data-fx-progress-block]`)!)["position"]).toBe("absolute");
+  });
+
+  it("FX-26 掃描帶：旋轉圖示用 visibility: hidden（仍佔位、sr-only 文字不受影響）；掃描帶是 ::after、absolute、不擋點擊、只 translateY", () => {
+    expect(decl(screen(`${CYBER_SCOPE} [data-fx-scan] > svg`)!)).toEqual({ visibility: "hidden" });
+    const band = screen(`${CYBER_SCOPE} [data-fx-scan]::after`)!;
+    expect(decl(band)["position"]).toBe("absolute");
+    expect(decl(band)["pointer-events"]).toBe("none");
+    expect(decl(band)["content"]).toMatch(/\/ ""$/);
+    expect(frames.filter((r) => frameName(r) === "cyber-scan-band").map((r) => decl(r)["transform"])).toEqual(["translateY(333%)"]);
+  });
+
+  it("FX-32 匯出中：吃現有的 aria-busy（不加狀態）；兩個偽元素 absolute、不擋點擊、有 / \"\" 替代文字；圖示列（768–1023）不顯示", () => {
+    const sel = `${CYBER_SCOPE} [data-fx="nav-item"][aria-busy="true"]`;
+    expect(decl(screen(sel)!)).toEqual({ position: "relative" });
+    const shared = cRules.find((r) => r.context.length === 0 && r.selectors.includes(`${sel}::before`) && r.selectors.includes(`${sel}::after`))!;
+    expect(decl(shared)["position"]).toBe("absolute");
+    expect(decl(shared)["pointer-events"]).toBe("none");
+    expect(decl(screen(`${sel}::after`)!)["content"]).toMatch(/\/ ""$/);
+    expect(decl(screen(`${sel}::before`)!)["content"]).toMatch(/\/ ""$/);
+    const tablet = cRules.find((r) => inMedia(r, /min-width:\s*768px\)\s*and\s*\(max-width:\s*1023px/) && r.selectors.includes(`${sel}::before`))!;
+    expect(decl(tablet)["display"]).toBe("none");
+  });
+
+  it("FX-36 切換照片：燈箱內容的 <img> 重新掛載時淡入一次（cyber-fade-in）", () => {
+    expect(decl(screen(`${CYBER_SCOPE} [data-fx="lightbox"] > img`)!)["animation"]).toBe("cyber-fade-in var(--dur-fast) var(--ease-out)");
+  });
+
+  it("@media print：進度條隱藏、掃描帶與被隱藏的旋轉圖示還原；其餘靠 [data-fx] 的 all: revert-layer", () => {
+    const P = `${CYBER_SCOPE}:not(#cyber-print)`;
+    expect(decl(printRule(`${P} [data-fx-progress]`)!)["display"]).toBe("none");
+    expect(decl(printRule(`${P} [data-fx-scan] > svg`)!)["visibility"]).toBe("revert-layer");
+    expect(decl(printRule(`${P} [data-fx-scan]::after`)!)).toEqual({ content: "none", display: "none" });
+  });
+
+  it("塊 C 選擇器不碰 #report-output", () => {
+    expect(code).not.toContain("#report-output");
+  });
+});

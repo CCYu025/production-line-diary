@@ -8,6 +8,7 @@ import { SegmentedControl, type SegmentedOption } from "@/components/SegmentedCo
 import { SEVERITY_BG } from "@/components/badges";
 import { Button } from "@/components/ui/button";
 import { api, errorMessage, isApiError } from "@/lib/api";
+import { useFx } from "@/lib/fx";
 import { notify } from "@/lib/feedback";
 import { useCreateRecord, useMeta, useRecords, useUpdateRecord } from "@/lib/queries";
 import { queryKeys } from "@/lib/queryKeys";
@@ -41,6 +42,18 @@ const SEVERITY_OPTIONS: SegmentedOption<Severity>[] = SEVERITY_ORDER.map((s: Sev
   label: s,
   prefix: <span aria-hidden="true" data-fx="sev" data-severity={s} className={`h-4 w-1.5 rounded-full ${SEVERITY_BG[s]}`} />,
 }));
+
+/**
+ * FX-25 送出中的 ASCII 進度條（只在 cyber 且允許動態時取代旋轉圖示）。進度不明，所以是循環跑動的區塊，不顯示百分比；
+ * 純裝飾（aria-hidden），按鈕的文字（「送出中…」）與 aria-busy 才是輔助科技看到的狀態。外觀全在 cyber.css（P3 塊 C）。
+ */
+function SubmitProgress() {
+  return (
+    <span data-fx-progress="" aria-hidden="true">
+      [<span data-fx-progress-track="">░░░░░░<span data-fx-progress-block="">██</span></span>]
+    </span>
+  );
+}
 
 function StatusGlyph({ status }: { status: Status }) {
   return (
@@ -95,6 +108,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
   // 編輯：紀錄原本的照片（可移除、可改說明）。移除只是「放掉參照」，存檔時伺服器才真的刪檔。
   const [existing, setExisting] = React.useState<ExistingPhoto[]>(() => toExisting(record));
   const originalExisting = React.useRef(existing);
+  const fx = useFx();
   const [submitting, setSubmitting] = React.useState(false);
   const submittingRef = React.useRef(false);
   const [formErrors, setFormErrors] = React.useState<string[]>([]);
@@ -581,7 +595,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
             >
               {submitting ? (
                 <>
-                  <Loader2 className="animate-spin" aria-hidden="true" />
+                  {fx ? <SubmitProgress /> : <Loader2 className="animate-spin" aria-hidden="true" />}
                   {isEdit ? "儲存中…" : "送出中…"}
                 </>
               ) : photos.uploading ? (

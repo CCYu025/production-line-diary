@@ -153,6 +153,8 @@ cyber.css **不針對 Tailwind class 寫選擇器**（class 會變動，也會�
 | `error-title` | `ErrorState.tsx` 的標題 `<p>`（P2，FX-34）：載入失敗時 glitch 一次 |
 | `unsaved` | `SettingsPage.tsx` 設備對照設定「未儲存」提示的文字外層 `<span>`（P2，FX-35）：左側 `::before` 的 `serious` 色條緩慢呼吸 |
 
+**P3 塊 C 新增的純屬性掛勾（不是 `data-fx` 值，AX 樹與 rect 不變）**：`data-fx-scan`（`PhotoThumb` 上傳中覆蓋層，FX-26；旋轉圖示與 sr-only「上傳中」保留）；`data-fx-progress`／`-track`／`-block`（`RecordForm` 送出中 ASCII 進度條，FX-25，**只在 `useFx()` 為 true 時渲染**、`aria-hidden`、取代旋轉圖示；標準主題與減少動態效果仍是旋轉圖示）。FX-11 使用既有的 `bar-row`（`::before` 畫角框）、FX-32 使用既有的 `nav-item[aria-busy="true"]`、FX-36 切換照片使用 `lightbox` 內的 `<img key={src}>`（標準主題也以 src 為 key，視覺不變）。**infinite 白名單（P3 塊 C）**：FX-25、FX-26、FX-32，理由：語意是「進行中、時間不明」，必須持續可見；只動 `transform`、不閃爍，元素只在進行中才存在／匹配；關鍵字不直接出現，以 `var(--loop-forever)` 取用。FX-32 在圖示列（768–1023，只有圖示）不顯示。FX-25 進度條相對旋轉圖示較寬，但送出鈕有 `md:min-w-36`（手機 `flex-1`），內容寬度遠小於最小寬，按鈕 rect 與標準送出中相同。
+
 **刻意沒有掛勾**（P3 需要時再加，加之前先改這張表；`Lightbox`、篩選 chip、「未儲存」提示已在 P2 加入，見上表）：處理狀態堆疊條與甜甜圈的非嚴重度部分、`CopyPicker` 與 `PhotoThumb`／`PhotoField` 的縮圖（FX-26／27）、匯出項目的進行中標記（FX-32，目前只有 `aria-busy`）、日期篩選的快捷 pill（用 `aria-pressed`）、紀錄詳情面板內部（面板本身是 `sheet`）。
 
 ### 3.4 圓角改成執行期 token（標準主題零視覺差異）
