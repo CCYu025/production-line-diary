@@ -594,6 +594,8 @@
   opacity: 0;
   pointer-events: none;
   animation: cyber-sheet-sweep var(--dur-slow) var(--ease-out);
+  /* 等 detail-body 的 4 檔淡入全部結束（最後一檔 3 × 30ms ＋ 200ms）才掃，兩者不同時觸發 */
+  animation-delay: calc(var(--stagger-sheet) * 3 + var(--dur-sheet-item));
 }
 :root[data-theme="cyber"] [data-fx="sheet"][data-state="closed"] {
   animation-duration: var(--dur-close);
@@ -1454,8 +1456,8 @@
  * ===================================================================================================== */
 
 :root[data-theme="cyber"] {
-  --dur-vt-out: 80ms; /* FX-02 舊頁退場（退 80 ＋ 進 170 ＝ 250ms） */
-  --dur-vt-in: 170ms; /* FX-02 新頁掃描線劃過 */
+  --dur-vt-out: 40ms; /* FX-02 舊頁退場（退 40 ＋ 進 100 ＝ 140ms；M3 縮短，見下） */
+  --dur-vt-in: 100ms; /* FX-02 新頁掃描線劃過 */
   --dur-vt-theme: 300ms; /* FX-38 主題切換掃描 */
   --dur-char: 18ms; /* FX-03 打字：每個字 18ms（字數 ≤ 16，上限 288ms） */
   --dur-cursor: 1s; /* 標題游標、開機行游標：1 次／秒 */
@@ -1463,8 +1465,14 @@
 }
 
 /* ---------- FX-02 換頁（View Transitions，僅 useFx() 為 true 時由 JS 啟動）----------
+ * M3：VT 進行中 ::view-transition 疊層會吞掉點擊（真實 Chrome 實測：對疊層與各偽元素設 pointer-events: none 皆無效，點擊仍落在 <html>，
+ * 連點第二下被吞、焦點掉到 BODY），所以改成縮短 VT 總長：退 40 ＋ 進 100 ＝ 140ms，並關掉根快照群組預設的 250ms 動畫
+ * （它會把 VT 撐到至少 250ms；根群組尺寸不變，不需要）。
  * 舊頁：水平切片 glitch（steps 位移）淡出；新頁：由上而下的 clip-path 掃描露出。兩張快照不重疊相加（mix-blend-mode: normal）。
  * 主題切換的 VT 會在 <html> 加 data-vt="theme"，不套用這組。 */
+:root[data-theme="cyber"]:not([data-vt])::view-transition-group(root) {
+  animation: none;
+}
 :root[data-theme="cyber"]:not([data-vt])::view-transition-old(root) {
   animation: cyber-vt-out var(--dur-vt-out) var(--ease-glitch);
   animation-fill-mode: forwards; /* 退場結束後要停在透明，否則舊頁快照會在新頁露出前閃回來 */
@@ -1715,6 +1723,10 @@
   }
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx-indicator] {
     display: none;
+  }
+  /* FX-04 為 nav-indicator 定位而設的 position: relative，印出時退回標準（static） */
+  :root[data-theme="cyber"]:not(#cyber-print) aside > nav[aria-label="主要導覽"] {
+    position: revert-layer;
   }
   /* P3 塊 C：沒有 data-fx 的新裝飾——送出中進度條（印出時不顯示）、上傳掃描帶與被隱藏的旋轉圖示 */
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx-progress] {

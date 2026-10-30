@@ -1359,3 +1359,31 @@ describe("cyber.css：P3 塊 C 後半守門（FX-27／28／31）", () => {
     expect(code).not.toContain("#report-output");
   });
 });
+
+/*
+ * P3 設計師裁定後續（只新增）：詳情掃描線延後到內容淡入之後、VT 疊層放行點擊（M3）、列印還原 nav 的 position。
+ */
+describe("cyber.css：P3 裁定後續守門", () => {
+  it("cyber-sheet-sweep 的 animation-delay ＝ 最後一檔 delay ＋ 淡入時長（用 token 計算），與 detail-body 淡入不同時觸發", () => {
+    const sweep = screenRule(`${CYBER_SCOPE} [data-fx="sheet"][data-side="right"]::after`)!;
+    const delay = decl(sweep)["animation-delay"]!;
+    expect(delay).toBe("calc(var(--stagger-sheet) * 3 + var(--dur-sheet-item))");
+    const tok = (n: string) => parseFloat(findRule(cyberCss, CYBER_SCOPE)!.declarations.match(new RegExp(`${n}:\s*([\d.]+)ms`))?.[1] ?? lightRoot[n] ?? "NaN");
+    const lastFade = Number(/\*\s*(\d)\)/.exec(decl(screenRule(`${CYBER_SCOPE} [data-fx="detail-body"] > :nth-child(n + 4)`)!)["animation-delay"]!)![1]) * tok("--stagger-sheet") + tok("--dur-sheet-item");
+    expect(3 * tok("--stagger-sheet") + tok("--dur-sheet-item")).toBe(lastFade);
+    expect(cyberCss).not.toMatch(/:has\(/);
+  });
+
+  it("M3：VT 疊層會吞點擊（pointer-events 無效，實測），所以縮短總長至 ≤150ms，並關掉根群組預設 250ms 動畫（否則 VT 至少 250ms）", () => {
+    const n = (name: string) => parseFloat(new RegExp(name + String.raw`:\s*([\d.]+)ms`).exec(cyberCss)![1]!);
+    expect(n("--dur-vt-out") + n("--dur-vt-in")).toBeLessThanOrEqual(150);
+    const g = screenRule(`${CYBER_SCOPE}:not([data-vt])::view-transition-group(root)`);
+    expect(g, "要有 ::view-transition-group(root) 規則").toBeDefined();
+    expect(decl(g!)["animation"]).toBe("none");
+  });
+
+  it("@media print：aside > nav 的 position: relative（FX-04）印出時 revert-layer", () => {
+    const P = `${CYBER_SCOPE}:not(#cyber-print)`;
+    expect(decl(printRule(`${P} aside > nav[aria-label="主要導覽"]`)!)["position"]).toBe("revert-layer");
+  });
+});
