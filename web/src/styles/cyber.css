@@ -980,8 +980,7 @@
  *     延遲 = 間隔 token × --i（也是 useStagger 輸出）。基礎樣式即最終狀態；延遲期間用 animation-fill-mode: backwards（longhand）維持起始影格。
  *   - 新增的 infinite 只有 FX-08 角框呼吸（白名單，理由：待處理 > 0 的警示要「持續」被看見，只動 opacity .5↔1、2.4s 一循環，不是閃爍；
  *     減少動態效果時由 index.css 全域規則壓成一次、停在 opacity 1）。
- *     P2 的守門測試固定 infinite 宣告恰好 2 條（FX-33、FX-35，且不得修改），所以這裡把關鍵字放在自訂屬性 --loop-forever，
- *     由 animation 簡寫以 var() 取用；P3 的守門測試另外逐條鎖定它的用法。
+ *     infinite 一律直接寫在 animation 簡寫裡；守門測試以 keyframes 名稱白名單比對（FX-33、FX-35、FX-08、標題游標、FX-25、FX-26、FX-32），其他一律失敗。
  * ===================================================================================================== */
 
 :root[data-theme="cyber"] {
@@ -989,12 +988,11 @@
   --dur-donut: 300ms; /* FX-13 甜甜圈淡入與掃描線 */
   --stagger-trend: 20ms; /* FX-12 趨勢柱間隔 */
   --stagger-cal: 10ms; /* FX-14 日曆格對角線間隔（最多 12 道，總長 ≤ 270ms < 400ms） */
-  --loop-forever: infinite; /* FX-08 專用，見上方說明 */
 }
 
 /* ---------- FX-08 呼吸角框：待處理 > 0 的 panel-cut 角框（::after）透明度 .5 ↔ 1 ---------- */
 :root[data-theme="cyber"] [data-fx="panel-cut"][data-fx-alert]::after {
-  animation: cyber-corner-breathe var(--dur-breathe) ease-in-out var(--loop-forever);
+  animation: cyber-corner-breathe var(--dur-breathe) ease-in-out infinite;
 }
 
 /* ---------- FX-09 橫條圖：長條由左往右長出（scaleX 0→1，寬度計算不變），依序 ---------- */
@@ -1069,6 +1067,42 @@
   pointer-events: none;
 }
 
+/* ---------- 不重掛的重播（相位 b） ----------
+ * 長條／趨勢／甜甜圈／日曆的容器依資料簽名輸出 data-fx-phase="a"|"b"（lib/fx useReplayPhase）：簽名改變時相位翻面，
+ * 這裡讓相位 b 改用「內容相同、名稱不同」的 -b 版 keyframes，瀏覽器看到 animation-name 改變就重播——DOM 與 key 不動，可聚焦元素不會被重掛。
+ * 這幾條只換名稱，其餘（時間、延遲、fill-mode）與相位 a 的規則完全相同。 */
+:root[data-theme="cyber"] [data-fx-phase="b"] [data-fx="bar"][data-fx-in] {
+  animation: cyber-bar-grow-b var(--dur-slow) var(--ease-out);
+  animation-delay: calc(var(--stagger) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+:root[data-theme="cyber"] [data-fx-phase="b"] [data-fx="trend-bar"][data-fx-in] {
+  animation: cyber-trend-grow-b var(--dur-trend) var(--ease-out);
+  animation-delay: calc(var(--stagger-trend) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+:root[data-theme="cyber"] [data-fx-in="donut"][data-fx-phase="b"] {
+  animation: cyber-fade-in-b var(--dur-donut) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx-in="donut"][data-fx-phase="b"]::after {
+  animation: cyber-donut-scan-b var(--dur-donut) linear;
+}
+:root[data-theme="cyber"] [data-fx-phase="b"] [data-fx="cal-cell"]:where([data-fx-in]) {
+  animation: cyber-fade-in-b var(--dur-fast) var(--ease-out);
+  animation-delay: calc(var(--stagger-cal) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+@media (max-width: 767px) {
+  :root[data-theme="cyber"] [data-fx-phase="b"] [data-fx="cal-cell"]:where([data-fx-in]) {
+    animation-delay: 0ms;
+  }
+}
+@media (min-width: 768px) {
+  :root[data-theme="cyber"] table[data-fx-in="glitch"][data-fx-phase="b"] {
+    animation: cyber-glitch-tx-b var(--dur-fast) var(--ease-glitch);
+  }
+}
+
 @keyframes cyber-corner-breathe {
   0%,
   100% {
@@ -1104,6 +1138,48 @@
     opacity: 0;
   }
 }
+@keyframes cyber-bar-grow-b {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes cyber-trend-grow-b {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes cyber-fade-in-b {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes cyber-donut-scan-b {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+@keyframes cyber-glitch-tx-b {
+  from {
+    transform: translateX(-4px);
+    opacity: 0.5;
+  }
+  35% {
+    transform: translateX(4px);
+    opacity: 1;
+  }
+  70% {
+    transform: translateX(-2px);
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
 
 /* ---------- 報表隔離（不是裝飾）----------
  * 把 cyber 擋在列印報表（#report-output）之外。report.css 只把「文字／線／底色」token 重新定義成紙本配色，
@@ -1120,7 +1196,7 @@
 /* =====================================================================================================
  * P3 塊 C（位置在報表隔離之後、塊 B 之前，這樣塊 A／塊 B 的區段守門測試各自的範圍不會涵蓋到本段）：FX-11 長條鎖定角框、FX-25 送出中 ASCII 進度條、FX-26 照片上傳掃描帶、FX-32 匯出中 ▮▯▯、FX-36 切換照片淡入。
  * （FX-27／28／31 由後續區塊補。）守則同 P3：只動 transform、opacity；@keyframes 一律 cyber- 前綴；時間走 token；
- * 本段不出現 infinite 關鍵字——FX-25／26／32 三個循環動畫都以 var(--loop-forever) 取用（P3 塊 C 的守門測試逐條鎖定）。
+ * 本段的 infinite 只有 FX-25／26／32 三個循環動畫（P3 塊 C 的守門測試逐條鎖定）。
  * 循環白名單理由：它們的語意就是「進行中、時間不明」，必須在進行中持續可見；都只動 transform（不閃爍、每秒變化 ≤ 3 次的步進或平滑位移），
  * 進行中狀態結束（按鈕不再 aria-busy／縮圖不再 uploading）元素就消失或不再匹配，所以不會常駐；減少動態效果時由 index.css 的全域規則壓成一次、停在最終影格。
  * ===================================================================================================== */
@@ -1187,7 +1263,7 @@
   position: absolute;
   left: 0;
   top: 0;
-  animation: cyber-progress-run var(--dur-loop) steps(4, end) var(--loop-forever);
+  animation: cyber-progress-run var(--dur-loop) steps(4, end) infinite;
 }
 
 /* ---------- FX-26 照片上傳掃描帶：上傳中縮圖（PhotoThumb 的 [data-fx-scan] 覆蓋層，spinner 與 sr-only「上傳中」都保留在 DOM）----------
@@ -1206,7 +1282,7 @@
   background: linear-gradient(to bottom, transparent, var(--accent) 50%, transparent);
   opacity: 0.8;
   transform: translateY(-100%);
-  animation: cyber-scan-band var(--dur-scan-band) linear alternate var(--loop-forever);
+  animation: cyber-scan-band var(--dur-scan-band) linear alternate infinite;
 }
 
 /* ---------- FX-32 匯出中：匯出項目（nav-item，aria-busy="true"）文字旁的循環 ▮▯▯ → ▮▮▯ → ▮▮▮ ----------
@@ -1237,7 +1313,7 @@
   content: "AEAEAE" / "";
   z-index: 1;
   color: var(--accent-text);
-  animation: cyber-export-fill var(--dur-loop) steps(1) var(--loop-forever);
+  animation: cyber-export-fill var(--dur-loop) steps(1) infinite;
 }
 @media (min-width: 768px) and (max-width: 1023px) {
   :root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::before,
@@ -1286,7 +1362,7 @@
 /* =====================================================================================================
  * P3 塊 B：換頁 View Transitions（FX-02）、標題打字與游標（FX-03）、nav-indicator（FX-04）、主題切換掃描（FX-38）、開機畫面（FX-01）。
  * 放在 P3 區段（塊 A）之後、報表隔離之外：塊 A 的守門測試鎖定 P3 區段「沒有 clip-path」，而打字與 VT 掃描需要 clip-path
- * （只用在不可點的純文字與整頁快照）。守則不變：@keyframes 一律 cyber- 前綴、時間走 token、infinite 只借 --loop-forever（游標 1 次／秒）。
+ * （只用在不可點的純文字與整頁快照）。守則不變：@keyframes 一律 cyber- 前綴、時間走 token、infinite 只有游標（1 次／秒）。
  * ===================================================================================================== */
 
 :root[data-theme="cyber"] {
@@ -1344,7 +1420,7 @@
   color: var(--accent-text);
   text-shadow: none;
   font-weight: 400;
-  animation: cyber-cursor var(--dur-cursor) steps(1) var(--loop-forever);
+  animation: cyber-cursor var(--dur-cursor) steps(1) infinite;
 }
 
 /* ---------- FX-04 nav-indicator：側欄／圖示列的高亮條（只在 cyber 渲染的 aria-hidden <span>）----------
@@ -1399,7 +1475,7 @@
 }
 :root[data-theme="cyber"] [data-fx-boot-line]:last-child::after {
   content: " \258C" / "";
-  animation: cyber-cursor var(--dur-cursor) steps(1) var(--loop-forever);
+  animation: cyber-cursor var(--dur-cursor) steps(1) infinite;
 }
 
 @keyframes cyber-vt-out {

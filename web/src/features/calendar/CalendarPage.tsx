@@ -6,7 +6,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useFx, useStagger } from "@/lib/fx";
+import { useFx, useReplayPhase, useStagger } from "@/lib/fx";
 import { useRecords } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { useDrillTo } from "@/lib/drill";
@@ -64,6 +64,7 @@ export function CalendarPage() {
   // FX-14：格子沿對角線（列＋欄）依序淡入，換月時整張再水平 glitch 一次。cyber 且允許動態時才有屬性；
   // 對角線最多 6 列 + 7 欄 = 12 道，間隔 10ms（CSS），總長遠低於 400ms 上限，所以上限用 20 即可
   const fx = useFx();
+  const phase = useReplayPhase(label);
   const diagonal = useStagger(WEEKS_MAX + WEEKDAYS.length, 20);
   const shownLabel = React.useRef<string | null>(null);
   const monthChanged = shownLabel.current !== null && shownLabel.current !== label;
@@ -110,7 +111,7 @@ export function CalendarPage() {
             </div>
           ) : (
             <table
-              key={fx ? label : undefined}
+              data-fx-phase={phase}
               {...(fx && monthChanged ? { "data-fx-in": "glitch" } : {})}
               className="w-full table-fixed border-separate border-spacing-0.5 md:border-spacing-1.5"
               aria-label={label}

@@ -68,15 +68,17 @@ describe("FX-09 橫條圖", () => {
     expect(document.querySelectorAll('[data-fx="bar"][data-fx-in]')).toHaveLength(10);
   });
 
-  it("cyber：資料改變（切換範圍）時重新掛載，長條元素是新的（重播進場）；資料沒變則不重掛", () => {
+  it("cyber：資料改變（切換範圍）時不重掛、改翻 data-fx-phase 重播；資料沒變相位不動", () => {
     enableCyber();
     const rows1 = ranked.slice(0, 3);
     const { rerender } = render(<HBarChart rows={rows1} onSelect={() => {}} actionLabel="查看設備" />);
     const before = document.querySelector('[data-fx="bar"]');
     rerender(<HBarChart rows={rows1.map((r) => ({ ...r }))} onSelect={() => {}} actionLabel="查看設備" />);
     expect(document.querySelector('[data-fx="bar"]')).toBe(before);
+    expect(document.querySelector("[data-fx-phase]")!.getAttribute("data-fx-phase")).toBe("a");
     rerender(<HBarChart rows={ranked.slice(0, 2)} onSelect={() => {}} actionLabel="查看設備" />);
-    expect(document.querySelector('[data-fx="bar"]')).not.toBe(before);
+    expect(document.querySelector('[data-fx="bar"]')).toBe(before);
+    expect(document.querySelector("[data-fx-phase]")!.getAttribute("data-fx-phase")).toBe("b");
   });
 
   it("標準主題：資料改變不重新掛載（key 為 undefined，行為與 P2 相同）", () => {

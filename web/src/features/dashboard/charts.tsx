@@ -1,6 +1,6 @@
 import * as React from "react";
 import { StatusGlyph } from "@/components/badges";
-import { useFx, useStagger, useStaggerCap } from "@/lib/fx";
+import { useFx, useReplayPhase, useStagger, useStaggerCap } from "@/lib/fx";
 import type { Aggregate, RankEntry, Severity, Status } from "@/lib/types";
 import { cn, labelOrUnfilled } from "@/lib/utils";
 
@@ -51,13 +51,13 @@ export function HBarChart({
   /** 例如「查看設備」，用在按鈕的無障礙名稱 */
   actionLabel: string;
 }) {
-  const fx = useFx();
   const stagger = useStagger(rows.length, useStaggerCap());
+  const phase = useReplayPhase(rows.map((r) => `${r.label}:${r.count}`).join("|"));
   if (rows.length === 0) return <ChartEmpty />;
   const max = Math.max(...rows.map((r) => r.count), 1);
   return (
-    // FX-09：cyber 下資料內容改變（切換範圍）就重新掛載，長條重播進場；標準主題 key 為 undefined，行為不變
-    <ul key={fx ? rows.map((r) => `${r.label}:${r.count}`).join("|") : undefined} className="flex flex-col gap-0.5">
+    // FX-09：資料簽名改變（切換範圍）就切換 data-fx-phase，CSS 換一組 keyframes 名稱重播；DOM／key 不動（按鈕不重掛、焦點不掉）
+    <ul data-fx-phase={phase} className="flex flex-col gap-0.5">
       {rows.map((r, i) => (
         <li key={r.label}>
           <button
@@ -110,6 +110,7 @@ export function SeverityDonut({
   onSelect: (severity: Severity) => void;
 }) {
   const fx = useFx();
+  const phase = useReplayPhase(counts.map((s) => s.count).join("|"));
   const total = counts.reduce((s, r) => s + r.count, 0);
   const cx = 60;
   const cy = 60;
@@ -118,9 +119,9 @@ export function SeverityDonut({
   const circ = 2 * Math.PI * r;
   let offset = 0;
   return (
-    // FX-13：整張淡入＋掃描線劃過一次（只在 cyber 且允許動態時輸出 data-fx-in；資料改變時重新掛載重播）
+    // FX-13：整張淡入＋掃描線劃過一次（只在 cyber 且允許動態時輸出 data-fx-in；資料簽名改變時切換 data-fx-phase 重播，不重掛）
     <div
-      key={fx ? counts.map((s) => s.count).join("|") : undefined}
+      data-fx-phase={phase}
       {...(fx ? { "data-fx-in": "donut" } : {})}
       className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center sm:gap-8"
     >
@@ -257,7 +258,7 @@ export function TrendChart({
   onSelect: (date: string) => void;
 }) {
   const scroller = React.useRef<HTMLDivElement>(null);
-  const fx = useFx();
+  const phase = useReplayPhase(trend.map((t) => `${t.date}:${t.count}`).join("|"));
   const cap = useStaggerCap();
   const stagger = useStagger(trend.length, cap);
   // FX-12：最新的日子在右邊且一開始就捲到最右，所以「前 cap 項」取最右邊（最新）的 cap 根，由左往右依序長出；更早的直接出現
@@ -271,7 +272,7 @@ export function TrendChart({
   const max = Math.max(...trend.map((t) => t.count), 1);
   return (
     <div ref={scroller} className="overflow-x-auto pb-1">
-      <ol key={fx ? trend.map((t) => `${t.date}:${t.count}`).join("|") : undefined} className="flex min-w-max items-end gap-1">
+      <ol data-fx-phase={phase} className="flex min-w-max items-end gap-1">
         {trend.map((t, i) => (
           <li key={t.date}>
             <button

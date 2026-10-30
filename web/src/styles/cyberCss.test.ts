@@ -543,15 +543,33 @@ describe("cyber.css：P2 動畫守門", () => {
     expect(hard.map((d) => `${d.rule.selectors[0]} { ${d.prop}: ${d.value} }`)).toEqual([]);
   });
 
-  it("只播一次：沒有 animation-iteration-count 數字 > 1；infinite 只有 FX-33 骨架掃光與 FX-35 呼吸", () => {
-    const INFINITE_OK = new Set(["cyber-skeleton-sweep", "cyber-breathe"]);
-    const infinite = animationDecls.filter((d) => /\binfinite\b/.test(d.value));
-    expect(infinite.length).toBe(2);
-    for (const d of infinite) {
-      const names = d.value.split(/[\s,]+/).filter((t) => t.startsWith("cyber-"));
-      expect(names.length, d.value).toBe(1);
-      expect(INFINITE_OK.has(names[0]!), d.value).toBe(true);
-    }
+  // 設計師明確授權的既有測試修改（僅此一條）：原斷言「全檔 infinite 恰好 2 條（FX-33、FX-35）」改為 keyframes 名稱白名單，
+  // 讓 P3 新增的 FX-08、標題游標、FX-25、FX-26、FX-32 循環動畫可以直接寫 infinite（不再用 --loop-forever 間接寫法）；
+  // 任何白名單以外的 infinite 仍然讓測試失敗（見下一條負向測試）。
+  const INFINITE_WHITELIST = new Map<string, string>([
+    ["cyber-skeleton-sweep", "FX-33 骨架掃光"],
+    ["cyber-breathe", "FX-35 呼吸"],
+    ["cyber-corner-breathe", "FX-08 呼吸角框"],
+    ["cyber-cursor", "標題尾端游標（含開機行游標）"],
+    ["cyber-progress-run", "FX-25 送出中進度條"],
+    ["cyber-scan-band", "FX-26 上傳掃描帶"],
+    ["cyber-export-fill", "FX-32 匯出中"],
+  ]);
+  /** 回傳不在白名單的 infinite 宣告（依 animation 簡寫裡的 cyber- keyframes 名稱比對） */
+  const illegalInfinite = (decls: { prop: string; value: string }[]) =>
+    decls
+      .filter((d) => /\binfinite\b/.test(d.value))
+      .filter((d) => {
+        const names = d.value.split(/[\s,]+/).filter((t) => t.startsWith("cyber-"));
+        return d.prop !== "animation" || names.length !== 1 || !INFINITE_WHITELIST.has(names[0]!);
+      })
+      .map((d) => d.value);
+
+  it("只播一次：沒有 animation-iteration-count 數字 > 1；infinite 只在 keyframes 名稱白名單內", () => {
+    expect(illegalInfinite(animationDecls)).toEqual([]);
+    // 白名單裡的每一項都真的有人用（白名單不留空位）
+    const usedInfinite = new Set(animationDecls.filter((d) => /\binfinite\b/.test(d.value)).map((d) => d.value.split(/[\s,]+/).find((t) => t.startsWith("cyber-"))!));
+    expect([...usedInfinite].sort()).toEqual([...INFINITE_WHITELIST.keys()].sort());
     for (const d of animationDecls.filter((x) => x.prop === "animation-iteration-count")) expect(d.value).toBe("1");
     // 簡寫裡不得有獨立的整數 ≥ 2（calc()／var()／steps() 內的不算）
     const counts = animationDecls
@@ -559,6 +577,14 @@ describe("cyber.css：P2 動畫守門", () => {
       .map((d) => d.value.replace(/(var|calc|steps)\((?:[^()]|\([^()]*\))*\)/g, ""))
       .filter((v) => /(^|\s)([2-9]|\d{2,})(\s|$)/.test(v));
     expect(counts).toEqual([]);
+  });
+
+  it("負向：白名單以外的 infinite（含 longhand、多名稱、非 cyber- 名稱）一律被抓出來", () => {
+    expect(illegalInfinite([{ prop: "animation", value: "cyber-fade-in 1s linear infinite" }])).toEqual(["cyber-fade-in 1s linear infinite"]);
+    expect(illegalInfinite([{ prop: "animation-iteration-count", value: "infinite" }])).toEqual(["infinite"]);
+    expect(illegalInfinite([{ prop: "animation", value: "cyber-cursor 1s infinite, cyber-fade-in 1s infinite" }])).toHaveLength(1);
+    expect(illegalInfinite([{ prop: "animation", value: "spin 1s infinite" }])).toHaveLength(1);
+    expect(illegalInfinite([{ prop: "animation", value: "cyber-cursor 1s steps(1) infinite" }])).toEqual([]);
   });
 
   it("animation-fill-mode 只有兩種用法：依序淡入的 backwards（延遲期間維持透明）與退場的 forwards（停在收起狀態）；沒有 both", () => {
@@ -917,13 +943,13 @@ describe("cyber.css：P3 動畫守門", () => {
     expect(p3Anim.filter((d) => d.prop === "animation-iteration-count")).toEqual([]);
   });
 
-  it("infinite 白名單：只有 FX-08 角框呼吸，關鍵字只出現在 --loop-forever 一處，由 animation 簡寫以 var() 取用", () => {
+  it("infinite 白名單：塊 A 只新增 FX-08 角框呼吸（直接寫 infinite，不再用自訂屬性間接取用）", () => {
     expect((code.match(/\binfinite\b/g) ?? []).length).toBe(1);
-    expect(code).toMatch(/--loop-forever:\s*infinite;/);
-    const loops = p3Anim.filter((d) => /var\(--loop-forever\)/.test(d.value));
+    expect(code).not.toMatch(/--loop-forever/);
+    const loops = p3Anim.filter((d) => /\binfinite\b/.test(d.value));
     expect(loops.length).toBe(1);
     expect(loops[0]!.rule.selectors).toEqual([`${CYBER_SCOPE} [data-fx="panel-cut"][data-fx-alert]::after`]);
-    expect(loops[0]!.value).toBe("cyber-corner-breathe var(--dur-breathe) ease-in-out var(--loop-forever)");
+    expect(loops[0]!.value).toBe("cyber-corner-breathe var(--dur-breathe) ease-in-out infinite");
     // 呼吸是 .5 ↔ 1，起訖影格（0%／100%）= 基礎樣式 opacity 1，不是閃爍
     const breathe = p3Frames.filter((r) => frameName(r) === "cyber-corner-breathe");
     expect(breathe.map((r) => decl(r)["opacity"])).toEqual(["1", "0.5"]);
@@ -992,7 +1018,7 @@ describe("cyber.css：P3 動畫守門", () => {
   });
 
   it("P3 時間 token 在 cyber 區塊內；P3 不新增 data-fx 值（新掛勾用 data-fx-in 屬性）", () => {
-    for (const n of ["--dur-trend", "--dur-donut", "--stagger-trend", "--stagger-cal", "--loop-forever"]) expect(p3Tokens[n], n).toBeDefined();
+    for (const n of ["--dur-trend", "--dur-donut", "--stagger-trend", "--stagger-cal"]) expect(p3Tokens[n], n).toBeDefined();
     const known = ["panel-cut", "bar", "trend-bar", "cal-cell", "row"];
     const used = [...code.matchAll(/\[data-fx="([^"]+)"\]/g)].map((m) => m[1]!);
     expect(used.filter((v) => !known.includes(v))).toEqual([]);
@@ -1078,14 +1104,14 @@ describe("cyber.css：P3 塊 B 守門", () => {
     expect(decl(t)["pointer-events"]).toBeUndefined();
   });
 
-  it("尾端游標：::after、替代文字為空（aria-hidden 等效）、steps(1) 每秒一次、infinite 只借 --loop-forever；塊 B 沒有新增 infinite 關鍵字", () => {
+  it("尾端游標：::after、替代文字為空（aria-hidden 等效）、steps(1) 每秒一次、infinite 只有游標一種", () => {
     expect(tokens["--dur-cursor"]).toBe("1s");
     const c = screen(`${CYBER_SCOPE} :is(h1, p)[data-fx="page-title"]::after`)!;
     expect(decl(c)["content"]).toMatch(/\/ ""$/);
-    expect(decl(c)["animation"]).toBe("cyber-cursor var(--dur-cursor) steps(1) var(--loop-forever)");
+    expect(decl(c)["animation"]).toBe("cyber-cursor var(--dur-cursor) steps(1) infinite");
     const boot = screen(`${CYBER_SCOPE} [data-fx-boot-line]:last-child::after`)!;
-    expect(decl(boot)["animation"]).toBe("cyber-cursor var(--dur-cursor) steps(1) var(--loop-forever)");
-    expect((code.match(/\binfinite\b/g) ?? []).length).toBe(0);
+    expect(decl(boot)["animation"]).toBe("cyber-cursor var(--dur-cursor) steps(1) infinite");
+    expect((code.match(/\binfinite\b/g) ?? []).length).toBe(2);
     const kf = frames.filter((r) => frameName(r) === "cyber-cursor").map((r) => decl(r)["opacity"]);
     expect(kf).toEqual(["1", "0"]); // 0%,100% 亮、50% 滅：起訖就是基礎樣式（減少動態效果停在常亮）
   });
@@ -1138,7 +1164,7 @@ describe("cyber.css：P3 塊 B 守門", () => {
 /*
  * P3 塊 C（前半）的守門：FX-11／25／26／32／36。以新增方式擴充。
  * 區段從 P3 C START 標記到 P3 B START 標記（本段位在報表隔離與塊 B 之間，塊 A、塊 B 的區段切片都不含它）。
- * infinite 白名單（理由見 cyber.css 該段開頭）：只有 FX-25、FX-26、FX-32，關鍵字本身不出現，一律以 var(--loop-forever) 取用。
+ * infinite 白名單（理由見 cyber.css 該段開頭）：只有 FX-25、FX-26、FX-32，直接寫 infinite。
  */
 const P3C_MARKER = "/* === P3 C START === */";
 describe("cyber.css：P3 塊 C 守門", () => {
@@ -1179,13 +1205,13 @@ describe("cyber.css：P3 塊 C 守門", () => {
     expect(code).not.toMatch(/setTimeout/);
   });
 
-  it("infinite 白名單：只有 FX-25 進度條、FX-26 掃描帶、FX-32 匯出 ▮▯▯；關鍵字不出現，一律 var(--loop-forever)", () => {
-    expect((code.match(/\binfinite\b/g) ?? []).length).toBe(0);
-    const loops = anim.filter((d) => /var\(--loop-forever\)/.test(d.value));
+  it("infinite 白名單：塊 C 只有 FX-25 進度條、FX-26 掃描帶、FX-32 匯出 ▮▯▯", () => {
+    expect((code.match(/\binfinite\b/g) ?? []).length).toBe(3);
+    const loops = anim.filter((d) => /\binfinite\b/.test(d.value));
     expect(loops.map((d) => [d.rule.selectors, d.value])).toEqual([
-      [[`${CYBER_SCOPE} [data-fx-progress-block]`], "cyber-progress-run var(--dur-loop) steps(4, end) var(--loop-forever)"],
-      [[`${CYBER_SCOPE} [data-fx-scan]::after`], "cyber-scan-band var(--dur-scan-band) linear alternate var(--loop-forever)"],
-      [[`${CYBER_SCOPE} [data-fx="nav-item"][aria-busy="true"]::before`], "cyber-export-fill var(--dur-loop) steps(1) var(--loop-forever)"],
+      [[`${CYBER_SCOPE} [data-fx-progress-block]`], "cyber-progress-run var(--dur-loop) steps(4, end) infinite"],
+      [[`${CYBER_SCOPE} [data-fx-scan]::after`], "cyber-scan-band var(--dur-scan-band) linear alternate infinite"],
+      [[`${CYBER_SCOPE} [data-fx="nav-item"][aria-busy="true"]::before`], "cyber-export-fill var(--dur-loop) steps(1) infinite"],
     ]);
     // 都只在「進行中」才匹配：FX-25 元素只在送出中渲染、FX-26 只在 uploading、FX-32 要 aria-busy="true"
     expect(tokens["--dur-loop"]).toBe("900ms");
