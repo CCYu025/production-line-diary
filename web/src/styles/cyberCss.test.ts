@@ -800,8 +800,8 @@ describe("cyber.css：P2 動畫守門", () => {
     expect(decl(screenRule(`${CYBER_SCOPE} [data-fx="sheet"][data-side="right"]::after`)!)["animation"]).toContain("cyber-sheet-sweep");
     expect(token("--stagger-sheet")).toBe("30ms");
     const delays = screenRules.filter((r) => r.selectors.some((s) => s.includes('[data-fx="detail-body"] >')) && decl(r)["animation-delay"] !== undefined).map((r) => decl(r)["animation-delay"]!);
-    // 6 段：0（沒有 delay 宣告的第一段）＋ 1、2、3、4、5 倍間隔
-    expect(delays.map((v) => (v === "var(--stagger-sheet)" ? 1 : Number(/\*\s*(\d)\)/.exec(v)![1]))).sort()).toEqual([1, 2, 3, 4, 5]);
+    // 設計師授權的既有測試修改（P3 塊 D）：6 檔減為 4 檔＝0（沒有 delay 宣告的第一段）＋ 1、2、3 倍間隔
+    expect(delays.map((v) => (v === "var(--stagger-sheet)" ? 1 : Number(/\*\s*(\d)\)/.exec(v)![1]))).sort()).toEqual([1, 2, 3]);
   });
 
   it("FX-21 沒有獨立動畫：detail-body 本身不播 glitch，靠 DetailBody 以 key 重新掛載時 FX-20 的依序淡入重播；總視覺收尾 ≤ 350ms", () => {

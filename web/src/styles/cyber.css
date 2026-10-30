@@ -580,8 +580,8 @@
 /* ---------- FX-20 詳情面板（由右滑入是 Tailwind 現有的）----------
  * 青色掃描線由上往下：2px 高、橫跨面板寬度的偽元素只用 transform（translateY 從面板頂到底，面板是 100dvh 全高，終點在面板內），結束時淡出。
  * 基礎樣式 opacity 0（減少動態效果時整個不顯示）。
- * 內容區塊（detail-body 的子元素）依序淡入：標題→標籤→事實格→處理→…，最多 6 段，每段延遲 30ms，每段 200ms（backwards 讓延遲期間維持透明；
- * 最後一段 5 × 30 ＋ 200 ＝ 350ms 收尾）。
+ * 內容區塊（detail-body 的子元素）依序淡入：標題→標籤→事實格→處理→…，只動 opacity、不位移，最多 4 檔（第 4 檔之後的區塊共用最後一檔），每檔延遲 30ms，每段 200ms（backwards 讓延遲期間維持透明；
+ * 最後一檔 3 × 30 ＋ 200 ＝ 290ms 收尾）。
  * 關閉時退場縮短為 --dur-close（原本 200ms，Radix 會等退場動畫結束才卸載）。 */
 :root[data-theme="cyber"] [data-fx="sheet"][data-side="right"]::after {
   content: "" / "";
@@ -604,17 +604,11 @@
 :root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(2) {
   animation-delay: var(--stagger-sheet);
 }
-:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(n + 3):nth-child(-n + 4) {
+:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(3) {
   animation-delay: calc(var(--stagger-sheet) * 2);
 }
-:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(n + 5):nth-child(-n + 6) {
+:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(n + 4) {
   animation-delay: calc(var(--stagger-sheet) * 3);
-}
-:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(7) {
-  animation-delay: calc(var(--stagger-sheet) * 4);
-}
-:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(n + 8) {
-  animation-delay: calc(var(--stagger-sheet) * 5);
 }
 
 /* ---------- FX-21 詳情面板上一筆／下一筆 ----------
