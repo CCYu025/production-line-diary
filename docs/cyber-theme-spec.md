@@ -511,9 +511,9 @@ View Transitions API **只用於主題切換（FX-38）**：`themeToggle.tsx` �
 | 2 | 1280 | 1039ms／36.2fps | 1763ms／31.4fps | +724ms，fps −4.8 |
 | 2 | 375 | 599ms／47.3fps | 1026ms／42.7fps | +427ms，fps −4.6 |
 
-- 這取代上方 P3 以 cyber 對 cyber 的增量數字。cyber 比標準多約 **+430～+740ms（約 1.7～1.8 倍）、fps −4.6～−6.4**；比 P3 當時的中途數字（+397ms）差，因為當天機器較慢（標準本身 599～1039ms，P3 當時 634ms），只能比相對值，不能比絕對值。M3 類操作的行為沒有改變，結論與 P3 裁定相同（opt-in 主題，接受）。
+- 這取代上方 P3 以 cyber 對 cyber 的增量數字。cyber 比標準多約 **+430～+740ms（約 1.7～1.95 倍）、fps −4.6～−6.4**；比 P3 當時的中途數字（+397ms）差，因為當天機器較慢（標準本身 599～1039ms，P3 當時 634ms），只能比相對值，不能比絕對值。M3 類操作的行為沒有改變，結論與 P3 裁定相同（opt-in 主題，接受）。
 - **掃描線浮層旗標實驗（real toggle，n=5＋n=8 合併 n=13，1280）**：旗標開（B）1840ms 對 旗標關（Boff）1871ms，**僅 −30ms**（兩批各 −92／−12；375 +30ms），未達 40ms，撤掉。上界（`display: none`）約 −122ms／−128ms，但包含了把整層永遠拿掉的成本差，與實際切換不同。
-- **捲動列表（ms／秒，主執行緒，4×，n=5）**：1280 標準 106.8、cyber 191.7、cyber＋`animation: none` 110.4；375 標準 170.5、cyber 284.9、cyber＋`animation: none` 164.4。真實滾輪（compositor）捲動時 cyber 仍有每秒約 43～63ms 的樣式重算（標準為 0）。`/records` 上唯一執行中的動畫是標題游標（`getAnimations()` 確認）；`display: inline-block`、`will-change`、`translateZ(0)`、線性時序改寫都沒有降低。目標 ≤ 標準 +20% **未達**（約 +80%），不改視覺的前提下沒有找到解。
+- **捲動列表（ms／秒，主執行緒，4×，n=5）**：1280 標準 106.8、cyber 191.7、cyber＋`animation: none` 110.4；375 標準 170.5、cyber 284.9、cyber＋`animation: none` 164.4。真實滾輪（compositor）捲動時 cyber 仍有每秒約 43～63ms 的樣式重算（標準為 0）。`/records` 上唯一執行中的動畫是標題游標（`getAnimations()` 確認）；`display: inline-block`、`will-change`、`translateZ(0)`、線性時序改寫都沒有降低。目標 ≤ 標準 +20% **未達**（1280 約 +80%、375 約 +67%），不改視覺的前提下沒有找到解。
 - **冷啟動 P4（4×，n=15，到內容出現，中位數）**：標準 1466ms、cyber 乾淨 1580ms（+113）、cyber 已開機 1594ms（+128）；1× 未重測。今天的機器比 P3 慢（標準 1216ms），差距以相對值看：仍**超出 50ms**。對照（n=10，已開機）：關閉全部動畫 1630、關閉掃描線 1712、關閉偽元素 1677、關閉陰影／光暈 1752，標準 1471、cyber 1621——都在雜訊內，沒有任何一項是主因；主執行緒 4.5 秒的追蹤顯示 cyber 多 `FunctionCall` ≈ +298ms、`Paint` +103ms、`UpdateLayoutTree` +93ms（含內容出現後的動畫與數字亂碼）。
 - **大小（P3 指標，對 main）**：JS +0B、CSS +5B（gzip）；沒有新套件。
 - 證據：`scratchpad/followup/p4/`（`res-p4a/b/c.json`、`res-scroll-b.json`、`res-cold-4.json`、`coldtrace.log`）。
