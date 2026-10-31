@@ -89,6 +89,7 @@ web/                   前端（網址 /）：React 18 + Vite + TypeScript + Tai
 docs/
   refactor-plan.md      重構計畫書（分階段工作包、必須保留的行為、進度表）
   cyber-theme-spec.md   Cyber-Terminal 主題設計規格書（紅線、token、分期；P0 主題骨架、P1 靜態外觀、P2 微互動已合併，P3 招牌效果已合併，P4 效能與列印收尾已合併（PR #46））
+  os-mode-spec.md       PLD/OS 1995 體驗模式設計規格書（向量線框 3D 控制室；規格草案，尚未實作）
 scripts/
   migrate.js            一次性搬遷腳本
   ensure-web-build.js   npm start 前置：web/dist 不存在或過期時自動建置（失敗時印錯誤並留下 .web-build-error.log，伺服器仍啟動並顯示「介面建置失敗」頁）
