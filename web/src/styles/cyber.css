@@ -1714,6 +1714,10 @@
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx-progress] {
     display: none;
   }
+  /* P4：匯出中被隱藏的旋轉圖示（螢幕上 visibility: hidden）列印時還原成標準的可見 */
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx="nav-item"][aria-busy="true"] > svg {
+    visibility: revert-layer;
+  }
   /* P3 塊 C 後半：回收桶殘影的基礎樣式是「溶解後看不見」，印出時退回 */
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx-ghost] {
     opacity: revert-layer;
