@@ -13,7 +13,9 @@ import { useExportAction } from "./useExportAction";
 
 export const navItemClass =
   "relative flex h-11 w-full items-center justify-center gap-3 rounded-md px-3 text-sm font-medium text-ink-2 " +
-  "transition-colors hover:bg-surface-raised hover:text-ink-1 lg:justify-start";
+  "transition-colors hover:bg-surface-raised hover:text-ink-1 lg:justify-start " +
+  // 導覽區 overflow-y-auto 會把外環裁掉：焦點環內縮（色彩、粗細不變）
+  "focus-visible:outline-offset-[-2px]";
 
 export function CountBadge({ count, className }: { count: number | undefined; className?: string }) {
   if (!count) return null;

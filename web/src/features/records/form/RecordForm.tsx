@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import * as React from "react";
 import { useBlocker, useNavigate, useSearchParams } from "react-router-dom";
-import { Combobox, inputClass } from "@/components/Combobox";
+import { Combobox, focusWithoutOpening, inputClass } from "@/components/Combobox";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { SegmentedControl, type SegmentedOption } from "@/components/SegmentedControl";
 import { SEVERITY_BG } from "@/components/badges";
@@ -119,7 +119,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
   const [submitting, setSubmitting] = React.useState(false);
   const submittingRef = React.useRef(false);
   const [formErrors, setFormErrors] = React.useState<string[]>([]);
-  const [focusRequest, setFocusRequest] = React.useState<{ field: FieldName; n: number } | null>(null);
+  const [focusRequest, setFocusRequest] = React.useState<{ field: FieldName; n: number; quiet?: boolean } | null>(null);
 
   const dateLocked = photos.hasLive;
   const existingChanged =
@@ -169,10 +169,12 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
   React.useEffect(() => {
     if (!focusRequest) return;
     const el = document.getElementById(fieldId(focusRequest.field));
-    el?.focus();
+    if (focusRequest.quiet) focusWithoutOpening(el);
+    else el?.focus();
     el?.scrollIntoView?.({ block: "center", behavior: "smooth" });
   }, [focusRequest]);
-  const requestFocus = (field: FieldName) => setFocusRequest((prev) => ({ field, n: (prev?.n ?? 0) + 1 }));
+  const requestFocus = (field: FieldName, quiet = false) =>
+    setFocusRequest((prev) => ({ field, n: (prev?.n ?? 0) + 1, quiet }));
 
   /* ---------- 複製既有紀錄 ---------- */
   const clearCopyParam = React.useCallback(() => {
@@ -261,7 +263,8 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
     dispatch({ type: "setErrors", errors: errs });
     if (errs.date || errs.time || errs.shift) dispatch({ type: "setDateOpen", open: true });
     const first = FOCUS_ORDER.find((f) => errs[f]);
-    if (first) requestFocus(first);
+    // 驗證失敗：聚焦首個無效欄位，但 Combobox 不自動展開（清單會蓋住 ERR: 訊息）
+    if (first) requestFocus(first, true);
   };
 
   const onSubmit = async (e: React.FormEvent) => {

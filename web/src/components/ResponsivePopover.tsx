@@ -28,7 +28,7 @@ export function ResponsivePopover({ open, onOpenChange, trigger, title, children
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetTrigger asChild>{trigger}</SheetTrigger>
-        <SheetContent side="bottom" aria-describedby={undefined} className="gap-0 pb-4" onOpenAutoFocus={(e) => e.preventDefault()}>
+        <SheetContent side="bottom" aria-describedby={undefined} className="gap-0 pb-4">
           <SheetHeader className="pb-2">
             <SheetTitle>{title}</SheetTitle>
           </SheetHeader>
