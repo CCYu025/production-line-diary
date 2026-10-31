@@ -1504,7 +1504,9 @@
   color: var(--accent-text);
   text-shadow: none;
   font-weight: 400;
-  animation: cyber-cursor var(--dur-cursor) steps(1) infinite;
+  /* P4：打完字之後閃 3 次（約 3 秒）就停在常亮（opacity 1），不再常駐循環——常駐的主執行緒動畫讓捲動時每一幀都多一次樣式重算。
+   * 延遲 = 打字總長（游標在打字期間本來就被遮罩蓋住）；標題換掉時整個元素重新掛載（key={title}），所以會重播。 */
+  animation: cyber-cursor var(--dur-cursor) steps(1) 3 calc(var(--dur-char) * var(--chars, 8)) forwards;
 }
 
 /* ---------- FX-04 nav-indicator：側欄／圖示列的高亮條（只在 cyber 渲染的 aria-hidden <span>）----------
@@ -1559,7 +1561,7 @@
 }
 :root[data-theme="cyber"] [data-fx-boot-line]:last-child::after {
   content: " \258C" / "";
-  animation: cyber-cursor var(--dur-cursor) steps(1) infinite;
+  animation: cyber-cursor var(--dur-cursor) steps(1) 3 forwards;
 }
 
 @keyframes cyber-vt-in {

@@ -550,7 +550,6 @@ describe("cyber.css：P2 動畫守門", () => {
     ["cyber-skeleton-sweep", "FX-33 骨架掃光"],
     ["cyber-breathe", "FX-35 呼吸"],
     ["cyber-corner-breathe", "FX-08 呼吸角框"],
-    ["cyber-cursor", "標題尾端游標（含開機行游標）"],
     ["cyber-progress-run", "FX-25 送出中進度條"],
     ["cyber-scan-band", "FX-26 上傳掃描帶"],
     ["cyber-export-fill", "FX-32 匯出中"],
@@ -574,6 +573,8 @@ describe("cyber.css：P2 動畫守門", () => {
     // 簡寫裡不得有獨立的整數 ≥ 2（calc()／var()／steps() 內的不算）
     const counts = animationDecls
       .filter((d) => d.prop === "animation")
+      // P4（設計裁定）：游標是唯一允許有限次數 > 1 的動畫（打字後閃 3 次；cursor 測試另有斷言鎖定）
+      .filter((d) => !/^cyber-cursor\b/.test(d.value.trim()))
       .map((d) => d.value.replace(/(var|calc|steps)\((?:[^()]|\([^()]*\))*\)/g, ""))
       .filter((v) => /(^|\s)([2-9]|\d{2,})(\s|$)/.test(v));
     expect(counts).toEqual([]);
@@ -584,7 +585,8 @@ describe("cyber.css：P2 動畫守門", () => {
     expect(illegalInfinite([{ prop: "animation-iteration-count", value: "infinite" }])).toEqual(["infinite"]);
     expect(illegalInfinite([{ prop: "animation", value: "cyber-cursor 1s infinite, cyber-fade-in 1s infinite" }])).toHaveLength(1);
     expect(illegalInfinite([{ prop: "animation", value: "spin 1s infinite" }])).toHaveLength(1);
-    expect(illegalInfinite([{ prop: "animation", value: "cyber-cursor 1s steps(1) infinite" }])).toEqual([]);
+    // P4：游標改成有限次數（3 次後停在常亮），不再在白名單內
+    expect(illegalInfinite([{ prop: "animation", value: "cyber-cursor 1s steps(1) infinite" }])).toHaveLength(1);
   });
 
   it("animation-fill-mode 只有兩種用法：依序淡入的 backwards（延遲期間維持透明）與退場的 forwards（停在收起狀態）；沒有 both", () => {
@@ -596,6 +598,8 @@ describe("cyber.css：P2 動畫守門", () => {
       expect(d.rule.selectors.join(), d.value).toContain('[data-fx="detail-body"]');
     }
     for (const d of animationDecls.filter((x) => x.prop === "animation" && /\bforwards\b/.test(x.value))) {
+      // P4：游標閃完 3 次後停在常亮（forwards）是第二種用法
+      if (/^cyber-cursor\b/.test(d.value.trim())) continue;
       expect(d.rule.selectors.join(), d.value).toContain('[data-state="closed"]');
     }
   });
@@ -1097,14 +1101,15 @@ describe("cyber.css：P3 塊 B 守門", () => {
     expect(decl(t)["pointer-events"]).toBeUndefined();
   });
 
-  it("尾端游標：::after、替代文字為空（aria-hidden 等效）、steps(1) 每秒一次、infinite 只有游標一種", () => {
+  it("尾端游標：::after、替代文字為空（aria-hidden 等效）、steps(1) 每秒一次、閃 3 次後停在常亮（P4：有限次數、forwards，沒有 infinite）", () => {
     expect(tokens["--dur-cursor"]).toBe("1s");
     const c = screen(`${CYBER_SCOPE} :is(h1, p)[data-fx="page-title"]::after`)!;
     expect(decl(c)["content"]).toMatch(/\/ ""$/);
-    expect(decl(c)["animation"]).toBe("cyber-cursor var(--dur-cursor) steps(1) infinite");
+    // P4（設計裁定，授權修改本條）：打字結束後閃 3 次，然後停在 opacity 1
+    expect(decl(c)["animation"]).toBe("cyber-cursor var(--dur-cursor) steps(1) 3 calc(var(--dur-char) * var(--chars, 8)) forwards");
     const boot = screen(`${CYBER_SCOPE} [data-fx-boot-line]:last-child::after`)!;
-    expect(decl(boot)["animation"]).toBe("cyber-cursor var(--dur-cursor) steps(1) infinite");
-    expect((code.match(/\binfinite\b/g) ?? []).length).toBe(2);
+    expect(decl(boot)["animation"]).toBe("cyber-cursor var(--dur-cursor) steps(1) 3 forwards");
+    expect((code.match(/\binfinite\b/g) ?? []).length).toBe(0);
     const kf = frames.filter((r) => frameName(r) === "cyber-cursor").map((r) => decl(r)["opacity"]);
     expect(kf).toEqual(["1", "0"]); // 0%,100% 亮、50% 滅：起訖就是基礎樣式（減少動態效果停在常亮）
   });
