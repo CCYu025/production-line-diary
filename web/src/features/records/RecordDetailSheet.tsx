@@ -67,6 +67,8 @@ export function RecordDetailSheet({ record, sequence, topProblem, onNavigate, on
   const idx = r ? sequence.findIndex((x) => x.id === r.id) : -1;
   const prev = idx > 0 ? sequence[idx - 1] : undefined;
   const next = idx >= 0 ? sequence[idx + 1] : undefined;
+  // 上一筆／下一筆會以 key={r.id} 重新掛載內文；記下按的是哪一顆，掛載後把焦點放回去
+  const navFocus = React.useRef<"prev" | "next" | null>(null);
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
@@ -87,8 +89,17 @@ export function RecordDetailSheet({ record, sequence, topProblem, onNavigate, on
             repeatCount={topProblem && topProblem.count >= 3 && topProblem.label === r.problem ? topProblem.count : 0}
             hasPrev={!!prev}
             hasNext={!!next}
-            onPrev={() => prev && onNavigate(prev.id)}
-            onNext={() => next && onNavigate(next.id)}
+            navFocus={navFocus}
+            onPrev={() => {
+              if (!prev) return;
+              navFocus.current = "prev";
+              onNavigate(prev.id);
+            }}
+            onNext={() => {
+              if (!next) return;
+              navFocus.current = "next";
+              onNavigate(next.id);
+            }}
             onClose={onClose}
           />
         ) : null}
@@ -103,12 +114,27 @@ interface DetailBodyProps {
   repeatCount: number;
   hasPrev: boolean;
   hasNext: boolean;
+  /** 剛按下的導覽鈕；掛載後焦點要留在它（到底而 disabled 時改到另一顆） */
+  navFocus: React.MutableRefObject<"prev" | "next" | null>;
   onPrev: () => void;
   onNext: () => void;
   onClose: () => void;
 }
 
-function DetailBody({ r, position, repeatCount, hasPrev, hasNext, onPrev, onNext, onClose }: DetailBodyProps) {
+function DetailBody({ r, position, repeatCount, hasPrev, hasNext, navFocus, onPrev, onNext, onClose }: DetailBodyProps) {
+  // Button 不轉發 ref（React 18），改用 data-nav 在工具列容器裡找
+  const navRef = React.useRef<HTMLDivElement>(null);
+  React.useLayoutEffect(() => {
+    const want = navFocus.current;
+    navFocus.current = null;
+    if (!want) return;
+    const find = (k: "prev" | "next") => navRef.current?.querySelector<HTMLButtonElement>(`[data-nav="${k}"]`) ?? null;
+    const pressed = find(want);
+    const target = pressed && !pressed.disabled ? pressed : find(want === "prev" ? "next" : "prev");
+    target?.focus({ preventScroll: true });
+    // 只在掛載時（也就是換了一筆）處理一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const navigate = useNavigate();
   const { patch, isPending: patching } = usePatchRecord();
   const deleter = useSoftDeleteWithUndo();
@@ -166,11 +192,11 @@ function DetailBody({ r, position, repeatCount, hasPrev, hasNext, onPrev, onNext
           </Button>
         </SheetClose>
         {position ? <span className="num ml-1 text-sm text-ink-muted">{position}</span> : null}
-        <div className="ml-auto flex items-center gap-1">
-          <Button variant="ghost" size="icon" aria-label="上一筆" disabled={!hasPrev} onClick={onPrev}>
+        <div ref={navRef} className="ml-auto flex items-center gap-1">
+          <Button variant="ghost" size="icon" data-nav="prev" aria-label="上一筆" disabled={!hasPrev} onClick={onPrev}>
             <ChevronLeft aria-hidden="true" />
           </Button>
-          <Button variant="ghost" size="icon" aria-label="下一筆" disabled={!hasNext} onClick={onNext}>
+          <Button variant="ghost" size="icon" data-nav="next" aria-label="下一筆" disabled={!hasNext} onClick={onNext}>
             <ChevronRight aria-hidden="true" />
           </Button>
         </div>

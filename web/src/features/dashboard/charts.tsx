@@ -281,7 +281,7 @@ export function TrendChart({
               data-date={t.date}
               onClick={() => onSelect(t.date)}
               aria-label={`${t.date}，${t.count} 次，查看紀錄`}
-              className="flex w-11 flex-col items-center justify-end gap-1 rounded-md px-0.5 pb-1 pt-2 hover:bg-surface md:w-10"
+              className="flex w-11 flex-col items-center justify-end gap-1 rounded-md px-0.5 pb-1 pt-2 hover:bg-surface focus-visible:outline-offset-[-2px] md:w-10"
             >
               <span className="num text-xs">{t.count}</span>
               <span

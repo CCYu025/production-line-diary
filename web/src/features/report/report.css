@@ -538,6 +538,14 @@
     border: none;
     padding: 0;
     max-width: none;
+    /* 嚴重度色塊（.rr-sev i，print-color-adjust: exact）列印一律用淺色色票：標準深色模式的 --critical／--serious-wash 是深色值。
+       值必須與 index.css 標準淺色 :root 相同（測試比對）。螢幕上的報表不變。 */
+    --good: #0ca30c;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --serious-wash: #fdece3;
+    --critical: #d03b3b;
+    --critical-ink: #ffffff;
   }
   .report-record {
     break-inside: avoid;

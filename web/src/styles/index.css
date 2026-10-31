@@ -297,6 +297,12 @@
     outline: 2px solid var(--accent-text);
     outline-offset: 2px;
   }
+  /* 手機（< 768px）固定在底部的分頁列（約 57px 高＋安全區）會蓋住被聚焦的元素：聚焦捲動時預留這段高度。 */
+  @media (max-width: 767px) {
+    html {
+      scroll-padding-bottom: calc(3.5rem + 1px + env(safe-area-inset-bottom, 0px) + var(--form-bar-h, 0px));
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     *,
     ::before,

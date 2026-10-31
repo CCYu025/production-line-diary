@@ -102,7 +102,8 @@ function RecordTable({ rows, sortDesc, onToggleSort, onOpen, onCopy }: RecordLis
               data-record-id={r.id}
               tabIndex={0}
               {...openHandlers(onOpen, r.id)}
-              className="cursor-pointer border-b border-line last:border-b-0 hover:bg-surface"
+              // 外層面板 overflow-hidden 會裁掉外環：焦點環內縮
+              className="cursor-pointer border-b border-line last:border-b-0 hover:bg-surface focus-visible:outline-offset-[-2px]"
             >
               <td className="px-2 py-2.5 align-top">
                 <span className="num block text-[13px] leading-5">{mdLabel(r.date)}</span>

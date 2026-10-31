@@ -28,7 +28,16 @@ export function ResponsivePopover({ open, onOpenChange, trigger, title, children
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetTrigger asChild>{trigger}</SheetTrigger>
-        <SheetContent side="bottom" aria-describedby={undefined} className="gap-0 pb-4" onOpenAutoFocus={(e) => e.preventDefault()}>
+        <SheetContent
+          side="bottom"
+          aria-describedby={undefined}
+          className="gap-0 pb-4"
+          // 焦點進入面板本身（有 SheetTitle 當名稱），不直接落在搜尋框——手機上才不會彈出軟鍵盤；下一個 Tab 才到第一個控制項
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            (e.currentTarget as HTMLElement | null)?.focus?.({ preventScroll: true });
+          }}
+        >
           <SheetHeader className="pb-2">
             <SheetTitle>{title}</SheetTitle>
           </SheetHeader>

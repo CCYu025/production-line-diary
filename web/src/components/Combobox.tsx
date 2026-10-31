@@ -10,6 +10,16 @@ export const inputClass =
   "disabled:cursor-not-allowed disabled:bg-surface disabled:text-ink-muted " +
   "aria-[invalid=true]:border-critical";
 
+/** 以程式聚焦的輸入框（例如驗證失敗）不自動展開建議清單：記下來，onFocus 看到就略過一次。 */
+const quietFocus = new WeakSet<HTMLElement>();
+export function focusWithoutOpening(el: HTMLElement | null) {
+  if (!el) return;
+  quietFocus.add(el);
+  el.focus();
+  // 已經聚焦時不會再觸發 onFocus，標記要清掉，免得吃掉下一次真正的聚焦
+  quietFocus.delete(el);
+}
+
 export interface ComboboxProps extends Omit<React.ComponentProps<"input">, "value" | "onChange" | "role" | "type"> {
   value: string;
   onValueChange: (value: string) => void;
@@ -98,7 +108,7 @@ export function Combobox({
           setOpen(true);
         }}
         onFocus={(e) => {
-          setOpen(true);
+          if (!quietFocus.has(e.currentTarget)) setOpen(true);
           onFocus?.(e);
         }}
         onClick={() => setOpen(true)}

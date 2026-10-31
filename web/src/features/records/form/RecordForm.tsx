@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import * as React from "react";
 import { useBlocker, useNavigate, useSearchParams } from "react-router-dom";
-import { Combobox, inputClass } from "@/components/Combobox";
+import { Combobox, focusWithoutOpening, inputClass } from "@/components/Combobox";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { SegmentedControl, type SegmentedOption } from "@/components/SegmentedControl";
 import { SEVERITY_BG } from "@/components/badges";
@@ -110,6 +110,21 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
   const [existing, setExisting] = React.useState<ExistingPhoto[]>(() => toExisting(record));
   const originalExisting = React.useRef(existing);
   const fx = useFx();
+  // 手機：表單底部的固定操作列（在底部分頁列上方）也會蓋住被聚焦的欄位；量它的高度，聚焦捲動時一併預留（見 index.css 的 scroll-padding-bottom）
+  const actionBarRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const el = actionBarRef.current;
+    const root = document.documentElement;
+    if (!el) return;
+    const apply = () => root.style.setProperty("--form-bar-h", `${el.offsetHeight}px`);
+    apply();
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(apply);
+    ro?.observe(el);
+    return () => {
+      ro?.disconnect();
+      root.style.removeProperty("--form-bar-h");
+    };
+  }, []);
   // FX-27 帶入閃爍（純展示）：每次帶入遞增，被帶入的欄位以 a／b 交替的屬性值觸發 CSS 動畫；不影響表單值、不重新掛載輸入框
   const [copiedFx, setCopiedFx] = React.useState<{ n: number; fields: readonly FieldName[] }>(() =>
     !isEdit && copyFrom ? { n: 1, fields: copiedFieldsOf(copyFrom) } : { n: 0, fields: [] },
@@ -119,7 +134,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
   const [submitting, setSubmitting] = React.useState(false);
   const submittingRef = React.useRef(false);
   const [formErrors, setFormErrors] = React.useState<string[]>([]);
-  const [focusRequest, setFocusRequest] = React.useState<{ field: FieldName; n: number } | null>(null);
+  const [focusRequest, setFocusRequest] = React.useState<{ field: FieldName; n: number; quiet?: boolean } | null>(null);
 
   const dateLocked = photos.hasLive;
   const existingChanged =
@@ -169,10 +184,12 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
   React.useEffect(() => {
     if (!focusRequest) return;
     const el = document.getElementById(fieldId(focusRequest.field));
-    el?.focus();
+    if (focusRequest.quiet) focusWithoutOpening(el);
+    else el?.focus();
     el?.scrollIntoView?.({ block: "center", behavior: "smooth" });
   }, [focusRequest]);
-  const requestFocus = (field: FieldName) => setFocusRequest((prev) => ({ field, n: (prev?.n ?? 0) + 1 }));
+  const requestFocus = (field: FieldName, quiet = false) =>
+    setFocusRequest((prev) => ({ field, n: (prev?.n ?? 0) + 1, quiet }));
 
   /* ---------- 複製既有紀錄 ---------- */
   const clearCopyParam = React.useCallback(() => {
@@ -261,7 +278,8 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
     dispatch({ type: "setErrors", errors: errs });
     if (errs.date || errs.time || errs.shift) dispatch({ type: "setDateOpen", open: true });
     const first = FOCUS_ORDER.find((f) => errs[f]);
-    if (first) requestFocus(first);
+    // 驗證失敗：聚焦首個無效欄位，但 Combobox 不自動展開（清單會蓋住 ERR: 訊息）
+    if (first) requestFocus(first, true);
   };
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -581,7 +599,7 @@ export function RecordForm({ mode, record, copyFrom }: RecordFormProps) {
         ) : null}
 
         {/* 手機：固定在底部分頁列上方（max-md:pb-8 讓出中央凸出的 ＋ 按鈕）；桌面：接在表單後面 */}
-        <div className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 -mx-4 flex flex-col gap-2 border-t border-line bg-page/95 px-4 pb-8 pt-3 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
+        <div ref={actionBarRef} className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 -mx-4 flex flex-col gap-2 border-t border-line bg-page/95 px-4 pb-8 pt-3 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
           {pendingReview > 0 ? (
             <p className="text-xs font-medium text-ink-2" data-testid="review-pending">
               還有 {pendingReview} 個欄位待確認（不會擋住送出）
