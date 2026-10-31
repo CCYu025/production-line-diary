@@ -64,7 +64,10 @@ describe("375 寬的底部 Sheet（ResponsivePopover）：焦點進入面板、�
     const trigger = screen.getByRole("button", { name: "設備" });
     await user.click(trigger);
     const dialog = await screen.findByRole("dialog");
-    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    // 焦點在面板本身（不是搜尋框，避免手機彈出軟鍵盤）；下一個 Tab 才到搜尋框
+    await waitFor(() => expect(document.activeElement).toBe(dialog));
+    expect(dialog).toHaveAccessibleName("選擇設備");
+    await user.tab();
     expect(document.activeElement).toBe(within(dialog).getByRole("combobox", { name: "搜尋設備" }));
     for (let i = 0; i < 12; i++) {
       await user.tab();
@@ -80,7 +83,8 @@ describe("375 寬的底部 Sheet（ResponsivePopover）：焦點進入面板、�
     const trigger = screen.getByRole("button", { name: "日期" });
     await user.click(trigger);
     const dialog = await screen.findByRole("dialog");
-    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    await waitFor(() => expect(document.activeElement).toBe(dialog));
+    await user.tab();
     const firstPreset = within(dialog)
       .getAllByRole("button")
       .find((b) => b.hasAttribute("aria-pressed"));
