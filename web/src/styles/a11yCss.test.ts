@@ -21,6 +21,8 @@ describe("375 寬固定底部分頁列：聚焦捲動預留空間", () => {
     const m = indexCss.match(/@media \(max-width: 767px\)\s*\{\s*html\s*\{([^}]*)\}/);
     expect(m, "找不到 < 768px 的 html 規則").not.toBeNull();
     expect(m![1]).toMatch(/scroll-padding-bottom:\s*calc\(3\.5rem \+ 1px \+ env\(safe-area-inset-bottom/);
+    // 新增表單底部的固定操作列高度（RecordForm 量測後寫入 --form-bar-h）也要預留
+    expect(m![1]).toContain("var(--form-bar-h, 0px)");
   });
 });
 
