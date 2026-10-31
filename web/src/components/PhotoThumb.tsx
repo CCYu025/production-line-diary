@@ -23,7 +23,7 @@ export function PhotoThumb({ src, alt, state = "ready", className }: PhotoThumbP
         <img src={src} alt={alt} className={cn("size-full object-cover", state === "uploading" && "opacity-50")} />
       ) : null}
       {state === "uploading" ? (
-        <div className="absolute inset-0 flex items-center justify-center">
+        <div data-fx-scan="" className="absolute inset-0 flex items-center justify-center">
           <Loader2 className="size-6 animate-spin text-accent-text" aria-hidden="true" />
           <span className="sr-only">上傳中</span>
         </div>

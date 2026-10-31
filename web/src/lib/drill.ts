@@ -29,5 +29,10 @@ export function recordsLocation(filter: RecordFilter): { pathname: string; searc
 
 export function useDrillTo() {
   const navigate = useNavigate();
-  return React.useCallback((key: DrillKey, value: string) => navigate(recordsLocation(drillFilter(key, value))), [navigate]);
+  return React.useCallback(
+    (key: DrillKey, value: string) => {
+      void navigate(recordsLocation(drillFilter(key, value)));
+    },
+    [navigate],
+  );
 }

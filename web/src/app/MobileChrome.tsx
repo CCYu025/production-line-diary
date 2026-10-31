@@ -2,19 +2,22 @@ import { CalendarDays, Ellipsis, LayoutDashboard, List, Loader2, Plus } from "lu
 import * as React from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useFx } from "@/lib/fx";
 import { useTrashCount } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { MORE_ITEMS, MORE_PATHS, type NavEntry } from "./nav";
 import { CountBadge } from "./Sidebar";
 import { THEME_TOGGLE, ThemeToggleState, useThemeToggle } from "./themeToggle";
+import { titleTypeProps } from "@/lib/fx/titleType";
 import { useExportAction } from "./useExportAction";
 
 /** 手機（< 768px）頂部標題列：只放頁面標題（品牌字不換行成直排）。 */
 export function MobileTopBar({ title }: { title: string }) {
+  const fx = useFx();
   return (
     <header data-fx="topbar" className="sticky top-0 z-30 flex h-14 items-center border-b border-line bg-page px-4 pt-[env(safe-area-inset-top)] md:hidden print:hidden">
       {/* 視覺標題；頁面真正的 <h1> 在 PageHeader（手機版僅供輔助科技讀取），避免標題重複 */}
-      <p aria-hidden="true" data-fx="page-title" className="truncate text-lg font-bold">
+      <p key={title} aria-hidden="true" data-fx="page-title" className="truncate text-lg font-bold" {...titleTypeProps(title, fx)}>
         {title}
       </p>
     </header>
@@ -28,6 +31,7 @@ function Tab({ to, label, icon: Icon }: { to: string; label: string; icon: typeo
   return (
     <NavLink
       to={to}
+     
       end={to === "/records"}
       data-fx="nav-item"
       className={({ isActive }) => cn(tabClass, isActive && "font-bold text-accent-text")}
@@ -130,6 +134,7 @@ export function MobileTabBar() {
 
           <NavLink
             to="/records/new"
+           
             data-fx="nav-item"
             className={({ isActive }) => cn(tabClass, "relative", isActive && "font-bold text-accent-text")}
           >

@@ -580,8 +580,8 @@
 /* ---------- FX-20 詳情面板（由右滑入是 Tailwind 現有的）----------
  * 青色掃描線由上往下：2px 高、橫跨面板寬度的偽元素只用 transform（translateY 從面板頂到底，面板是 100dvh 全高，終點在面板內），結束時淡出。
  * 基礎樣式 opacity 0（減少動態效果時整個不顯示）。
- * 內容區塊（detail-body 的子元素）依序淡入：標題→標籤→事實格→處理→…，最多 6 段，每段延遲 30ms，每段 200ms（backwards 讓延遲期間維持透明；
- * 最後一段 5 × 30 ＋ 200 ＝ 350ms 收尾）。
+ * 內容區塊（detail-body 的子元素）依序淡入：標題→標籤→事實格→處理→…，只動 opacity、不位移，最多 4 檔（第 4 檔之後的區塊共用最後一檔），每檔延遲 30ms，每段 200ms（backwards 讓延遲期間維持透明；
+ * 最後一檔 3 × 30 ＋ 200 ＝ 290ms 收尾）。
  * 關閉時退場縮短為 --dur-close（原本 200ms，Radix 會等退場動畫結束才卸載）。 */
 :root[data-theme="cyber"] [data-fx="sheet"][data-side="right"]::after {
   content: "" / "";
@@ -594,6 +594,8 @@
   opacity: 0;
   pointer-events: none;
   animation: cyber-sheet-sweep var(--dur-slow) var(--ease-out);
+  /* 等 detail-body 的 4 檔淡入全部結束（最後一檔 3 × 30ms ＋ 200ms）才掃，兩者不同時觸發 */
+  animation-delay: calc(var(--stagger-sheet) * 3 + var(--dur-sheet-item));
 }
 :root[data-theme="cyber"] [data-fx="sheet"][data-state="closed"] {
   animation-duration: var(--dur-close);
@@ -604,17 +606,11 @@
 :root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(2) {
   animation-delay: var(--stagger-sheet);
 }
-:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(n + 3):nth-child(-n + 4) {
+:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(3) {
   animation-delay: calc(var(--stagger-sheet) * 2);
 }
-:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(n + 5):nth-child(-n + 6) {
+:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(n + 4) {
   animation-delay: calc(var(--stagger-sheet) * 3);
-}
-:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(7) {
-  animation-delay: calc(var(--stagger-sheet) * 4);
-}
-:root[data-theme="cyber"] [data-fx="detail-body"] > :nth-child(n + 8) {
-  animation-delay: calc(var(--stagger-sheet) * 5);
 }
 
 /* ---------- FX-21 詳情面板上一筆／下一筆 ----------
@@ -970,6 +966,217 @@
   }
 }
 
+/* === P3 START === */
+/* =====================================================================================================
+ * P3 招牌效果（規格 §6.2：FX-07～09、12～14、16 與 FX-08；其餘 P3 項目由後續區塊補在此段）
+ *
+ * 守則（沿用 P2，cyberCss.test.ts「P3 動畫守門」把關）：
+ *   - 只動 transform、opacity，掃描帶／光暈另計；@keyframes 一律 cyber- 前綴；時間走 token。
+ *   - 依序進場的元素只在 JS 輸出 data-fx-in（lib/fx 的 useStagger：cyber 且沒有減少動態效果才輸出，超過上限的項目沒有）時才播，
+ *     延遲 = 間隔 token × --i（也是 useStagger 輸出）。基礎樣式即最終狀態；延遲期間用 animation-fill-mode: backwards（longhand）維持起始影格。
+ *   - 新增的 infinite 只有 FX-08 角框呼吸（白名單，理由：待處理 > 0 的警示要「持續」被看見，只動 opacity .5↔1、2.4s 一循環，不是閃爍；
+ *     減少動態效果時由 index.css 全域規則壓成一次、停在 opacity 1）。
+ *     infinite 一律直接寫在 animation 簡寫裡；守門測試以 keyframes 名稱白名單比對（FX-33、FX-35、FX-08、標題游標、FX-25、FX-26、FX-32），其他一律失敗。
+ * ===================================================================================================== */
+
+:root[data-theme="cyber"] {
+  --dur-trend: 300ms; /* FX-12 趨勢柱長出 */
+  --dur-donut: 300ms; /* FX-13 甜甜圈淡入與掃描線 */
+  --stagger-trend: 20ms; /* FX-12 趨勢柱間隔 */
+  --stagger-cal: 10ms; /* FX-14 日曆格對角線間隔（最多 12 道，總長 ≤ 270ms < 400ms） */
+}
+
+/* ---------- FX-08 呼吸角框：待處理 > 0 的 panel-cut 角框（::after）透明度 .5 ↔ 1 ---------- */
+:root[data-theme="cyber"] [data-fx="panel-cut"][data-fx-alert]::after {
+  animation: cyber-corner-breathe var(--dur-breathe) ease-in-out infinite;
+}
+
+/* ---------- FX-09 橫條圖：長條由左往右長出（scaleX 0→1，寬度計算不變），依序 ---------- */
+:root[data-theme="cyber"] [data-fx="bar"][data-fx-in] {
+  transform-origin: left center;
+  animation: cyber-bar-grow var(--dur-slow) var(--ease-out);
+  animation-delay: calc(var(--stagger) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+
+/* ---------- FX-12 每日趨勢柱：由下往上長出（scaleY），依序 ---------- */
+:root[data-theme="cyber"] [data-fx="trend-bar"][data-fx-in] {
+  transform-origin: center bottom;
+  animation: cyber-trend-grow var(--dur-trend) var(--ease-out);
+  animation-delay: calc(var(--stagger-trend) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+
+/* ---------- FX-13 甜甜圈：整張淡入＋一道掃描線劃過一次 ----------
+ * 掃描線是容器的 ::after（裝飾、不擋點擊）：蓋滿容器、頂緣一條 2px 線，translateY 0→100% 讓線由上掃到下，基礎樣式 opacity 0。 */
+:root[data-theme="cyber"] [data-fx-in="donut"] {
+  position: relative;
+  animation: cyber-fade-in var(--dur-donut) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx-in="donut"]::after {
+  content: "" / "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(to bottom, var(--accent) 0, var(--accent) 2px, transparent 2px);
+  animation: cyber-donut-scan var(--dur-donut) linear;
+}
+
+/* ---------- FX-14 日曆：格子沿對角線（列＋欄）依序淡入；桌面換月時整張水平 glitch 一次；手機（< 768）只淡入、不排隊 ----------
+ * 用 :where() 壓低屬性選擇器的特異度，讓日曆格焦點環的 cyber-fab-ring（FX-15，特異度較高）不被進場動畫蓋掉。 */
+:root[data-theme="cyber"] [data-fx="cal-cell"]:where([data-fx-in]) {
+  animation: cyber-fade-in var(--dur-fast) var(--ease-out);
+  animation-delay: calc(var(--stagger-cal) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+@media (max-width: 767px) {
+  :root[data-theme="cyber"] [data-fx="cal-cell"]:where([data-fx-in]) {
+    animation-delay: 0ms;
+  }
+}
+@media (min-width: 768px) {
+  :root[data-theme="cyber"] table[data-fx-in="glitch"] {
+    animation: cyber-glitch-tx var(--dur-fast) var(--ease-glitch);
+  }
+}
+
+/* ---------- FX-16 紀錄列表：前 20 列（手機 10）由左 8px 淡入；hover／焦點時左側出現 ▶ ----------
+ * ▶ 畫在第一格的 ::before（絕對定位、不佔版面；不能畫在 <tr> 上——tr 的偽元素會變成匿名表格儲存格而改變版面）。 */
+:root[data-theme="cyber"] [data-fx="row"][data-fx-in] {
+  animation: cyber-row-in var(--dur-fast) var(--ease-out);
+  animation-delay: calc(var(--stagger) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+:root[data-theme="cyber"] tr[data-fx="row"]:is(:hover, :focus-visible) > td:first-child {
+  position: relative;
+}
+:root[data-theme="cyber"] tr[data-fx="row"]:is(:hover, :focus-visible) > td:first-child::before {
+  content: "\25B6\FE0E" / "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.5rem;
+  line-height: 1;
+  color: var(--accent-text);
+  pointer-events: none;
+}
+
+/* ---------- 不重掛的重播（相位 b） ----------
+ * 長條／趨勢／甜甜圈／日曆的容器依資料簽名輸出 data-fx-phase="a"|"b"（lib/fx useReplayPhase）：簽名改變時相位翻面，
+ * 這裡讓相位 b 改用「內容相同、名稱不同」的 -b 版 keyframes，瀏覽器看到 animation-name 改變就重播——DOM 與 key 不動，可聚焦元素不會被重掛。
+ * 這幾條只換名稱，其餘（時間、延遲、fill-mode）與相位 a 的規則完全相同。 */
+:root[data-theme="cyber"] [data-fx-phase="b"] [data-fx="bar"][data-fx-in] {
+  animation: cyber-bar-grow-b var(--dur-slow) var(--ease-out);
+  animation-delay: calc(var(--stagger) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+:root[data-theme="cyber"] [data-fx-phase="b"] [data-fx="trend-bar"][data-fx-in] {
+  animation: cyber-trend-grow-b var(--dur-trend) var(--ease-out);
+  animation-delay: calc(var(--stagger-trend) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+:root[data-theme="cyber"] [data-fx-in="donut"][data-fx-phase="b"] {
+  animation: cyber-fade-in-b var(--dur-donut) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx-in="donut"][data-fx-phase="b"]::after {
+  animation: cyber-donut-scan-b var(--dur-donut) linear;
+}
+:root[data-theme="cyber"] [data-fx-phase="b"] [data-fx="cal-cell"]:where([data-fx-in]) {
+  animation: cyber-fade-in-b var(--dur-fast) var(--ease-out);
+  animation-delay: calc(var(--stagger-cal) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+@media (max-width: 767px) {
+  :root[data-theme="cyber"] [data-fx-phase="b"] [data-fx="cal-cell"]:where([data-fx-in]) {
+    animation-delay: 0ms;
+  }
+}
+@media (min-width: 768px) {
+  :root[data-theme="cyber"] table[data-fx-in="glitch"][data-fx-phase="b"] {
+    animation: cyber-glitch-tx-b var(--dur-fast) var(--ease-glitch);
+  }
+}
+
+@keyframes cyber-corner-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+@keyframes cyber-bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes cyber-trend-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes cyber-row-in {
+  from {
+    transform: translateX(-8px);
+    opacity: 0;
+  }
+}
+@keyframes cyber-donut-scan {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+@keyframes cyber-bar-grow-b {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes cyber-trend-grow-b {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes cyber-fade-in-b {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes cyber-donut-scan-b {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+@keyframes cyber-glitch-tx-b {
+  from {
+    transform: translateX(-4px);
+    opacity: 0.5;
+  }
+  35% {
+    transform: translateX(4px);
+    opacity: 1;
+  }
+  70% {
+    transform: translateX(-2px);
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
 /* ---------- 報表隔離（不是裝飾）----------
  * 把 cyber 擋在列印報表（#report-output）之外。report.css 只把「文字／線／底色」token 重新定義成紙本配色，
  * 沒有覆寫嚴重度四色，而它的 .rr-sev i 色塊（print-color-adjust: exact）會用到這四個 token——
@@ -979,6 +1186,406 @@
   --warning: #fab219;
   --serious: #ec835a;
   --critical: #d03b3b;
+}
+
+/* === P3 C2 START === */
+/* =====================================================================================================
+ * P3 塊 C（後半）：FX-27 帶入閃爍、FX-28 嚴重度建議、FX-31 回收桶溶解。
+ * 位置在塊 A／塊 C（前半）／塊 B 各區段的守門切片之外（報表隔離之後、P3 C START 之前），它們各自的 @keyframes 計數不受影響。
+ * 守則同 P3：@keyframes 一律 cyber- 前綴、時間走 token、沒有 infinite、基礎樣式就是最終狀態、不加 animation-fill-mode。
+ * ===================================================================================================== */
+:root[data-theme="cyber"] {
+  --dur-copied: 200ms; /* FX-27 每欄閃一次 */
+  --stagger-copied: 40ms; /* FX-27 欄位之間的間隔 */
+  --dur-suggest: 300ms; /* FX-28 建議的嚴重度閃一次 */
+  --dur-dissolve: 220ms; /* FX-31 溶解（JS 殘影留 250ms） */
+}
+
+/* ---------- FX-27 帶入閃爍：被帶入的欄位依序閃一次光暈＋accent-wash ----------
+ * data-fx-copied 由 RecordForm 在每次帶入時於 "a"／"b" 之間交替：屬性值一變，選到的動畫名稱就換，瀏覽器會重播（輸入框不重新掛載，焦點與值不受影響）。
+ * 兩組 keyframes 內容相同；只有 from 影格，結束後回到欄位原本的樣子。依 DOM 欄位順序延遲（問題、分類、耗時、處理、根本原因）。 */
+:root[data-theme="cyber"] [data-fx="field"][data-fx-copied="a"] {
+  animation: cyber-copied-a var(--dur-copied) var(--ease-out);
+  animation-delay: calc(var(--stagger-copied) * var(--copied-i, 0));
+}
+:root[data-theme="cyber"] [data-fx="field"][data-fx-copied="b"] {
+  animation: cyber-copied-b var(--dur-copied) var(--ease-out);
+  animation-delay: calc(var(--stagger-copied) * var(--copied-i, 0));
+}
+:root[data-theme="cyber"] [data-fx="field"][data-field="category"] {
+  --copied-i: 1;
+}
+:root[data-theme="cyber"] [data-fx="field"][data-field="duration"] {
+  --copied-i: 2;
+}
+:root[data-theme="cyber"] [data-fx="field"][data-field="action"] {
+  --copied-i: 3;
+}
+:root[data-theme="cyber"] [data-fx="field"][data-field="rootCause"] {
+  --copied-i: 4;
+}
+@keyframes cyber-copied-a {
+  from {
+    box-shadow: var(--glow-accent), inset 0 0 0 999px var(--press-wash);
+  }
+}
+@keyframes cyber-copied-b {
+  from {
+    box-shadow: var(--glow-accent), inset 0 0 0 999px var(--press-wash);
+  }
+}
+
+/* ---------- FX-28 嚴重度建議：選項變成「被建議」（data-fx-suggested=選項值）時，閃一次對應嚴重度色的光暈 ----------
+ * 選項節點一直都在，只是屬性出現就開始播（選項換人時新的那顆開始播）；只動 box-shadow（光暈），不改尺寸。標準主題沒有任何規則吃這個屬性。 */
+:root[data-theme="cyber"] [data-fx="seg"] > button[data-fx-suggested] {
+  --sug: var(--good);
+  animation: cyber-suggest var(--dur-suggest) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx="seg"] > button[data-fx-suggested="一般"] {
+  --sug: var(--warning);
+}
+:root[data-theme="cyber"] [data-fx="seg"] > button[data-fx-suggested="嚴重"] {
+  --sug: var(--serious);
+}
+:root[data-theme="cyber"] [data-fx="seg"] > button[data-fx-suggested="重大"] {
+  --sug: var(--critical);
+}
+@keyframes cyber-suggest {
+  from {
+    box-shadow: 0 0 0 1px var(--sug), 0 0 12px var(--sug);
+  }
+}
+
+/* ---------- FX-31 回收桶溶解：被移除的列只是 250ms 的視覺殘影（TrashPage 的 inert＋aria-hidden 節點，不可聚焦、不可點） ----------
+ * 基礎樣式就是溶解後的狀態（看不見），keyframes 從完整顯示收起，所以不需要 fill-mode。復原：上下往中間收起；永久刪除：左右往中間收起（方向相反）。 */
+:root[data-theme="cyber"] [data-fx-ghost] {
+  opacity: 0;
+}
+:root[data-theme="cyber"] [data-fx-ghost="restore"] {
+  clip-path: inset(50% 0 50% 0);
+  animation: cyber-dissolve-v var(--dur-dissolve) var(--ease-out);
+}
+:root[data-theme="cyber"] [data-fx-ghost="purge"] {
+  clip-path: inset(0 50% 0 50%);
+  animation: cyber-dissolve-h var(--dur-dissolve) var(--ease-out);
+}
+@keyframes cyber-dissolve-v {
+  from {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+}
+@keyframes cyber-dissolve-h {
+  from {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+}
+
+/* === P3 C START === */
+/* =====================================================================================================
+ * P3 塊 C（位置在報表隔離之後、塊 B 之前，這樣塊 A／塊 B 的區段守門測試各自的範圍不會涵蓋到本段）：FX-11 長條鎖定角框、FX-25 送出中 ASCII 進度條、FX-26 照片上傳掃描帶、FX-32 匯出中 ▮▯▯、FX-36 切換照片淡入。
+ * （FX-27／28／31 由後續區塊補。）守則同 P3：只動 transform、opacity；@keyframes 一律 cyber- 前綴；時間走 token；
+ * 本段的 infinite 只有 FX-25／26／32 三個循環動畫（P3 塊 C 的守門測試逐條鎖定）。
+ * 循環白名單理由：它們的語意就是「進行中、時間不明」，必須在進行中持續可見；都只動 transform（不閃爍、每秒變化 ≤ 3 次的步進或平滑位移），
+ * 進行中狀態結束（按鈕不再 aria-busy／縮圖不再 uploading）元素就消失或不再匹配，所以不會常駐；減少動態效果時由 index.css 的全域規則壓成一次、停在最終影格。
+ * ===================================================================================================== */
+
+:root[data-theme="cyber"] {
+  --dur-lock: 200ms; /* FX-11 角框由大縮小 */
+  --dur-loop: 900ms; /* FX-25 進度條、FX-32 ▮▯▯ 一圈 */
+  --dur-scan-band: 1.2s; /* FX-26 掃描帶一個來回 */
+}
+
+/* ---------- FX-11 長條鎖定角框：按下（:active）時四角出現洋紅 L 形角框，由大縮小到定位 ----------
+ * 純 CSS、與跳轉同步（click 在放開時才觸發，角框在按住期間就開始播）；不加 setTimeout、不延後跳轉。
+ * 畫在按鈕的 ::before（absolute、inset: 0，不佔版面、不擋點擊）；position: relative 不改變按鈕的 rect。
+ * 沒有按下時 opacity 0，所以平常看不到；:active 的最終狀態（opacity 1、scale 1）就是鎖定後的樣子。 */
+:root[data-theme="cyber"] [data-fx="bar-row"] {
+  position: relative;
+}
+:root[data-theme="cyber"] [data-fx="bar-row"]::before {
+  content: "" / "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background-image:
+    linear-gradient(var(--accent-2), var(--accent-2)), linear-gradient(var(--accent-2), var(--accent-2)),
+    linear-gradient(var(--accent-2), var(--accent-2)), linear-gradient(var(--accent-2), var(--accent-2)),
+    linear-gradient(var(--accent-2), var(--accent-2)), linear-gradient(var(--accent-2), var(--accent-2)),
+    linear-gradient(var(--accent-2), var(--accent-2)), linear-gradient(var(--accent-2), var(--accent-2));
+  background-repeat: no-repeat;
+  background-size:
+    10px 2px, 2px 10px,
+    10px 2px, 2px 10px,
+    10px 2px, 2px 10px,
+    10px 2px, 2px 10px;
+  background-position:
+    0 0, 0 0,
+    100% 0, 100% 0,
+    0 100%, 0 100%,
+    100% 100%, 100% 100%;
+}
+:root[data-theme="cyber"] [data-fx="bar-row"]:active:not(:disabled)::before {
+  opacity: 1;
+  animation: cyber-lock-on var(--dur-lock) var(--ease-out);
+}
+
+/* ---------- FX-25 送出中 ASCII 進度條 [██░░░░]（RecordForm 的 <SubmitProgress>，只在 cyber 且允許動態時渲染，aria-hidden）----------
+ * 取代旋轉圖示的視覺，放在同一個位置（按鈕文字左側）；按鈕有 md:min-w-36（手機是 flex-1），內容寬度遠小於最小寬，所以按鈕 rect 與標準送出中相同。
+ * 進度不明：一個 2 格寬的實心區塊在 6 格軌道裡循環跑動（steps，不是百分比）。 */
+:root[data-theme="cyber"] [data-fx-progress] {
+  display: inline-flex;
+  align-items: center;
+  /* 版面寬度固定為旋轉圖示的 1rem（按鈕 rect 與標準送出中完全相同），條本身比 1rem 寬，向左溢出到按鈕的內距／留白裡（不碰右邊的文字）。 */
+  justify-content: flex-end;
+  width: 1rem;
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-family: var(--font-mono);
+  line-height: 1;
+  white-space: pre;
+}
+:root[data-theme="cyber"] [data-fx-progress-track] {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  width: 6ch;
+  overflow: hidden;
+}
+:root[data-theme="cyber"] [data-fx-progress-block] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  animation: cyber-progress-run var(--dur-loop) steps(4, end) infinite;
+}
+
+/* ---------- FX-26 照片上傳掃描帶：上傳中縮圖（PhotoThumb 的 [data-fx-scan] 覆蓋層，spinner 與 sr-only「上傳中」都保留在 DOM）----------
+ * 視覺上用掃描帶取代旋轉圖示（圖示 visibility: hidden，仍佔位、仍在輔助科技樹裡的是 sr-only 文字）。縮圖容器本身 overflow-hidden，掃描帶不會超出。 */
+:root[data-theme="cyber"] [data-fx-scan] > svg {
+  visibility: hidden;
+}
+:root[data-theme="cyber"] [data-fx-scan]::after {
+  content: "" / "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 30%;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--accent) 50%, transparent);
+  opacity: 0.8;
+  transform: translateY(-100%);
+  animation: cyber-scan-band var(--dur-scan-band) linear alternate infinite;
+}
+
+/* ---------- FX-32 匯出中：匯出項目（nav-item，aria-busy="true"）文字旁的循環 ▮▯▯ → ▮▮▯ → ▮▮▮ ----------
+ * 不加狀態，直接吃現有的 aria-busy。兩個偽元素疊在同一處（absolute，不佔版面）：::after 是暗的 ▯▯▯ 底，::before 是亮的 ▮▮▮ 以 scaleX 一格一格露出。
+ * 圖示列（768–1023）只有圖示、沒有位置，不顯示；側欄與手機「更多」面板顯示。 */
+:root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"] {
+  position: relative;
+}
+:root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::before,
+:root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0.75rem;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  transform-origin: left center;
+}
+:root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::after {
+  content: "\25AF\25AF\25AF" / "";
+  color: var(--ink-muted);
+}
+:root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::before {
+  content: "\25AE\25AE\25AE" / "";
+  z-index: 1;
+  color: var(--accent-text);
+  animation: cyber-export-fill var(--dur-loop) steps(1) infinite;
+}
+/* 取代旋轉圖示的視覺：圖示 visibility: hidden（仍佔位、rect 不變；無障礙文字「匯出中…」保留）。圖示列（768–1023）沒有 ▮▯▯，所以保留旋轉圖示。 */
+@media (max-width: 767px), (min-width: 1024px) {
+  :root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"] > svg {
+    visibility: hidden;
+  }
+}
+@media (min-width: 768px) and (max-width: 1023px) {
+  :root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::before,
+  :root[data-theme="cyber"] [data-fx="nav-item"][aria-busy="true"]::after {
+    display: none;
+  }
+}
+
+/* ---------- FX-36 切換照片：<img key={src}> 重新掛載，新圖淡入（opacity 一次）。燈箱開啟本身的展開是 P2 ---------- */
+:root[data-theme="cyber"] [data-fx="lightbox"] > img {
+  animation: cyber-fade-in var(--dur-fast) var(--ease-out);
+}
+
+@keyframes cyber-lock-on {
+  from {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+}
+@keyframes cyber-progress-run {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(4ch);
+  }
+}
+@keyframes cyber-scan-band {
+  to {
+    transform: translateY(333%);
+  }
+}
+@keyframes cyber-export-fill {
+  0% {
+    transform: scaleX(0.34);
+  }
+  33% {
+    transform: scaleX(0.67);
+  }
+  66% {
+    transform: scaleX(1);
+  }
+}
+
+/* === P3 B START === */
+/* =====================================================================================================
+ * P3 塊 B：標題打字與游標（FX-03）、nav-indicator（FX-04）、主題切換掃描（FX-38）、開機畫面（FX-01）。
+ * 放在 P3 區段（塊 A）之後、報表隔離之外：塊 A 的守門測試鎖定 P3 區段「沒有 clip-path」，而打字與 VT 掃描需要 clip-path
+ * （只用在不可點的純文字與整頁快照）。守則不變：@keyframes 一律 cyber- 前綴、時間走 token、infinite 只有游標（1 次／秒）。
+ * ===================================================================================================== */
+
+:root[data-theme="cyber"] {
+  --dur-vt-theme: 300ms; /* FX-38 主題切換掃描 */
+  --dur-char: 18ms; /* FX-03 打字：每個字 18ms（字數 ≤ 16，上限 288ms） */
+  --dur-cursor: 1s; /* 標題游標、開機行游標：1 次／秒 */
+  --stagger-boot: 120ms; /* FX-01 每行 120ms */
+}
+
+/* ---------- FX-38 主題切換（只有切到 cyber 才有 data-vt="theme"）：舊畫面不動，新畫面（cyber）由上往下掃描露出，300ms ---------- */
+:root[data-theme="cyber"][data-vt="theme"]::view-transition-old(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+:root[data-theme="cyber"][data-vt="theme"]::view-transition-new(root) {
+  animation: cyber-vt-in var(--dur-vt-theme) linear;
+  mix-blend-mode: normal;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="cyber"]::view-transition-group(*),
+  :root[data-theme="cyber"]::view-transition-old(*),
+  :root[data-theme="cyber"]::view-transition-new(*) {
+    animation: none;
+  }
+}
+
+/* ---------- FX-03 頁面標題打字（文字一開始就完整在 DOM，只是 clip-path 遮罩逐步退開）＋尾端游標 ----------
+ * 字數 --chars 由 JS 在 useFx() 為 true 時輸出（沒有就當 8）；steps 的步數 = 字數，總長 = 字數 × 18ms。標題不可點，所以可以用 clip-path。
+ * nowrap：游標不能把標題擠成兩行。游標是 ::after（替代文字為空，不進輔助科技），打字完成前被遮罩蓋住；
+ * 常駐閃爍 1 次／秒（steps(1)），減少動態效果時由 index.css 的全域規則停在 opacity 1（常亮）。 */
+:root[data-theme="cyber"] :is(h1, p)[data-fx="page-title"] {
+  white-space: nowrap;
+  animation: cyber-title-type calc(var(--dur-char) * var(--chars, 8)) steps(var(--chars, 8), end);
+}
+:root[data-theme="cyber"] :is(h1, p)[data-fx="page-title"]::after {
+  content: "\2060 \258C" / "";
+  margin-left: 0.15em;
+  color: var(--accent-text);
+  text-shadow: none;
+  font-weight: 400;
+  animation: cyber-cursor var(--dur-cursor) steps(1) infinite;
+}
+
+/* ---------- FX-04 nav-indicator：側欄／圖示列的高亮條（只在 cyber 渲染的 aria-hidden <span>）----------
+ * 位置 --nav-y 由 NavIndicator 依目前路由量好寫入；只用 transform 位移（220ms），opacity 淡出（沒有目前頁時）。
+ * 首次量測完成前沒有 transition（data-ready 才啟用），所以首次渲染不播放。元素帶 inert（不可點、不擋下面的連結，瀏覽器依規格視同 pointer-events: none）。
+ * 桌面（≥ 1024）：整個項目高度（h-11 ＝ 2.75rem）的 2px 青線，與 ">" 前綴並存；
+ * 平板圖示列（768–1023）：改成垂直短條（1.25rem），並取代 P1 的 2px 內側直條（兩者位置相同，疊加會變成一條粗線＋短條）；< 768 不顯示。 */
+:root[data-theme="cyber"] aside > nav[aria-label="主要導覽"] {
+  position: relative;
+}
+:root[data-theme="cyber"] [data-fx-indicator] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2px;
+  height: 2.75rem;
+  background: var(--accent);
+  box-shadow: var(--glow-accent);
+  transform: translateY(var(--nav-y, 0px));
+}
+:root[data-theme="cyber"] [data-fx-indicator][data-state="off"] {
+  opacity: 0;
+}
+:root[data-theme="cyber"] [data-fx-indicator][data-ready="true"] {
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+@media (min-width: 768px) and (max-width: 1023px) {
+  :root[data-theme="cyber"] [data-fx-indicator] {
+    height: 1.25rem;
+    transform: translateY(calc(var(--nav-y, 0px) + 0.875rem));
+  }
+  :root[data-theme="cyber"] aside [data-fx="nav-item"][aria-current="page"] {
+    box-shadow: none;
+  }
+}
+@media (max-width: 767px) {
+  :root[data-theme="cyber"] [data-fx-indicator] {
+    display: none;
+  }
+}
+
+/* ---------- FX-01 開機畫面：逐行印出載入步驟（每行 120ms），最後一行帶游標；aria-hidden，資料一到就被內容取代 ---------- */
+:root[data-theme="cyber"] [data-fx-boot] {
+  color: var(--accent-text);
+}
+:root[data-theme="cyber"] [data-fx-boot-line] {
+  animation: cyber-fade-in var(--dur-fast) var(--ease-out);
+  animation-delay: calc(var(--stagger-boot) * var(--i, 0));
+  animation-fill-mode: backwards;
+}
+:root[data-theme="cyber"] [data-fx-boot-line]:last-child::after {
+  content: " \258C" / "";
+  animation: cyber-cursor var(--dur-cursor) steps(1) infinite;
+}
+
+@keyframes cyber-vt-in {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes cyber-title-type {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes cyber-cursor {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 
 /* ---------- 列印還原（§8）：一定要放在檔尾 ----------
@@ -1079,6 +1686,45 @@
   }
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx="seg"] > button > span:first-child {
     position: revert-layer;
+  }
+  /* P3：甜甜圈進場的容器（沒有 data-fx）：定位基準與掃描線偽元素退回標準 */
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-in="donut"] {
+    position: revert-layer;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-in="donut"]::after {
+    content: none;
+    display: none;
+  }
+  /* P3 塊 B：開機畫面（沒有 data-fx）的文字色與游標；nav-indicator 在 print:hidden 的側欄裡，但一併隱藏 */
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-boot] {
+    color: revert-layer;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-boot-line]:last-child::after {
+    content: none;
+    display: none;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-indicator] {
+    display: none;
+  }
+  /* FX-04 為 nav-indicator 定位而設的 position: relative，印出時退回標準（static） */
+  :root[data-theme="cyber"]:not(#cyber-print) aside > nav[aria-label="主要導覽"] {
+    position: revert-layer;
+  }
+  /* P3 塊 C：沒有 data-fx 的新裝飾——送出中進度條（印出時不顯示）、上傳掃描帶與被隱藏的旋轉圖示 */
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-progress] {
+    display: none;
+  }
+  /* P3 塊 C 後半：回收桶殘影的基礎樣式是「溶解後看不見」，印出時退回 */
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-ghost] {
+    opacity: revert-layer;
+    clip-path: revert-layer;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-scan] > svg {
+    visibility: revert-layer;
+  }
+  :root[data-theme="cyber"]:not(#cyber-print) [data-fx-scan]::after {
+    content: none;
+    display: none;
   }
   :root[data-theme="cyber"]:not(#cyber-print) [data-fx="check"] > svg {
     display: revert-layer;

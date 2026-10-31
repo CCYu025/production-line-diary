@@ -68,7 +68,9 @@ export function Lightbox({ photos, index, onIndexChange, onClose, onCloseAutoFoc
           </DialogPrimitive.Title>
           {photo ? (
             <>
+              {/* FX-36：以 src 當 key，換張照片就重新掛載，cyber 下新圖淡入（標準主題沒有動畫，視覺不變）；焦點在對話框／按鈕上，不在 <img> */}
               <img
+                key={photo.src}
                 src={photo.src}
                 alt={photo.caption || "照片"}
                 className="max-h-[calc(100%-5rem)] max-w-full rounded-md object-contain shadow-pop"

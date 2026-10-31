@@ -184,6 +184,18 @@ export function applyCopyToValues(
 }
 
 /** 套用複製後要標「請確認」的欄位。日期被鎖住（已有照片）時不標——使用者根本改不了它。 */
+/** 帶入時「真的被填了值」的欄位（cyber 主題 FX-27 帶入閃爍用；純展示，不影響表單值）。 */
+export function copiedFieldsOf(rec: DiaryRecord): FieldName[] {
+  const picked = pickCopyFields(rec);
+  const out: FieldName[] = [];
+  if (picked.problem) out.push("problem");
+  if (picked.category) out.push("category");
+  if (picked.duration != null) out.push("duration");
+  if (picked.action) out.push("action");
+  if (picked.rootCause) out.push("rootCause");
+  return out;
+}
+
 export function reviewFieldsAfterCopy(lockDateTime: boolean): ReviewField[] {
   return REVIEW_FIELDS.filter((f) => !(lockDateTime && f === "date"));
 }

@@ -3,6 +3,7 @@ import * as React from "react";
 import { SEVERITY_BG, SeverityBadge, StatusBadge } from "@/components/badges";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useStagger, useStaggerCap } from "@/lib/fx";
 import type { DiaryRecord } from "@/lib/types";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { cn } from "@/lib/utils";
@@ -52,6 +53,8 @@ function openHandlers(onOpen: RecordListProps["onOpen"], id: number) {
 
 function RecordTable({ rows, sortDesc, onToggleSort, onOpen, onCopy }: RecordListProps) {
   const SortIcon = sortDesc ? ArrowDown : ArrowUp;
+  // FX-16：前 20 列（手機 10）依序由左 8px 淡入。只有新掛載（進場、篩選結果出現新列）的列會播；不重新掛載任何列，捲動與分頁行為不變
+  const stagger = useStagger(rows.length, useStaggerCap());
   return (
     <div data-fx="panel" className="overflow-hidden rounded-lg border border-line bg-surface-raised">
       <table className="w-full table-fixed border-collapse text-sm">
@@ -91,10 +94,11 @@ function RecordTable({ rows, sortDesc, onToggleSort, onOpen, onCopy }: RecordLis
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {rows.map((r, i) => (
             <tr
               key={r.id}
               data-fx="row"
+              {...stagger(i)}
               data-record-id={r.id}
               tabIndex={0}
               {...openHandlers(onOpen, r.id)}
@@ -160,13 +164,15 @@ function CopyButton({ onCopy }: { onCopy: () => void }) {
 }
 
 function RecordCards({ rows, onOpen }: RecordListProps) {
+  const stagger = useStagger(rows.length, useStaggerCap());
   return (
     <ul className="flex flex-col gap-2">
-      {rows.map((r) => (
+      {rows.map((r, i) => (
         <li key={r.id}>
           <button
             type="button"
             data-fx="row"
+            {...stagger(i)}
             data-record-id={r.id}
             onClick={(e) => onOpen(r.id, e.currentTarget)}
             className="relative block w-full overflow-hidden rounded-lg border border-line bg-surface-raised py-3 pl-5 pr-3 text-left active:bg-surface"

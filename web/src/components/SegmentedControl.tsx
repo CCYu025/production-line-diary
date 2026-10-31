@@ -17,13 +17,15 @@ interface SegmentedControlProps<T extends string> {
   /** 群組的名稱（輔助科技唸出來），例如「處理狀態」 */
   label: string;
   className?: string;
+  /** 被「建議」的選項（純展示，例如依耗時建議的嚴重度）：該選項帶 data-fx-suggested，cyber 主題在它變成建議時閃一次光暈 */
+  suggestedValue?: T | null | undefined;
 }
 
 /**
  * 分段按鈕（常駐、單選）。每顆是真正的 <button aria-pressed>，Tab / Space / Enter 可操作。
  * 用在儀表板範圍切換與紀錄列表的狀態、嚴重度篩選。
  */
-export function SegmentedControl<T extends string>({ options, value, onChange, label, className }: SegmentedControlProps<T>) {
+export function SegmentedControl<T extends string>({ options, value, onChange, label, className, suggestedValue }: SegmentedControlProps<T>) {
   return (
     <div
       role="group"
@@ -38,6 +40,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
             key={o.value}
             type="button"
             aria-pressed={on}
+            data-fx-suggested={suggestedValue != null && o.value === suggestedValue ? o.value : undefined}
             onClick={() => onChange(o.value)}
             className={cn(
               "inline-flex min-h-11 min-w-11 items-center justify-center whitespace-nowrap rounded-sm px-1 text-sm transition-colors max-md:flex-col max-md:py-1 md:min-h-9 md:gap-1.5 md:px-2.5",

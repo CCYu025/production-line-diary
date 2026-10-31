@@ -8,6 +8,7 @@ import { useIsDesktop } from "@/lib/useMediaQuery";
 import { cn } from "@/lib/utils";
 import { NAV_GROUPS, type NavEntry } from "./nav";
 import { THEME_TOGGLE, ThemeToggleState, useThemeToggle } from "./themeToggle";
+import { NavIndicator } from "./NavIndicator";
 import { useExportAction } from "./useExportAction";
 
 export const navItemClass =
@@ -92,6 +93,7 @@ const RailLink = React.forwardRef<
     <Link
       ref={ref}
       to={to}
+     
       data-fx="nav-item"
       aria-current={active ? "page" : undefined}
       className={cn(
@@ -138,6 +140,7 @@ export function Sidebar() {
     >
       <Link
         to="/dashboard"
+       
         aria-label="產線日誌，回到儀表板"
         className="flex items-center justify-center gap-2.5 rounded-md border-b border-line px-1 pb-3 lg:justify-start lg:px-2"
       >
@@ -175,6 +178,8 @@ export function Sidebar() {
             ))}
           </div>
         ))}
+        {/* 放在最後：定位的元素依 DOM 順序疊放，才會畫在目前頁項目的底色之上 */}
+        <NavIndicator />
       </nav>
 
       {/* 最底部：與導覽群組之間用分隔線隔開，不屬於任何導覽群組。平板圖示列的線與群組之間的 hr 一樣內縮（mx-2），桌面全寬 */}

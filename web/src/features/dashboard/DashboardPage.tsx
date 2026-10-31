@@ -1,3 +1,4 @@
+import { BootLoading } from "@/app/BootScreen";
 import { aggregate } from "@shared/aggregate";
 import * as React from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -97,7 +98,7 @@ export function DashboardPage() {
       />
 
       {records.isPending ? (
-        <DashboardSkeleton />
+        <BootLoading skeleton={<DashboardSkeleton />} />
       ) : records.isError ? (
         <ErrorState
           title="載入紀錄失敗"
