@@ -38,7 +38,10 @@ function hubMode(s: DirectorState): HubMode {
     case "EXITING":
       return "exiting";
     case "STATION":
+    case "SWITCHING": // 暫時的相容寫法（A2 會重做）：短轉場不經過控制室
       return "station";
+    case "BOOT":
+      return "hub";
   }
 }
 

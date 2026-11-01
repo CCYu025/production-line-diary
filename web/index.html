@@ -6,15 +6,31 @@
     <meta name="color-scheme" content="light dark" />
     <!--
       避免閃一幀標準主題：在第一次繪製之前同步把 cyber 套到 <html>（網址 ?theme= ＞ localStorage 的 pld.theme）。
-      只做「套上 cyber」這一件事；寫回偏好、清掉網址參數、切回標準時的還原仍由 src/lib/theme.ts 的 initTheme／applyTheme 負責。
+      只做「套上 cyber」這一件事（OS 模式也算：?mode=os，或已存的 pld.mode=os 且沒有 ?mode=web）；寫回偏好、清掉網址參數、切回標準時的還原仍由 src/lib/theme.ts 的 initTheme／applyTheme 負責。
       這裡的 key、值、屬性名稱要與 theme.ts 一致（theme.test.ts 會執行這段 script 並比對）。
     -->
     <script>
       (function () {
         try {
-          var t = new URLSearchParams(location.search).get("theme");
-          if (t !== "cyber" && t !== "standard") t = localStorage.getItem("pld.theme");
-          if (t === "cyber") {
+          var q = new URLSearchParams(location.search);
+          var t = q.get("theme");
+          if (t !== "cyber" && t !== "standard") {
+            try {
+              t = localStorage.getItem("pld.theme");
+            } catch (e) {
+              t = null;
+            }
+          }
+          // OS 模式（?mode= ＞ localStorage 的 pld.mode；?mode=web 蓋過已存的 os）一律用 cyber
+          var md = q.get("mode");
+          if (md !== "os" && md !== "web") {
+            try {
+              md = localStorage.getItem("pld.mode");
+            } catch (e) {
+              md = null;
+            }
+          }
+          if (t === "cyber" || md === "os") {
             var d = document.documentElement;
             var m = document.querySelector('meta[name="color-scheme"]');
             if (m) d.setAttribute("data-prev-color-scheme", m.getAttribute("content") || "");

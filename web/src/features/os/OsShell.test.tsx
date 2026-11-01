@@ -189,10 +189,18 @@ describe("OsShell", () => {
     expect(phase()).toBe("hub");
   });
 
-  it("頻道之間（頻道 → 另一頻道）是即時切換，不播轉場", () => {
+  it("頻道之間（頻道 → 另一頻道）是短轉場 SWITCHING（300ms）", () => {
     mount("/records");
     act(() => {
       void nav("/calendar");
+    });
+    expect(phase()).toBe("switching-pre");
+    act(() => {
+      vi.advanceTimersByTime(76);
+    });
+    expect(phase()).toBe("switching-post");
+    act(() => {
+      vi.advanceTimersByTime(300);
     });
     expect(phase()).toBe("station");
   });

@@ -13,6 +13,7 @@ import {
   subscribeTheme,
   switchTheme,
 } from "./theme";
+import { MODE_STORAGE_KEY } from "./mode";
 
 const root = document.documentElement;
 
@@ -385,5 +386,97 @@ describe("index.html 的開機 inline script（避免閃一幀標準主題）", 
     expect(metaContent()).toBe("dark");
     switchTheme("standard");
     expect(metaContent()).toBe("light dark");
+  });
+
+  describe("OS 模式（pld.mode / ?mode=）也套上 cyber（只套用、不寫入）", () => {
+    const reset = () => {
+      delete root.dataset.theme;
+      root.removeAttribute(PREV_COLOR_SCHEME_ATTR);
+      document.querySelector('meta[name="color-scheme"]')?.setAttribute("content", "light dark");
+    };
+
+    it("script 用到 pld.mode 與 os／web 值", () => {
+      expect(script).toContain(`"${MODE_STORAGE_KEY}"`);
+      expect(script).toContain('"os"');
+      expect(script).toContain('"web"');
+    });
+
+    it("已存 pld.mode=os：套 cyber、meta=dark、記下原值，且不寫入任何 storage", () => {
+      addMeta("light dark");
+      window.localStorage.setItem(MODE_STORAGE_KEY, "os");
+      const set = vi.spyOn(Storage.prototype, "setItem");
+      run();
+      expect(root.dataset.theme).toBe("cyber");
+      expect(metaContent()).toBe("dark");
+      expect(root.getAttribute(PREV_COLOR_SCHEME_ATTR)).toBe("light dark");
+      expect(set).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+    });
+
+    it("?mode=os 套 cyber（儲存的是 web 也一樣）", () => {
+      addMeta("light dark");
+      window.localStorage.setItem(MODE_STORAGE_KEY, "web");
+      setUrl("?mode=os");
+      run();
+      expect(root.dataset.theme).toBe("cyber");
+      expect(metaContent()).toBe("dark");
+    });
+
+    it("?mode=web 蓋過已存的 os：什麼都不做", () => {
+      addMeta("light dark");
+      window.localStorage.setItem(MODE_STORAGE_KEY, "os");
+      setUrl("?mode=web");
+      run();
+      expect(root.hasAttribute("data-theme")).toBe(false);
+      expect(metaContent()).toBe("light dark");
+    });
+
+    it("?mode=web 不影響 ?theme=cyber / 已存的 pld.theme=cyber", () => {
+      addMeta("light dark");
+      window.localStorage.setItem(MODE_STORAGE_KEY, "os");
+      setUrl("?mode=web&theme=cyber");
+      run();
+      expect(root.dataset.theme).toBe("cyber");
+      reset();
+      window.localStorage.setItem(THEME_STORAGE_KEY, "cyber");
+      setUrl("?mode=web");
+      run();
+      expect(root.dataset.theme).toBe("cyber");
+    });
+
+    it("pld.mode=web 或不認得的值：不套用", () => {
+      addMeta("light dark");
+      window.localStorage.setItem(MODE_STORAGE_KEY, "web");
+      run();
+      expect(root.hasAttribute("data-theme")).toBe(false);
+      window.localStorage.setItem(MODE_STORAGE_KEY, "banana");
+      run();
+      expect(root.hasAttribute("data-theme")).toBe(false);
+    });
+
+    it("localStorage 拋例外：?mode=os 仍套用；沒有 ?mode 時不套用、不拋錯", () => {
+      addMeta("light dark");
+      vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+        throw new Error("blocked");
+      });
+      setUrl("?mode=os");
+      expect(run).not.toThrow();
+      expect(root.dataset.theme).toBe("cyber");
+      reset();
+      setUrl("");
+      expect(run).not.toThrow();
+      expect(root.hasAttribute("data-theme")).toBe(false);
+    });
+
+    it("inline 已為 OS 模式套好 cyber → applyTheme(standard) 還原 meta 原值", () => {
+      addMeta("light dark");
+      window.localStorage.setItem(MODE_STORAGE_KEY, "os");
+      run();
+      applyTheme("cyber");
+      applyTheme("standard");
+      expect(root.hasAttribute("data-theme")).toBe(false);
+      expect(metaContent()).toBe("light dark");
+      expect(root.hasAttribute(PREV_COLOR_SCHEME_ATTR)).toBe(false);
+    });
   });
 });
