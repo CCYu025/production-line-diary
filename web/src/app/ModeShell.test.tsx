@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, Outlet, RouterProvider, useBlocker, useLocation, useNavigate } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createQueryClient } from "@/lib/queryClient";
 import { getMode, resetModeForTest, setMode } from "@/lib/mode";
@@ -93,6 +93,11 @@ afterEach(() => {
 });
 
 describe("ModeShell", () => {
+  // OsShell 是 React.lazy：第一次動態載入要轉換整串模組（三維、查詢層…），在負載高時會超過 waitFor 的 1 秒預設；先載入讓快取就緒
+  beforeAll(async () => {
+    await import("@/features/os/OsShell");
+  }, 60_000);
+
   it("網頁模式：AppShell，沒有 data-mode；/ → /dashboard；/os → /dashboard", async () => {
     mount("/");
     expect(screen.getByTestId("web-shell")).toBeInTheDocument();
