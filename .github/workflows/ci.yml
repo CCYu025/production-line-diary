@@ -31,3 +31,6 @@ jobs:
       - run: npm run test:web
 
       - run: npm run build
+
+      # OS 模式延遲載入檢查（docs/os-mode-spec.md A5、P4）：網頁模式的進入點不含 three／OS 程式碼，大小不超標
+      - run: npm run verify:os-bundle

@@ -1,0 +1,5 @@
+{
+  "entryGzipBytes": 196421,
+  "cssGzipBytes": 296977,
+  "note": "gzip -9 of entry static-graph JS; written by os-bundle.mjs --write-baseline"
+}

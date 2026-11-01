@@ -6,7 +6,8 @@ import { RecordsPage } from "@/features/records/RecordsPage";
 import { ReportPage } from "@/features/report/ReportPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { TrashPage } from "@/features/trash/TrashPage";
-import { AppShell, type RouteHandle } from "./AppShell";
+import { type RouteHandle } from "./AppShell";
+import { IndexRedirect, ModeShell, OsRouteElement } from "./ModeShell";
 import { PAGE_TITLES } from "./nav";
 
 const handle = (title: string): RouteHandle => ({ title });
@@ -19,9 +20,9 @@ const handle = (title: string): RouteHandle => ({ title });
 export const routes = [
   {
     path: "/",
-    element: <AppShell />,
+    element: <ModeShell />,
     children: [
-      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { index: true, element: <IndexRedirect /> },
       { path: "dashboard", element: <DashboardPage />, handle: handle(PAGE_TITLES.dashboard) },
       { path: "records", element: <RecordsPage />, handle: handle(PAGE_TITLES.records) },
       { path: "records/new", element: <RecordNewPage />, handle: handle(PAGE_TITLES.recordsNew) },
@@ -30,6 +31,8 @@ export const routes = [
       { path: "report", element: <ReportPage />, handle: handle(PAGE_TITLES.report) },
       { path: "trash", element: <TrashPage />, handle: handle(PAGE_TITLES.trash) },
       { path: "settings", element: <SettingsPage />, handle: handle(PAGE_TITLES.settings) },
+      // PLD/OS 控制室（docs/os-mode-spec.md §3.2）：只在 OS 模式有內容；網頁模式導向儀表板。
+      { path: "os", element: <OsRouteElement />, handle: handle("控制室") },
       // 元件預覽只在開發模式（npm run dev:web）存在；正式建置時整段（含頁面程式碼）會被移除。
       ...(import.meta.env.DEV
         ? [

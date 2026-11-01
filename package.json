@@ -14,6 +14,7 @@
     "build": "vite build --config web/vite.config.ts",
     "typecheck": "tsc --noEmit -p web/tsconfig.json",
     "test:web": "vitest run --config web/vite.config.ts",
+    "verify:os-bundle": "node scripts/verify/os-bundle.mjs",
     "migrate": "node --env-file-if-exists=.env scripts/migrate.js",
     "test": "node --test \"test/**/*.test.js\"",
     "check": "node --check backend/server.js && node --check backend/lib/aggregate.js && node --check backend/lib/store.js && node --check backend/lib/xlsx.js && node --check backend/lib/migrateLogic.js && node --check backend/lib/photos.js && node --check backend/lib/photoCaptions.js && node --check backend/lib/validate.js && node --check backend/lib/webUi.js && node --check scripts/migrate.js && node --check scripts/ensure-web-build.js"
@@ -27,6 +28,7 @@
     "@radix-ui/react-popover": "1.3.1",
     "@radix-ui/react-slot": "1.3.3",
     "@radix-ui/react-tooltip": "1.2.16",
+    "@react-three/fiber": "8.18.0",
     "@tanstack/react-query": "5.104.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
@@ -39,7 +41,8 @@
     "react-dom": "18.3.1",
     "react-router-dom": "7.18.4",
     "sonner": "2.0.8",
-    "tailwind-merge": "3.7.0"
+    "tailwind-merge": "3.7.0",
+    "three": "0.186.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
@@ -50,6 +53,7 @@
     "@types/node": "24.19.0",
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
+    "@types/three": "0.186.0",
     "@vitejs/plugin-react": "5.2.0",
     "jsdom": "29.1.1",
     "tailwindcss": "4.3.3",

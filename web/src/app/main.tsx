@@ -16,12 +16,15 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 import { createQueryClient } from "@/lib/queryClient";
+import { initMode } from "@/lib/mode";
 import { initTheme } from "@/lib/theme";
 import { Providers } from "./Providers";
 import { createRouter } from "./routes";
 
 // 主題要在 createRoot 之前同步套用（網址 ?theme= ＞ 已儲存的偏好），避免先閃一下標準主題。
 initTheme();
+// 模式（?mode=os｜web，只在這個分頁有效）同樣在 createRoot 之前決定，整個頁面生命週期內不變。
+initMode();
 
 const queryClient = createQueryClient();
 const router = createRouter();
