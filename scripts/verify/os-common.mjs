@@ -12,7 +12,7 @@ export const SEL = {
 // Sortable control on /records (RecordList table header button, or FilterBar sort button on narrow screens).
 export const SORT_EXPR = `[...document.querySelectorAll('main th[aria-sort] button, main button[aria-label*="切換排序"], main button[aria-label*="排序"]')].find(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0})`;
 export const q = (sel) => `document.querySelector(${JSON.stringify(sel)})`;
-export const PHASE_EXPR = `document.documentElement.dataset.osPhase||null`;
+export const PHASE_EXPR = `(document.documentElement.dataset.osPhase||null)`;
 
 /** base "http://localhost:3114/" -> "http://localhost:3114/?mode=os&osdebug=..#/records" (query BEFORE hash). */
 export function osUrl(base, { hash = '', osdebug = '' } = {}) {

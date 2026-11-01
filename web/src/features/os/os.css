@@ -110,7 +110,9 @@
 }
 
 :root[data-mode="os"] .os-station[data-hidden="true"] {
+  /* visibility 之外再加 opacity：Cyber 的偽元素動畫可能把 visibility 蓋回 visible（會在交接點之前漏出來） */
   visibility: hidden;
+  opacity: 0;
 }
 
 :root[data-mode="os"] .os-frame {

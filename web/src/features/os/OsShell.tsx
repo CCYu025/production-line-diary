@@ -115,7 +115,7 @@ export default function OsShell() {
       <div className="os-hub" data-os="hub" data-visible={hubVisible ? "true" : "false"} aria-hidden="true">
         <HubCanvas running={hubVisible} mode={hubMode(state)} clock={clock} reduced={reduced} />
       </div>
-      <Hud channel={channel} active={hudActive} buttonRef={hudButtonRef} onEnter={() => navigate(channel.path)} />
+      <Hud channel={channel} active={hudActive} buttonRef={hudButtonRef} onEnter={() => void navigate(channel.path, { flushSync: true })} />
       {showStation ? (
         <div
           className="os-station"
@@ -125,7 +125,7 @@ export default function OsShell() {
         >
           <StationFrame
             tag={stationChannel?.id ?? ""}
-            onBack={() => navigate(HUB_PATH)}
+            onBack={() => void navigate(HUB_PATH, { flushSync: true })}
             onSkipToMain={() => mainRef.current?.focus()}
           >
             <main
