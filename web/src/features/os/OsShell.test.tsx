@@ -989,7 +989,7 @@ describe("OsShell：開機（X2）", () => {
     mount("/os");
     expect(phase()).toBe("boot");
     expect(window.sessionStorage.getItem("pld.os.boot")).toBeNull();
-    advance(3999);
+    advance(3899);
     expect(phase()).toBe("boot");
     advance(1);
     expect(phase()).toBe("hub");

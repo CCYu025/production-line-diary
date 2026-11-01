@@ -47,13 +47,13 @@ export const SWITCH_TOTAL_CAP_MS = 300;
  */
 export const BOOT_FULL = {
   /** 總長上限 ≤ 4,000ms */
-  total: 4000,
+  total: 3900,
   /** B2：BIOS 自檢文字逐行出現 */
-  B2: [0, 2400],
+  B2: [0, 2300],
   /** B3：一條亮線展開成全畫面 */
-  B3: [2400, 3000],
+  B3: [2300, 2900],
   /** B4：線框從中心向外描繪 */
-  B4: [3000, 4000],
+  B4: [2900, 3900],
 } as const;
 
 export const BOOT_SHORT = {
