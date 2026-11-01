@@ -1,0 +1,172 @@
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { createMemoryRouter, Outlet, RouterProvider, useBlocker, useLocation, useNavigate } from "react-router-dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getMode, resetModeForTest, setMode } from "@/lib/mode";
+import { THEME_STORAGE_KEY } from "@/lib/theme";
+
+// 網頁外殼換成最小替身（真正的 AppShell 需要整套資料層）；OsShell 用真的，只把 3D 與 WebGL 偵測換掉
+vi.mock("./AppShell", () => ({
+  AppShell: () => (
+    <div data-testid="web-shell">
+      <main id="main" tabIndex={-1}>
+        <Outlet />
+      </main>
+    </div>
+  ),
+}));
+vi.mock("@/features/os/hub/HubCanvas", () => ({ default: () => null, WebglFallback: () => null }));
+vi.mock("@/features/os/webgl", async (orig) => ({ ...(await orig<typeof import("@/features/os/webgl")>()), webglAvailable: () => true }));
+
+import { ENTER_OS_STATE } from "./osEntry";
+import { IndexRedirect, ModeShell, OsRouteElement } from "./ModeShell";
+
+let nav: ReturnType<typeof useNavigate>;
+let loc: ReturnType<typeof useLocation>;
+function Probe() {
+  nav = useNavigate();
+  loc = useLocation();
+  return null;
+}
+function BlockedPage() {
+  const blocker = useBlocker(true);
+  return (
+    <div>
+      <span data-testid="blocker">{blocker.state}</span>
+      {blocker.state === "blocked" ? <button onClick={() => blocker.reset()}>留下</button> : null}
+    </div>
+  );
+}
+
+function mount(initial: string) {
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/",
+        element: (
+          <>
+            <Probe />
+            <ModeShell />
+          </>
+        ),
+        children: [
+          { index: true, element: <IndexRedirect /> },
+          { path: "dashboard", element: <div>dashboard-page</div>, handle: { title: "儀表板" } },
+          { path: "records", element: <div>records-page</div>, handle: { title: "紀錄" } },
+          { path: "form", element: <BlockedPage />, handle: { title: "表單" } },
+          { path: "os", element: <OsRouteElement />, handle: { title: "控制室" } },
+        ],
+      },
+    ],
+    { initialEntries: [initial] },
+  );
+  return render(<RouterProvider router={router} />);
+}
+
+const phase = () => document.documentElement.dataset.osPhase;
+
+beforeEach(() => {
+  window.localStorage.clear();
+  resetModeForTest();
+  document.documentElement.removeAttribute("data-theme");
+  document.documentElement.removeAttribute("data-mode");
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  resetModeForTest();
+});
+
+describe("ModeShell", () => {
+  it("網頁模式：AppShell，沒有 data-mode；/ → /dashboard；/os → /dashboard", async () => {
+    mount("/");
+    expect(screen.getByTestId("web-shell")).toBeInTheDocument();
+    await waitFor(() => expect(loc.pathname).toBe("/dashboard"));
+    act(() => void nav("/os"));
+    await waitFor(() => expect(loc.pathname).toBe("/dashboard"));
+    expect(document.documentElement.dataset.mode).toBeUndefined();
+  });
+
+  it("OS 模式：延遲載入 OsShell；/ → /os（控制室）", async () => {
+    setMode("os");
+    mount("/");
+    await waitFor(() => expect(phase()).toBe("hub"));
+    expect(loc.pathname).toBe("/os");
+    expect(screen.queryByTestId("web-shell")).toBeNull();
+    expect(document.documentElement.dataset.mode).toBe("os");
+  });
+
+  it("執行期切換（不重新載入、路由保留）：web → os → web；回到網頁模式時還原主題偏好並把焦點移到 #main", async () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, "standard");
+    mount("/records");
+    expect(screen.getByTestId("web-shell")).toBeInTheDocument();
+    const marker = document.body as HTMLElement & { __kept?: number };
+    marker.__kept = 1;
+
+    act(() => setMode("os"));
+    await waitFor(() => expect(phase()).toBe("station"));
+    expect(document.documentElement.dataset.theme).toBe("cyber");
+    expect(loc.pathname).toBe("/records");
+    expect(screen.queryByTestId("web-shell")).toBeNull();
+
+    act(() => setMode("web"));
+    await waitFor(() => expect(screen.getByTestId("web-shell")).toBeInTheDocument());
+    expect(document.documentElement.dataset.mode).toBeUndefined();
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(loc.pathname).toBe("/records");
+    expect(document.activeElement).toBe(document.getElementById("main"));
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("standard");
+    expect(marker.__kept).toBe(1);
+  });
+
+  it("回到網頁模式時 pld.theme 是 cyber → 維持 cyber", async () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, "cyber");
+    setMode("os");
+    mount("/records");
+    await waitFor(() => expect(phase()).toBe("station"));
+    act(() => setMode("web"));
+    await waitFor(() => expect(screen.getByTestId("web-shell")).toBeInTheDocument());
+    expect(document.documentElement.dataset.theme).toBe("cyber");
+  });
+
+  it("OS 模式離開（控制室）：先到 /dashboard（replace），再換回網頁外殼", async () => {
+    setMode("os");
+    mount("/os");
+    await waitFor(() => expect(phase()).toBe("hub"));
+    act(() => screen.getByRole("button", { name: "EXIT TO WEB" }).click());
+    await waitFor(() => expect(screen.getByTestId("web-shell")).toBeInTheDocument());
+    expect(loc.pathname).toBe("/dashboard");
+    expect(getMode()).toBe("web");
+    expect(document.activeElement).toBe(document.getElementById("main"));
+  });
+});
+
+describe("側欄入口的導覽（ENTER_OS_STATE）", () => {
+  it("web 模式導覽到 /os 並帶 state：抵達後切換為 OS 模式（寫入 pld.mode），停在控制室，焦點在選中的頻道按鈕", async () => {
+    mount("/records");
+    act(() => void nav("/os", { state: ENTER_OS_STATE }));
+    await waitFor(() => expect(phase()).toBe("hub"));
+    expect(getMode()).toBe("os");
+    expect(window.localStorage.getItem("pld.mode")).toBe("os");
+    expect(loc.pathname).toBe("/os");
+    expect(document.activeElement).toBe(document.querySelector('[data-os="hud-ch"][aria-current="true"]'));
+  });
+
+  it("沒帶 state 的 /os：仍導向 /dashboard，模式不變", async () => {
+    mount("/records");
+    act(() => void nav("/os"));
+    await waitFor(() => expect(loc.pathname).toBe("/dashboard"));
+    expect(getMode()).toBe("web");
+  });
+
+  it("頁面有 useBlocker（未儲存變更）：先被攔下、模式不變、頁面沒有被卸載；留下後仍是網頁模式", async () => {
+    mount("/form");
+    act(() => void nav("/os", { state: ENTER_OS_STATE }));
+    await waitFor(() => expect(screen.getByTestId("blocker").textContent).toBe("blocked"));
+    expect(getMode()).toBe("web");
+    expect(loc.pathname).toBe("/form");
+    act(() => screen.getByRole("button", { name: "留下" }).click());
+    await waitFor(() => expect(screen.getByTestId("blocker").textContent).toBe("unblocked"));
+    expect(getMode()).toBe("web");
+    expect(loc.pathname).toBe("/form");
+  });
+});

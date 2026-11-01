@@ -1,12 +1,13 @@
-import { Factory, Loader2, Plus } from "lucide-react";
+import { Factory, Loader2, MonitorPlay, Plus } from "lucide-react";
 import * as React from "react";
-import { Link, useMatch } from "react-router-dom";
+import { Link, useMatch, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useTrashCount } from "@/lib/queries";
 import { useIsDesktop } from "@/lib/useMediaQuery";
 import { cn } from "@/lib/utils";
 import { NAV_GROUPS, type NavEntry } from "./nav";
+import { ENTER_OS_STATE, preloadOsShell } from "./osEntry";
 import { THEME_TOGGLE, ThemeToggleState, useThemeToggle } from "./themeToggle";
 import { NavIndicator } from "./NavIndicator";
 import { useExportAction } from "./useExportAction";
@@ -79,6 +80,30 @@ function ThemeToggleItem() {
         <ThemeToggleState isCyber={isCyber} className="hidden lg:ml-auto lg:inline" />
       </button>
     </MaybeTooltip>
+  );
+}
+
+/**
+ * 「OS 模式」入口（docs/os-mode-spec.md D1）。不帶 data-fx="nav-item"：既有的 dataFx 測試（不可改）固定數 nav-item 的個數。
+ * 只在桌面（≥ 1024）渲染——不是 CSS 隱藏，平板圖示列與手機完全不輸出這個節點。
+ * 點下去先導覽到 /os（router 的 useBlocker 仍會攔下未儲存的表單），抵達後 OsRouteElement 才切換模式；焦點由控制室掛載時移到選中的頻道按鈕。
+ */
+function OsModeItem() {
+  const isDesktop = useIsDesktop();
+  const navigate = useNavigate();
+  if (!isDesktop) return null;
+  return (
+    <button
+      type="button"
+      data-os="enter-os"
+      className={cn(navItemClass, "mt-1")}
+      onClick={() => void navigate("/os", { state: ENTER_OS_STATE })}
+      onPointerEnter={preloadOsShell}
+      onFocus={preloadOsShell}
+    >
+      <MonitorPlay className="size-5 shrink-0 text-ink-muted" aria-hidden="true" />
+      <span>OS 模式</span>
+    </button>
   );
 }
 
@@ -187,6 +212,7 @@ export function Sidebar() {
       {/* 最底部：與導覽群組之間用分隔線隔開，不屬於任何導覽群組。平板圖示列的線與群組之間的 hr 一樣內縮（mx-2），桌面全寬 */}
       <div className="mx-2 flex flex-col border-t border-line pt-3 lg:mx-0">
         <ThemeToggleItem />
+        <OsModeItem />
       </div>
     </aside>
   );

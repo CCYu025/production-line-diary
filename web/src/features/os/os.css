@@ -4,7 +4,7 @@
  *   1. 每條規則的每個選擇器都以 :root[data-mode="os"] 開頭（網頁模式的 <html> 沒有這個屬性，整份都不會套用）。
  *   2. 不寫死色碼：顏色一律取自 Cyber token（var(--…)）。
  *   3. 檔尾是 @media print：隱藏所有 OS 元素、讓列印和標準淺色主題列印一模一樣。
- * 圖層（由下到上）：控制室 3D（0）→ HUD（20，互動層）→ 工作站（10）→ 轉場疊層（40）；Radix 浮層與 toast 是 z-50 以上。
+ * 圖層（由下到上）：控制室 3D（0）→ 工作站（10）→ HUD（20，互動層；工作站顯示時 HUD 隱藏）→ 轉場疊層（40）→ 指令列與 Radix 浮層（50+）、toast。
  */
 
 :root[data-mode="os"],
@@ -51,7 +51,7 @@
   text-decoration: underline;
 }
 
-/* ---------- HUD（真實可操作的按鈕） ---------- */
+/* ---------- HUD（真實可操作的層）：上方狀態列、下方頻道清單，中間留給 3D 螢幕 ---------- */
 
 :root[data-mode="os"] .os-hud {
   position: absolute;
@@ -59,10 +59,7 @@
   z-index: 20;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 14px;
-  padding-bottom: 7vh;
+  justify-content: space-between;
   pointer-events: none;
 }
 
@@ -74,30 +71,226 @@
   pointer-events: auto;
 }
 
+:root[data-mode="os"] .os-statusbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  min-height: 48px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink-1);
+  font: 500 14px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
+}
+
+:root[data-mode="os"] .os-statusbar-title {
+  color: var(--accent-text);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+:root[data-mode="os"] .os-clock {
+  margin-left: auto;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+:root[data-mode="os"] .os-exit,
+:root[data-mode="os"] .os-gate-button {
+  min-height: 36px;
+  padding: 4px 14px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent-text);
+  font: 600 13px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+:root[data-mode="os"] .os-exit:hover,
+:root[data-mode="os"] .os-gate-button:hover {
+  background: var(--accent-wash);
+}
+
+:root[data-mode="os"] .os-channels {
+  flex: none;
+  padding: 12px 16px 20px;
+  border-top: 1px solid var(--line-strong);
+  background: var(--surface);
+}
+
+:root[data-mode="os"] .os-channels ul {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 :root[data-mode="os"] .os-hud-button {
   min-height: 44px;
-  padding: 10px 32px;
-  border: 1px solid var(--accent);
-  background: var(--surface);
-  color: var(--accent-text);
-  font: 600 16px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
-  letter-spacing: 0.08em;
+  padding: 8px 16px;
+  border: 1px solid var(--line-strong);
+  background: var(--page);
+  color: var(--ink-2);
+  font: 500 14px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 :root[data-mode="os"] .os-hud-button:hover {
   background: var(--accent-wash);
+  color: var(--ink-1);
 }
 
-:root[data-mode="os"] .os-hud-hint {
-  margin: 0;
-  color: var(--ink-2);
-  font: 400 13px/1.4 "IBM Plex Mono", "Noto Sans TC", monospace;
-}
-
-:root[data-mode="os"] .os-hud-hint a {
+:root[data-mode="os"] .os-hud-button[aria-current="true"] {
+  border-color: var(--accent);
+  background: var(--accent-wash);
   color: var(--accent-text);
-  text-decoration: underline;
+  font-weight: 700;
+}
+
+/* ---------- 裝置門檻（視窗小於 1024×600） ---------- */
+
+:root[data-mode="os"] .os-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px max(24px, 8vw);
+  background: var(--page);
+  color: var(--accent-text);
+  font: 400 16px/1.6 "IBM Plex Mono", "Noto Sans TC", monospace;
+}
+
+:root[data-mode="os"] .os-gate p,
+:root[data-mode="os"] .os-gate h1 {
+  margin: 0;
+}
+
+:root[data-mode="os"] .os-gate-title {
+  color: var(--ink-1);
+  font-size: 22px;
+  letter-spacing: 0.16em;
+}
+
+:root[data-mode="os"] .os-gate-button {
+  margin-top: 14px;
+  min-height: 44px;
+  padding: 8px 20px;
+  font-size: 15px;
+}
+
+/* ---------- 指令列（Radix Dialog，掛在 body；z-50 以上，蓋住所有 OS 圖層） ---------- */
+
+:root[data-mode="os"] .os-palette-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--overlay);
+}
+
+:root[data-mode="os"] .os-palette {
+  position: fixed;
+  top: 16vh;
+  left: 50%;
+  z-index: 51;
+  width: min(600px, calc(100vw - 32px));
+  max-height: 68vh;
+  overflow: auto;
+  transform: translateX(-50%);
+  padding: 10px 12px 12px;
+  border: 1px solid var(--accent);
+  background: var(--surface-raised);
+  color: var(--ink-1);
+  box-shadow: var(--shadow);
+  font: 400 15px/1.5 "IBM Plex Mono", "Noto Sans TC", monospace;
+}
+
+:root[data-mode="os"] .os-palette-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+:root[data-mode="os"] .os-palette-prompt {
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+:root[data-mode="os"] .os-palette-input {
+  flex: 1;
+  min-height: 40px;
+  padding: 4px 6px;
+  border: 0;
+  border-bottom: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--ink-1);
+  font: inherit;
+}
+
+:root[data-mode="os"] .os-palette-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+:root[data-mode="os"] .os-palette-list[hidden] {
+  display: none;
+}
+
+:root[data-mode="os"] .os-palette-option {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  padding: 6px 8px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+:root[data-mode="os"] .os-palette-option[data-active="true"],
+:root[data-mode="os"] .os-palette-option:hover {
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+
+:root[data-mode="os"] .os-palette-cmd {
+  min-width: 9ch;
+  font-weight: 600;
+}
+
+:root[data-mode="os"] .os-palette-error {
+  margin: 8px 0 0;
+  color: var(--critical);
+}
+
+:root[data-mode="os"] .os-palette-help {
+  margin: 8px 0 0;
+  color: var(--ink-2);
+}
+
+:root[data-mode="os"] .os-palette-help > div {
+  display: flex;
+  gap: 16px;
+}
+
+:root[data-mode="os"] .os-palette-help dt {
+  min-width: 9ch;
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+:root[data-mode="os"] .os-palette-help dd {
+  margin: 0;
 }
 
 /* ---------- 工作站（C 區內容＋B 區外框） ---------- */
@@ -209,6 +402,11 @@
 @media print {
   :root[data-mode="os"] .os-hub,
   :root[data-mode="os"] .os-hud,
+  :root[data-mode="os"] .os-statusbar,
+  :root[data-mode="os"] .os-channels,
+  :root[data-mode="os"] .os-gate,
+  :root[data-mode="os"] .os-palette,
+  :root[data-mode="os"] .os-palette-overlay,
   :root[data-mode="os"] #os-overlay,
   :root[data-mode="os"] .os-frame-bar,
   :root[data-mode="os"] .os-skip,

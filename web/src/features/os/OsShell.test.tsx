@@ -1,26 +1,56 @@
-import { act, render, screen } from "@testing-library/react";
-import { createMemoryRouter, RouterProvider, useNavigate } from "react-router-dom";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { createMemoryRouter, RouterProvider, useBlocker, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BootLoading, resetBootForTest } from "@/app/BootScreen";
+import { notify } from "@/lib/feedback";
+import { getMode, resetModeForTest, setMode } from "@/lib/mode";
 import { applyTheme, getThemePreference, THEME_STORAGE_KEY } from "@/lib/theme";
 
 const themeMock = vi.hoisted(() => ({ switchTheme: vi.fn() }));
 vi.mock("@/lib/theme", async (orig) => ({ ...(await orig<typeof import("@/lib/theme")>()), switchTheme: themeMock.switchTheme }));
-// 3D／WebGL 層在 jsdom 沒有意義：換成空殼
-vi.mock("./hub/HubCanvas", () => ({ default: () => null, WebglFallback: () => null }));
+
+// 3D／WebGL 層在 jsdom 沒有意義：換成空殼（記下收到的 props，測試可以呼叫 onFailure）
+const hubMock = vi.hoisted(() => ({ props: null as null | Record<string, unknown> }));
+vi.mock("./hub/HubCanvas", () => ({
+  default: (props: Record<string, unknown>) => {
+    hubMock.props = props;
+    return null;
+  },
+  WebglFallback: () => null,
+}));
+
+const webglMock = vi.hoisted(() => ({ available: vi.fn(() => true) }));
+vi.mock("./webgl", async (orig) => ({ ...(await orig<typeof import("./webgl")>()), webglAvailable: webglMock.available }));
 
 import OsShell from "./OsShell";
+import { shouldKeepCyberOnExit, WEBGL_FALLBACK_TEXT } from "./webgl";
 
 let nav: ReturnType<typeof useNavigate>;
+let loc: ReturnType<typeof useLocation>;
 function Probe() {
   nav = useNavigate();
+  loc = useLocation();
   return null;
 }
-function Records() {
-  return <div>records-page</div>;
-}
+const page = (name: string) => <div>{name}-page</div>;
 function Dash() {
   return <BootLoading skeleton={<div>skeleton</div>} />;
+}
+/** 帶 useBlocker 的頁面（模擬有未儲存變更的表單／設定頁） */
+function BlockedPage() {
+  const blocker = useBlocker(true);
+  return (
+    <div>
+      <span data-testid="blocker">{blocker.state}</span>
+      {blocker.state === "blocked" ? (
+        <>
+          <button onClick={() => blocker.reset()}>留下</button>
+          <button onClick={() => blocker.proceed()}>離開</button>
+        </>
+      ) : null}
+      <input aria-label="欄位" />
+    </div>
+  );
 }
 
 function Root() {
@@ -40,8 +70,12 @@ function mount(initial: string) {
         element: <Root />,
         children: [
           { path: "dashboard", element: <Dash />, handle: { title: "儀表板" } },
-          { path: "records", element: <Records />, handle: { title: "紀錄" } },
-          { path: "calendar", element: <div>cal</div>, handle: { title: "日曆" } },
+          { path: "records", element: page("records"), handle: { title: "紀錄" } },
+          { path: "records/new", element: page("new"), handle: { title: "新增紀錄" } },
+          { path: "records/:id/edit", element: page("edit"), handle: { title: "編輯紀錄" } },
+          { path: "calendar", element: page("cal"), handle: { title: "日曆" } },
+          { path: "report", element: page("report"), handle: { title: "報表" } },
+          { path: "form", element: <BlockedPage />, handle: { title: "表單" } },
           { path: "os", element: null, handle: { title: "控制室" } },
         ],
       },
@@ -52,23 +86,58 @@ function mount(initial: string) {
 }
 
 const phase = () => document.documentElement.dataset.osPhase;
-const hudButton = () => screen.getByRole("button", { name: /CH-02 紀錄/ });
+const hudButton = (name = "CH-02 紀錄") => screen.getByRole("button", { name });
+const station = () => document.querySelector('[data-os="station"]');
+const live = () => document.querySelector('[data-os="live"]')!.textContent;
+const key = (k: string, init: KeyboardEventInit = {}, target: Element | Window = document.body) => {
+  act(() => {
+    fireEvent.keyDown(target, { key: k, ...init });
+  });
+};
+const advance = (ms: number) =>
+  act(() => {
+    vi.advanceTimersByTime(ms);
+  });
+const click = (el: HTMLElement) =>
+  act(() => {
+    el.click();
+  });
+const go = (to: string) =>
+  act(() => {
+    void nav(to);
+  });
+/** 等轉場跑完 */
+const settle = () => advance(1300);
+
+function setViewport(w: number, h: number) {
+  act(() => {
+    Object.assign(window, { innerWidth: w, innerHeight: h });
+    window.dispatchEvent(new Event("resize"));
+  });
+}
 
 beforeEach(() => {
   vi.useFakeTimers();
   window.localStorage.clear();
   window.sessionStorage.clear();
   resetBootForTest();
+  resetModeForTest();
+  setMode("os");
   document.documentElement.removeAttribute("data-theme");
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   themeMock.switchTheme.mockClear();
+  webglMock.available.mockReset();
+  webglMock.available.mockReturnValue(true);
+  hubMock.props = null;
+  Object.assign(window, { innerWidth: 1280, innerHeight: 800 });
 });
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  Object.assign(window, { innerWidth: 1024, innerHeight: 768 });
 });
 
-describe("OsShell", () => {
+describe("OsShell：基本與 A9", () => {
   it("A9：不呼叫 switchTheme、不寫 pld.theme；data-theme 變 cyber，卸載後還原；掛上 data-mode", () => {
     const { unmount } = mount("/records");
     expect(themeMock.switchTheme).not.toHaveBeenCalled();
@@ -89,11 +158,25 @@ describe("OsShell", () => {
     expect(document.documentElement.dataset.theme).toBe("cyber");
   });
 
+  it("A9：整段操作（進入、指令列切換、離開、離開 OS 模式）都不呼叫 switchTheme、不寫 pld.theme", () => {
+    mount("/os");
+    click(hudButton());
+    settle();
+    key("k", { ctrlKey: true });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "cal" } });
+    key("Enter", {}, screen.getByRole("combobox"));
+    advance(500);
+    settle();
+    go("/os");
+    settle();
+    click(screen.getByRole("button", { name: "EXIT TO WEB" }));
+    expect(themeMock.switchTheme).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+  });
+
   it("A9：OS 模式下儀表板的 BootScreen（FX-01）不播放", () => {
     mount("/dashboard");
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
+    advance(500);
     expect(screen.queryByText(/連線本機伺服器/)).toBeNull();
   });
 
@@ -108,53 +191,367 @@ describe("OsShell", () => {
     expect(phase()).toBe("hub");
   });
 
-  it("直接載入頻道路徑：station，沒有轉場；有 main#main 與頁面", () => {
+  it("直接載入頻道路徑：station，沒有轉場；有 main#main 與頁面；不搶焦點；沒有宣告", () => {
     mount("/records");
     expect(phase()).toBe("station");
     expect(document.querySelector("main#main")).not.toBeNull();
     expect(screen.getByText("records-page")).toBeInTheDocument();
     expect(document.title).toBe("紀錄｜產線日誌");
+    expect(document.activeElement).toBe(document.body);
+    expect(live()).toBe("");
   });
 
-  it("直接載入 /os：hub，HUD 按鈕可點、沒有工作站", () => {
+  it("直接載入 /os：hub，沒有工作站；焦點在選中的頻道按鈕；沒有宣告", () => {
     mount("/os");
     expect(phase()).toBe("hub");
-    expect(document.querySelector('[data-os="station"]')).toBeNull();
-    expect(hudButton()).toBeInTheDocument();
+    expect(station()).toBeNull();
+    expect(hudButton()).toHaveAttribute("aria-current", "true");
+    expect(document.activeElement).toBe(hudButton());
+    expect(live()).toBe("");
+    expect(document.title).toBe("控制室｜產線日誌");
   });
 
-  it("進入：點 HUD → entering-pre（工作站 inert＋隱藏）→ 875ms 交接 → 1200ms station；焦點在交接點移到 main", () => {
+  it("疊層：aria-hidden、無轉場時 data-active=false", () => {
+    mount("/records");
+    const overlay = document.getElementById("os-overlay")!;
+    expect(overlay.getAttribute("aria-hidden")).toBe("true");
+    expect(overlay.getAttribute("data-active")).toBe("false");
+  });
+
+  it("跳到主要內容連結把焦點移到 #main", () => {
+    mount("/records");
+    click(screen.getByRole("button", { name: "跳到主要內容" }));
+    expect(document.activeElement).toBe(document.getElementById("main"));
+  });
+});
+
+describe("OsShell：HUD", () => {
+  it("狀態列（PLD/OS 1995、時鐘、EXIT TO WEB）與 7 個頻道按鈕；roving tabindex、aria-current", () => {
     mount("/os");
-    act(() => {
-      hudButton().click();
-    });
+    const bar = document.querySelector('[data-os="statusbar"]') as HTMLElement;
+    expect(within(bar).getByText("PLD/OS 1995")).toBeInTheDocument();
+    expect(document.querySelector('[data-os="clock"]')!.textContent).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+    expect(document.querySelector('[data-os="exit"]')!.textContent).toBe("EXIT TO WEB");
+    const buttons = [...document.querySelectorAll<HTMLButtonElement>('[data-os="hud-ch"]')];
+    expect(buttons.map((b) => b.textContent)).toEqual([
+      "CH-01 儀表板",
+      "CH-02 紀錄",
+      "CH-03 新增",
+      "CH-04 日曆",
+      "CH-05 報表",
+      "CH-06 回收桶",
+      "CH-07 設定",
+    ]);
+    expect(buttons.map((b) => b.getAttribute("data-ch"))).toEqual(["CH-01", "CH-02", "CH-03", "CH-04", "CH-05", "CH-06", "CH-07"]);
+    expect(buttons.filter((b) => b.getAttribute("aria-current") === "true").map((b) => b.dataset.ch)).toEqual(["CH-02"]);
+    expect(buttons.map((b) => b.tabIndex)).toEqual([-1, 0, -1, -1, -1, -1, -1]);
+    expect(hubMock.props?.channel).toMatchObject({ id: "CH-02", code: "RECORDS" });
+  });
+
+  it("時鐘每秒更新（setInterval）", () => {
+    vi.setSystemTime(new Date(2026, 10, 1, 8, 30, 15));
+    mount("/os");
+    const clock = () => document.querySelector('[data-os="clock"]')!.textContent;
+    expect(clock()).toBe("08:30:15");
+    advance(2000);
+    expect(clock()).toBe("08:30:17");
+  });
+
+  it("←/→ 移動選中（含環繞）、焦點在清單內時焦點跟著走，3D 螢幕貼圖的頻道同步", () => {
+    mount("/os");
+    key("ArrowRight", {}, hudButton());
+    expect(hudButton("CH-03 新增")).toHaveAttribute("aria-current", "true");
+    expect(document.activeElement).toBe(hudButton("CH-03 新增"));
+    expect(hudButton("CH-03 新增").tabIndex).toBe(0);
+    expect(hudButton("CH-02 紀錄").tabIndex).toBe(-1);
+    expect(hubMock.props?.channel).toMatchObject({ id: "CH-03", code: "NEW" });
+    key("ArrowLeft");
+    key("ArrowLeft");
+    expect(hudButton("CH-01 儀表板")).toHaveAttribute("aria-current", "true");
+    key("ArrowLeft");
+    expect(hudButton("CH-07 設定")).toHaveAttribute("aria-current", "true");
+    key("ArrowRight");
+    expect(hudButton("CH-01 儀表板")).toHaveAttribute("aria-current", "true");
+  });
+
+  it("焦點不在清單內時，←/→ 只改選擇、不搶焦點", () => {
+    mount("/os");
+    act(() => (document.activeElement as HTMLElement).blur());
+    key("ArrowRight");
+    expect(hudButton("CH-03 新增")).toHaveAttribute("aria-current", "true");
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("Enter：焦點在按鈕上時交給原生啟用（不雙重觸發）；事件目標不是按鈕時進入選中的頻道", () => {
+    mount("/os");
+    key("Enter", {}, hudButton());
+    expect(phase()).toBe("hub");
+    key("Enter");
     expect(phase()).toBe("entering-pre");
-    const station = document.querySelector('[data-os="station"]')!;
-    expect(station.hasAttribute("inert")).toBe(true);
-    expect(station.getAttribute("data-hidden")).toBe("true");
-    expect(document.querySelector('[data-os="hud"]')!.getAttribute("data-active")).toBe("false");
-    expect(document.querySelector('[data-os="live"]')!.textContent).toBe("進入紀錄");
-    act(() => {
-      vi.advanceTimersByTime(874);
-    });
+    expect(loc.pathname).toBe("/records");
+  });
+
+  it("點頻道按鈕進入該頻道；數字鍵與 N 直接進入", () => {
+    mount("/os");
+    click(hudButton("CH-05 報表"));
+    expect(loc.pathname).toBe("/report");
     expect(phase()).toBe("entering-pre");
-    act(() => {
-      vi.advanceTimersByTime(2);
-    });
-    expect(phase()).toBe("entering-post");
-    expect(station.hasAttribute("inert")).toBe(false);
-    expect(document.activeElement).toBe(document.querySelector("main#main"));
-    act(() => {
-      vi.advanceTimersByTime(400);
-    });
+    expect(live()).toBe("進入報表");
+    settle();
     expect(phase()).toBe("station");
+    go("/os");
+    settle();
+    expect(phase()).toBe("hub");
+    key("4");
+    expect(loc.pathname).toBe("/calendar");
+    settle();
+    go("/os");
+    settle();
+    key("N");
+    expect(loc.pathname).toBe("/records/new");
+    expect(phase()).toBe("entering-pre");
+  });
+
+  it("控制室記住最後造訪的頻道：回到控制室時選中它，焦點回到它的按鈕", () => {
+    mount("/os");
+    click(hudButton("CH-05 報表"));
+    settle();
+    go("/os");
+    expect(phase()).toBe("exiting-pre");
+    advance(301);
+    expect(phase()).toBe("exiting-post");
+    expect(hudButton("CH-05 報表")).toHaveAttribute("aria-current", "true");
+    expect(document.activeElement).toBe(hudButton("CH-05 報表"));
+    advance(700);
+    expect(phase()).toBe("hub");
+    expect(hubMock.props?.channel).toMatchObject({ id: "CH-05", code: "REPORT" });
+  });
+
+  it("離開轉場交接點之後（exiting-post）控制室快速鍵已可用", () => {
+    mount("/records");
+    go("/os");
+    advance(301);
+    expect(phase()).toBe("exiting-post");
+    key("ArrowRight");
+    expect(hudButton("CH-03 新增")).toHaveAttribute("aria-current", "true");
+  });
+
+  it("工作站裡單一字元快速鍵不作用", () => {
+    mount("/records");
+    key("ArrowRight");
+    key("n");
+    key("3");
+    key("/");
+    expect(phase()).toBe("station");
+    expect(loc.pathname).toBe("/records");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("OsShell：指令列", () => {
+  const openPalette = () => key("k", { ctrlKey: true });
+  const input = () => screen.getByRole("combobox");
+  const type = (text: string) => {
+    act(() => {
+      fireEvent.change(input(), { target: { value: text } });
+    });
+  };
+  const enter = () => key("Enter", {}, input());
+
+  it("Ctrl+K 任何地方開啟並 preventDefault；/ 在控制室開啟", () => {
+    mount("/os");
+    const ev = new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true });
+    act(() => {
+      document.body.dispatchEvent(ev);
+    });
+    expect(ev.defaultPrevented).toBe(true);
+    expect(document.querySelector('[data-os="palette"]')).not.toBeNull();
+    key("Escape", {}, input());
+    advance(10);
+    expect(document.querySelector('[data-os="palette"]')).toBeNull();
+    key("/");
+    expect(document.querySelector('[data-os="palette"]')).not.toBeNull();
+  });
+
+  it("工作站：/ 不開（輸入框內也不開）；Ctrl+K 開（焦點在表單欄位內也開）", () => {
+    mount("/form");
+    key("/");
+    expect(document.querySelector('[data-os="palette"]')).toBeNull();
+    const field = screen.getByLabelText("欄位");
+    act(() => field.focus());
+    key("/", {}, field);
+    expect(document.querySelector('[data-os="palette"]')).toBeNull();
+    key("k", { ctrlKey: true }, field);
+    expect(document.querySelector('[data-os="palette"]')).not.toBeNull();
+  });
+
+  it("combobox／listbox 的 ARIA；↑↓ 選取、Tab 補完", () => {
+    mount("/os");
+    openPalette();
+    expect(document.activeElement).toBe(input());
+    const list = document.querySelector('[data-os="palette-list"]') as HTMLElement;
+    expect(list).toHaveAttribute("role", "listbox");
+    expect(input()).toHaveAttribute("aria-controls", list.id);
+    expect(input()).toHaveAttribute("aria-expanded", "true");
+    expect(input()).not.toHaveAttribute("aria-activedescendant");
+    const options = within(list).getAllByRole("option");
+    expect(options.length).toBe(10);
+    key("ArrowDown", {}, input());
+    expect(input()).toHaveAttribute("aria-activedescendant", options[0]!.id);
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
+    key("ArrowDown", {}, input());
+    expect(options[1]).toHaveAttribute("aria-selected", "true");
+    key("ArrowUp", {}, input());
+    key("ArrowUp", {}, input());
+    expect(options.at(-1)).toHaveAttribute("aria-selected", "true");
+    type("ca");
+    expect(within(list).getAllByRole("option").map((o) => o.textContent)).toEqual(["cal日曆"]);
+    key("Tab", {}, input());
+    expect((input() as HTMLInputElement).value).toBe("cal");
+    type("zzz");
+    expect(input()).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("指令導覽：先關閉指令列，再走 router（控制室 → 進入轉場；工作站 → 短轉場）", () => {
+    mount("/os");
+    openPalette();
+    type("cal");
+    enter();
+    advance(300);
+    expect(document.querySelector('[data-os="palette"]')).toBeNull();
+    expect(loc.pathname).toBe("/calendar");
+    expect(phase()).toBe("entering-pre");
+    settle();
+
+    openPalette();
+    type("rep");
+    enter();
+    advance(300);
+    expect(loc.pathname).toBe("/report");
+    expect(phase()).toBe("switching-pre");
+    expect(live()).toBe("切換到報表");
+  });
+
+  it("rec <id> → /records?open=<id>；new → /records/new", () => {
+    mount("/os");
+    openPalette();
+    type("rec 63");
+    enter();
+    advance(300);
+    expect(loc.pathname + loc.search).toBe("/records?open=63");
+    settle();
+    openPalette();
+    type("new");
+    enter();
+    advance(300);
+    expect(loc.pathname).toBe("/records/new");
+  });
+
+  it("未知指令與無效 rec 編號：行內錯誤（palette-error、role=alert），指令列保持開啟、不導覽", () => {
+    mount("/os");
+    openPalette();
+    type("foo");
+    enter();
+    const err = document.querySelector('[data-os="palette-error"]')!;
+    expect(err).toHaveAttribute("role", "alert");
+    expect(err.textContent).toContain("foo");
+    expect(input()).toHaveAttribute("aria-invalid", "true");
+    expect(document.querySelector('[data-os="palette"]')).not.toBeNull();
+    expect(loc.pathname).toBe("/os");
+    type("rec abc");
+    enter();
+    expect(document.querySelector('[data-os="palette-error"]')!.textContent).toContain("abc");
+    type("rec 0");
+    enter();
+    expect(document.querySelector('[data-os="palette-error"]')).not.toBeNull();
+    type("rec 7");
+    expect(document.querySelector('[data-os="palette-error"]')).toBeNull();
+  });
+
+  it("help 在指令列內列出所有指令；空白 Enter 不做事", () => {
+    mount("/os");
+    openPalette();
+    enter();
+    type("help");
+    enter();
+    const help = document.querySelector('[data-os="palette-help"]') as HTMLElement;
+    for (const name of ["dash", "rec", "rec <id>", "new", "cal", "rep", "trash", "set", "exit", "help"]) {
+      expect(within(help).getByText(name)).toBeInTheDocument();
+    }
+    expect(document.querySelector('[data-os="palette"]')).not.toBeNull();
+  });
+
+  it("Esc 只關指令列，不離開工作站；再一次 Esc 才離開", async () => {
+    mount("/records");
+    openPalette();
+    await act(async () => {
+      fireEvent.keyDown(input(), { key: "Escape" });
+    });
+    advance(10);
+    expect(document.querySelector('[data-os="palette"]')).toBeNull();
+    expect(phase()).toBe("station");
+    expect(loc.pathname).toBe("/records");
+    await act(async () => {
+      fireEvent.keyDown(document.body, { key: "Escape" });
+    });
+    expect(loc.pathname).toBe("/os");
+    expect(phase()).toBe("exiting-pre");
+  });
+
+  it("指令列關閉後焦點回到原本的元素", () => {
+    mount("/os");
+    const before = hudButton();
+    openPalette();
+    key("Escape", {}, input());
+    advance(10);
+    expect(document.activeElement).toBe(before);
+  });
+
+  it("exit：離開 OS 模式（setMode web、寫入 pld.mode），工作站保留目前路徑", () => {
+    mount("/records");
+    openPalette();
+    type("exit");
+    enter();
+    advance(300);
+    expect(getMode()).toBe("web");
+    expect(window.localStorage.getItem("pld.mode")).toBe("web");
+    expect(loc.pathname).toBe("/records");
+  });
+
+  it("指令列開著時，控制室快速鍵不作用", () => {
+    mount("/os");
+    openPalette();
+    key("ArrowRight", {}, input());
+    key("n", {}, input());
+    expect(document.querySelector('[data-ch="CH-02"]')).toHaveAttribute("aria-current", "true");
+    expect(loc.pathname).toBe("/os");
+  });
+});
+
+describe("OsShell：轉場", () => {
+  it("進入：點 HUD → entering-pre（工作站 inert＋隱藏）→ 875ms 交接 → 1200ms station；焦點在交接點移到 main；宣告開始與完成", () => {
+    mount("/os");
+    click(hudButton());
+    expect(phase()).toBe("entering-pre");
+    const st = station()!;
+    expect(st.hasAttribute("inert")).toBe(true);
+    expect(st.getAttribute("data-hidden")).toBe("true");
+    expect(document.querySelector('[data-os="hud"]')!.getAttribute("data-active")).toBe("false");
+    expect(live()).toBe("進入紀錄");
+    advance(874);
+    expect(phase()).toBe("entering-pre");
+    advance(2);
+    expect(phase()).toBe("entering-post");
+    expect(st.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(document.querySelector("main#main"));
+    advance(400);
+    expect(phase()).toBe("station");
+    expect(live()).toBe("已進入紀錄");
   });
 
   it("進入：交接點前的第一次點擊 → 直接到 station 且不傳給下面；之後的點擊正常", () => {
     mount("/os");
-    act(() => {
-      hudButton().click();
-    });
+    click(hudButton());
     const underneath = vi.fn();
     document.addEventListener("click", underneath);
     act(() => {
@@ -164,66 +561,241 @@ describe("OsShell", () => {
     });
     expect(phase()).toBe("station");
     expect(underneath).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(document.querySelector("main#main"));
     document.body.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     expect(underneath).toHaveBeenCalledTimes(1);
     document.removeEventListener("click", underneath);
   });
 
-  it("離開：navigate 到 /os → exiting-pre，工作站立刻消失；300ms 交接、焦點到 HUD 按鈕；900ms hub", () => {
+  it("離開：navigate 到 /os → exiting-pre，工作站立刻消失；300ms 交接、焦點到 HUD 按鈕；900ms hub；宣告", () => {
     mount("/records");
-    act(() => {
-      void nav("/os");
-    });
+    go("/os");
     expect(phase()).toBe("exiting-pre");
-    expect(document.querySelector('[data-os="station"]')).toBeNull();
+    expect(station()).toBeNull();
     expect(document.querySelector('[data-os="hud"]')!.hasAttribute("inert")).toBe(true);
-    expect(document.querySelector('[data-os="live"]')!.textContent).toBe("回到控制室");
-    act(() => {
-      vi.advanceTimersByTime(301);
-    });
+    expect(live()).toBe("回到控制室");
+    advance(301);
     expect(phase()).toBe("exiting-post");
     expect(document.activeElement).toBe(hudButton());
-    act(() => {
-      vi.advanceTimersByTime(700);
-    });
+    advance(700);
     expect(phase()).toBe("hub");
+    expect(live()).toBe("已回到控制室");
   });
 
-  it("頻道之間（頻道 → 另一頻道）是短轉場 SWITCHING（300ms）", () => {
+  it("SWITCHING：頻道之間是短轉場（75ms 交接、300ms 結束）；工作站預先隱藏＋inert，控制室不顯示；焦點在交接點移到 main；宣告開始與完成", () => {
     mount("/records");
-    act(() => {
-      void nav("/calendar");
-    });
+    go("/calendar");
     expect(phase()).toBe("switching-pre");
-    act(() => {
-      vi.advanceTimersByTime(76);
-    });
+    const st = station()!;
+    expect(st.hasAttribute("inert")).toBe(true);
+    expect(st.getAttribute("data-hidden")).toBe("true");
+    expect(document.querySelector('[data-os="hub"]')!.getAttribute("data-visible")).toBe("false");
+    expect(document.querySelector('[data-os="hud"]')!.getAttribute("data-active")).toBe("false");
+    expect(document.getElementById("os-overlay")!.getAttribute("data-active")).toBe("true");
+    expect(live()).toBe("切換到日曆");
+    expect(hubMock.props?.running).toBe(false);
+    expect(hubMock.props?.mode).toBe("station");
+    advance(74);
+    expect(phase()).toBe("switching-pre");
+    advance(2);
     expect(phase()).toBe("switching-post");
+    expect(st.hasAttribute("inert")).toBe(false);
+    expect(st.getAttribute("data-hidden")).toBe("false");
+    expect(document.activeElement).toBe(document.querySelector("main#main"));
+    advance(300);
+    expect(phase()).toBe("station");
+    expect(live()).toBe("已切換到日曆");
+    expect(document.getElementById("os-overlay")!.getAttribute("data-active")).toBe("false");
+    // 控制室選中的頻道＝最後顯示的工作站
+    go("/os");
+    advance(1000);
+    expect(hudButton("CH-04 日曆")).toHaveAttribute("aria-current", "true");
+  });
+
+  it("SWITCHING：交接點前的輸入跳到終點並被吞掉", () => {
+    mount("/records");
+    go("/calendar");
+    const underneath = vi.fn();
+    document.addEventListener("click", underneath);
     act(() => {
-      vi.advanceTimersByTime(300);
+      for (const t of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+        document.body.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true }));
+      }
     });
     expect(phase()).toBe("station");
+    expect(underneath).not.toHaveBeenCalled();
+    document.removeEventListener("click", underneath);
   });
 
-  it("減少動態效果：進出都是直接切換", () => {
+  it("同一頻道內換頁（/records → /records/63/edit）：沒有轉場，焦點移到 #main", () => {
+    mount("/records");
+    expect(document.activeElement).toBe(document.body);
+    go("/records/63/edit");
+    expect(phase()).toBe("station");
+    expect(document.activeElement).toBe(document.querySelector("main#main"));
+    expect(live()).toBe("");
+  });
+
+  it("減少動態效果：進出都是直接切換；焦點仍移到目的地", () => {
     vi.spyOn(window, "matchMedia").mockImplementation(
       (q: string) => ({ matches: q.includes("reduce"), media: q, addEventListener() {}, removeEventListener() {} }) as unknown as MediaQueryList,
     );
     mount("/os");
-    act(() => {
-      hudButton().click();
-    });
+    click(hudButton());
     expect(phase()).toBe("station");
-    act(() => {
-      void nav("/os");
-    });
+    expect(document.activeElement).toBe(document.querySelector("main#main"));
+    go("/os");
     expect(phase()).toBe("hub");
+    expect(document.activeElement).toBe(hudButton());
+  });
+});
+
+describe("OsShell：離開確認（useBlocker，E2）", () => {
+  it("Esc：被攔下時路由不變、phase 維持 station、不播轉場；留下之後仍是 station；離開才播離開轉場", async () => {
+    mount("/form");
+    expect(phase()).toBe("station");
+    await act(async () => {
+      fireEvent.keyDown(document.body, { key: "Escape" });
+    });
+    expect(screen.getByTestId("blocker").textContent).toBe("blocked");
+    expect(loc.pathname).toBe("/form");
+    expect(phase()).toBe("station");
+    click(screen.getByRole("button", { name: "留下" }));
+    expect(loc.pathname).toBe("/form");
+    expect(phase()).toBe("station");
+    await act(async () => {
+      fireEvent.keyDown(document.body, { key: "Escape" });
+    });
+    click(screen.getByRole("button", { name: "離開" }));
+    expect(loc.pathname).toBe("/os");
+    expect(phase()).toBe("exiting-pre");
   });
 
-  it("疊層：aria-hidden、無轉場時 data-active=false", () => {
+  it("◀ HUB 與指令列導覽同樣先被攔下", () => {
+    mount("/form");
+    click(document.querySelector<HTMLElement>('[data-os="back"]')!);
+    expect(screen.getByTestId("blocker").textContent).toBe("blocked");
+    expect(loc.pathname).toBe("/form");
+    expect(phase()).toBe("station");
+    click(screen.getByRole("button", { name: "留下" }));
+
+    key("k", { ctrlKey: true });
+    act(() => {
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "dash" } });
+    });
+    key("Enter", {}, screen.getByRole("combobox"));
+    advance(300);
+    expect(document.querySelector('[data-os="palette"]')).toBeNull();
+    expect(screen.getByTestId("blocker").textContent).toBe("blocked");
+    expect(loc.pathname).toBe("/form");
+    expect(phase()).toBe("station");
+  });
+});
+
+describe("OsShell：離開 OS 模式（D5）", () => {
+  it("控制室的 EXIT TO WEB：setMode web、寫入 pld.mode、導向 /dashboard", () => {
+    mount("/os");
+    click(screen.getByRole("button", { name: "EXIT TO WEB" }));
+    expect(getMode()).toBe("web");
+    expect(window.localStorage.getItem("pld.mode")).toBe("web");
+    expect(loc.pathname).toBe("/dashboard");
+  });
+});
+
+describe("OsShell：裝置門檻（§7）", () => {
+  it("寬度 < 1024 或高度 < 600：終端機訊息與「改用網頁模式」，沒有控制室／HUD／頁面", () => {
     mount("/records");
-    const overlay = document.getElementById("os-overlay")!;
-    expect(overlay.getAttribute("aria-hidden")).toBe("true");
-    expect(overlay.getAttribute("data-active")).toBe("false");
+    expect(document.querySelector('[data-os="device-gate"]')).toBeNull();
+    for (const [w, h] of [
+      [1000, 700],
+      [1280, 500],
+      [1023, 768],
+    ] as const) {
+      setViewport(w, h);
+      const gate = document.querySelector('[data-os="device-gate"]')!;
+      expect(gate, `${w}x${h}`).not.toBeNull();
+      expect(gate.textContent).toContain("PLD/OS 需要桌面終端機（≥1024×600）");
+      expect(document.querySelector('[data-os="hub"]')).toBeNull();
+      expect(document.querySelector('[data-os="hud"]')).toBeNull();
+      expect(document.querySelector("main#main")).toBeNull();
+      expect(screen.queryByText("records-page")).toBeNull();
+    }
+    setViewport(1024, 600);
+    expect(document.querySelector('[data-os="device-gate"]')).toBeNull();
+    expect(phase()).toBe("station");
+  });
+
+  it("放大後自動進入：直接落在目前路徑對應的狀態，沒有轉場", () => {
+    setViewport(900, 700);
+    mount("/records");
+    expect(document.querySelector('[data-os="device-gate"]')).not.toBeNull();
+    setViewport(1440, 900);
+    expect(phase()).toBe("station");
+    expect(screen.getByText("records-page")).toBeInTheDocument();
+    expect(station()!.getAttribute("data-hidden")).toBe("false");
+  });
+
+  it("控制室路徑被門檻擋住、放大後直接是 hub 並聚焦選中的按鈕", () => {
+    setViewport(900, 700);
+    mount("/os");
+    setViewport(1440, 900);
+    expect(phase()).toBe("hub");
+    expect(document.activeElement).toBe(hudButton());
+  });
+
+  it("「改用網頁模式」：setMode web 並寫入 pld.mode", () => {
+    setViewport(900, 700);
+    mount("/os");
+    click(document.querySelector<HTMLElement>('[data-os="device-gate-web"]')!);
+    expect(getMode()).toBe("web");
+    expect(window.localStorage.getItem("pld.mode")).toBe("web");
+  });
+});
+
+describe("OsShell：WebGL 後備（§7）", () => {
+  it("不支援（從工作站載入）：toast、setMode web（寫入 pld.mode=web）、路徑不變、這次載入維持 cyber（旗標）、不寫 pld.theme", () => {
+    webglMock.available.mockReturnValue(false);
+    const spy = vi.spyOn(notify, "error");
+    mount("/records");
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(WEBGL_FALLBACK_TEXT);
+    expect(getMode()).toBe("web");
+    expect(window.localStorage.getItem("pld.mode")).toBe("web");
+    expect(loc.pathname).toBe("/records");
+    expect(shouldKeepCyberOnExit()).toBe(true);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+    expect(themeMock.switchTheme).not.toHaveBeenCalled();
+  });
+
+  it("不支援（從控制室載入）：同上，並導向 /dashboard", () => {
+    webglMock.available.mockReturnValue(false);
+    mount("/os");
+    expect(getMode()).toBe("web");
+    expect(loc.pathname).toBe("/dashboard");
+  });
+
+  it("卸載時：旗標為 true 維持 cyber（不寫 pld.theme）；下一次正常掛載重設旗標、卸載後依偏好還原", () => {
+    webglMock.available.mockReturnValue(false);
+    const a = mount("/records");
+    a.unmount();
+    expect(document.documentElement.dataset.theme).toBe("cyber");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+    webglMock.available.mockReturnValue(true);
+    const b = mount("/records");
+    expect(shouldKeepCyberOnExit()).toBe(false);
+    b.unmount();
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+  });
+
+  it("3D 層回報失敗（初始化失敗／context 遺失沒恢復）：同樣的後備，只會觸發一次", () => {
+    const spy = vi.spyOn(notify, "error");
+    mount("/os");
+    expect(typeof hubMock.props?.onFailure).toBe("function");
+    act(() => (hubMock.props!.onFailure as () => void)());
+    act(() => (hubMock.props!.onFailure as () => void)());
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(getMode()).toBe("web");
+    expect(loc.pathname).toBe("/dashboard");
+    expect(shouldKeepCyberOnExit()).toBe(true);
   });
 });
