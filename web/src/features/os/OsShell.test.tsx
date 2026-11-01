@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider, useBlocker, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,12 +27,20 @@ vi.mock("./director/boot", async (orig) => {
   return { ...actual, decideBoot: (i: Parameters<typeof actual.decideBoot>[0]) => (bootMock.real ? actual.decideBoot(i) : null) };
 });
 
+// 控制室資料（X2）：紀錄查詢換成可控的替身（預設空清單）
+const apiMock = vi.hoisted(() => ({ list: vi.fn() }));
+vi.mock("@/lib/api", async (orig) => {
+  const actual = await orig<typeof import("@/lib/api")>();
+  return { ...actual, api: { ...actual.api, listRecords: apiMock.list } };
+});
+
 const exportMock = vi.hoisted(() => ({ run: vi.fn() }));
 vi.mock("@/app/useExportAction", () => ({ useExportAction: () => ({ run: exportMock.run, pending: false }) }));
 
 const webglMock = vi.hoisted(() => ({ available: vi.fn(() => true) }));
 vi.mock("./webgl", async (orig) => ({ ...(await orig<typeof import("./webgl")>()), webglAvailable: webglMock.available }));
 
+import { resetCrtForTest } from "./crt/settings";
 import { resetBootDoneForTest } from "./director/boot";
 import { COMMANDS } from "./hud/commands";
 import OsShell from "./OsShell";
@@ -94,7 +103,12 @@ function mount(initial: string) {
     ],
     { initialEntries: [initial] },
   );
-  return render(<RouterProvider router={router} />);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
 }
 
 const phase = () => document.documentElement.dataset.osPhase;
@@ -141,6 +155,10 @@ beforeEach(() => {
   webglMock.available.mockReset();
   webglMock.available.mockReturnValue(true);
   hubMock.props = null;
+  apiMock.list.mockReset();
+  apiMock.list.mockResolvedValue([]);
+  window.localStorage.removeItem("pld.os.crt");
+  resetCrtForTest();
   bootMock.real = false;
   resetBootDoneForTest();
   exportMock.run.mockReset();
@@ -790,7 +808,11 @@ describe("OsShell：從工作站離開 OS 模式一定先經過 router（紅線 
       ],
       { initialEntries: ["/records", { pathname: "/os", state: { exitToWeb: { to: "/records" } } }, "/records"], initialIndex: 2 },
     );
-    render(<RouterProvider router={router} />);
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
     act(() => void router.navigate(-1));
     expect(loc.pathname).toBe("/os");
     expect(getMode()).toBe("os");

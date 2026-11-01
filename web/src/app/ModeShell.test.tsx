@@ -105,8 +105,11 @@ describe("ModeShell", () => {
   it("OS 模式：延遲載入 OsShell；/ → /os（控制室）", async () => {
     setMode("os");
     mount("/");
-    await waitFor(() => expect(phase()).toBe("hub"));
-    expect(loc.pathname).toBe("/os");
+    // "/" 一抵達就是控制室（phase=hub）；網址整理成 /os 在同一個 commit 的 passive effect，所以兩者一起等
+    await waitFor(() => {
+      expect(phase()).toBe("hub");
+      expect(loc.pathname).toBe("/os");
+    });
     expect(screen.queryByTestId("web-shell")).toBeNull();
     expect(document.documentElement.dataset.mode).toBe("os");
   });
