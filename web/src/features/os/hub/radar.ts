@@ -144,3 +144,11 @@ export function anomalyAnnouncement(fresh: readonly DiaryRecord[]): string | nul
   const one = `${top.equipment}（${top.severity}）`;
   return fresh.length === 1 ? `新紀錄：${one}` : `新紀錄 ${fresh.length} 筆：${one}等`;
 }
+
+/**
+ * 光點相對雷達中心的位置（單位＝雷達半徑的比例，x 向右、z 向前方鏡頭為正）：
+ * 角度 0＝右方、逆時針（從上往下看，-z 是上方），與掃描線的旋轉同向。
+ */
+export function blipLocalUnit(b: Pick<Blip, "angle" | "radius">): { x: number; z: number } {
+  return { x: Math.cos(b.angle) * b.radius, z: -Math.sin(b.angle) * b.radius };
+}

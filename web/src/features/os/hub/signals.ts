@@ -96,3 +96,10 @@ export function signalKey(s: ChannelSignal): string {
 export function refetchIntervalFor(inHub: boolean, visible: boolean): number | false {
   return inHub && visible ? HUB_REFETCH_MS : false;
 }
+
+/** 開機 BIOS 文字用的真實計數（B2）：機台數＝未刪除紀錄的不重複設備，紀錄數＝未刪除紀錄筆數。資料還沒載入＝null。 */
+export function bootCounts(records: readonly DiaryRecord[] | undefined): { machines: number | null; records: number | null } {
+  if (!records) return { machines: null, records: null };
+  const live = records.filter(isLive);
+  return { machines: knownEquipment(live).length, records: live.length };
+}

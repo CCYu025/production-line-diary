@@ -13,6 +13,8 @@ export const ARC_HALF_DEG = 55;
 export const ARC_RADIUS = 7;
 /** 螢幕外殼的外框尺寸（前殼箱：寬×高）與整體深度 */
 export const MONITOR_BOX = { width: 2.6, height: 2.0, depth: 2.4 } as const;
+/** 螢幕面的尺寸（世界單位）；貼圖與點選共用 */
+export const SCREEN_SIZE = { width: 2.0, height: 1.5 } as const;
 /** 螢幕面在單台螢幕局部座標的位置（與 hubLines 的 SCREEN 一致：x=0、y=1.55、z=0.69） */
 export const SCREEN_LOCAL = { y: 1.55, z: 0.69 } as const;
 /** 進入推近時鏡頭離螢幕面的距離 */
