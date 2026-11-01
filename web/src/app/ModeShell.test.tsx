@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, Outlet, RouterProvider, useBlocker, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getMode, resetModeForTest, setMode } from "@/lib/mode";
@@ -168,5 +168,56 @@ describe("側欄入口的導覽（ENTER_OS_STATE）", () => {
     await waitFor(() => expect(screen.getByTestId("blocker").textContent).toBe("unblocked"));
     expect(getMode()).toBe("web");
     expect(loc.pathname).toBe("/form");
+  });
+
+  it("上一頁（POP）回到帶 enterOs 的舊紀錄：不切換模式（導向儀表板）；切換成功後 state 已被清掉", async () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/",
+          element: (
+            <>
+              <Probe />
+              <ModeShell />
+            </>
+          ),
+          children: [
+            { path: "dashboard", element: <div>dashboard-page</div> },
+            { path: "records", element: <div>records-page</div> },
+            { path: "os", element: <OsRouteElement /> },
+          ],
+        },
+      ],
+      { initialEntries: ["/records", { pathname: "/os", state: ENTER_OS_STATE }, "/records"], initialIndex: 2 },
+    );
+    render(<RouterProvider router={router} />);
+    act(() => void router.navigate(-1));
+    await waitFor(() => expect(loc.pathname).toBe("/dashboard"));
+    expect(getMode()).toBe("web");
+  });
+
+  it("成功進入後 location.state 被清掉", async () => {
+    mount("/records");
+    act(() => void nav("/os", { state: ENTER_OS_STATE }));
+    await waitFor(() => expect(phase()).toBe("hub"));
+    await waitFor(() => expect(loc.state).toBeNull());
+  });
+});
+
+describe("從工作站離開 OS 模式（整合）", () => {
+  it("OS 模式在工作站：palette exit → 網頁外殼、同一路徑、焦點在 #main、pld.mode=web", async () => {
+    setMode("os");
+    mount("/records");
+    await waitFor(() => expect(phase()).toBe("station"));
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+    const input = await screen.findByRole("combobox");
+    fireEvent.change(input, { target: { value: "exit" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(screen.getByTestId("web-shell")).toBeInTheDocument());
+    expect(loc.pathname).toBe("/records");
+    expect(getMode()).toBe("web");
+    expect(document.activeElement).toBe(document.getElementById("main"));
   });
 });

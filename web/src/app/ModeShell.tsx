@@ -1,8 +1,8 @@
 import * as React from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { setMode, useMode } from "@/lib/mode";
 import { AppShell } from "./AppShell";
-import { loadOsShell } from "./osEntry";
+import { loadOsShell, type OsNavState } from "./osEntry";
 
 export { ENTER_OS_STATE, preloadOsShell } from "./osEntry";
 
@@ -42,15 +42,25 @@ export function IndexRedirect() {
 
 /**
  * /os 路由：控制室只在 OS 模式存在；網頁模式導向儀表板。OS 模式下由 OsShell 自己畫控制室，這裡什麼都不畫。
- * 例外：側欄按鈕是「先導覽到 /os（帶 ENTER_OS_STATE），抵達後才 setMode("os")」——
+ * 例外：側欄按鈕是「先導覽到 /os（帶 enterOs），抵達後才 setMode("os")」——
  * 導覽先走 router，頁面上的 useBlocker（未儲存變更）才攔得到；使用者取消就不會切換模式，也不會卸載表單。
+ * 只在 PUSH／REPLACE 抵達時有效（上一頁回到舊的歷史紀錄不算），而且切換後立刻把 state 清掉。
+ * exitToWeb（OsShell 從工作站離開 OS 模式）：模式已切成網頁、router 還沒 replace 回原路徑的那一瞬間，不要導向儀表板。
  */
 export function OsRouteElement() {
   const mode = useMode();
   const location = useLocation();
-  const entering = mode === "web" && (location.state as { enterOs?: boolean } | null)?.enterOs === true;
+  const navigate = useNavigate();
+  const navType = useNavigationType();
+  const st = location.state as OsNavState | null;
+  const fresh = mode === "web" && navType !== "POP";
+  const entering = fresh && st?.enterOs === true;
+  const leaving = fresh && !!st?.exitToWeb;
   React.useLayoutEffect(() => {
-    if (entering) setMode("os");
+    if (!entering) return;
+    setMode("os");
+    void navigate(location.pathname + location.search, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entering]);
-  return mode === "os" || entering ? null : <Navigate to="/dashboard" replace />;
+  return mode === "os" || entering || leaving ? null : <Navigate to="/dashboard" replace />;
 }

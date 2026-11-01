@@ -60,11 +60,17 @@ describe("snapshotEscapeContext", () => {
       "<div data-radix-popper-content-wrapper></div>",
       '<div role="tooltip"></div>',
       '<ul role="listbox"></ul>',
-      '<button aria-expanded="true">x</button>',
+      '<button aria-haspopup="menu" aria-expanded="true">x</button>',
+      '<button aria-haspopup="true" aria-expanded="true">x</button>',
+      '<input role="combobox" aria-expanded="true" />',
       '<div data-fx="lightbox"></div>',
     ]) {
       expect(snap(marker).overlayOpen, marker).toBe(true);
     }
+  });
+  it("單純的 disclosure（aria-expanded=true、沒有 aria-haspopup）不擋 Esc", () => {
+    expect(snap('<button aria-expanded="true">x</button>').overlayOpen).toBe(false);
+    expect(snap('<button aria-haspopup="false" aria-expanded="true">x</button>').overlayOpen).toBe(false);
   });
   it("aria-expanded=false 不算", () => {
     expect(snap('<button aria-expanded="false">x</button>').overlayOpen).toBe(false);

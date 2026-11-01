@@ -12,7 +12,7 @@ import type { Phase } from "./reducer";
 /**
  * 任何一個符合的元素存在，就視為有浮層開著：
  * 對話框（含指令列、燈箱，皆為 Radix Dialog）、Radix 彈出層（popover／select／dropdown 的 popper wrapper）、tooltip、
- * listbox（Combobox 展開的清單）、任何 aria-expanded="true" 的觸發元件，以及燈箱的標記 [data-fx="lightbox"]。
+ * listbox（Combobox 展開的清單）、展開中的 combobox 或帶 aria-haspopup（非 false）的觸發元件（單純的 disclosure 按鈕只有 aria-expanded，不算浮層），以及燈箱的標記 [data-fx="lightbox"]。
  */
 export const OVERLAY_SELECTOR = [
   '[role="dialog"]',
@@ -20,7 +20,8 @@ export const OVERLAY_SELECTOR = [
   "[data-radix-popper-content-wrapper]",
   '[role="tooltip"]',
   '[role="listbox"]',
-  '[aria-expanded="true"]',
+  '[role="combobox"][aria-expanded="true"]',
+  '[aria-haspopup]:not([aria-haspopup="false"])[aria-expanded="true"]',
   '[data-fx="lightbox"]',
 ].join(", ");
 

@@ -12,3 +12,12 @@ export function preloadOsShell(): void {
 
 /** 側欄「OS 模式」按鈕導覽時帶的 location state：到了 /os 才真的切換模式（見 ModeShell 的 OsRouteElement）。 */
 export const ENTER_OS_STATE = { enterOs: true } as const;
+
+/**
+ * 從工作站離開 OS 模式時帶的 location state（OsShell 的 exitToWeb）：先「導覽」到 /os（讓頁面的 useBlocker 有機會攔下），
+ * 抵達後才 setMode("web") 並 replace 回 to（原路徑含 query）。只在 PUSH／REPLACE 抵達時有效，POP（上一頁）不算。
+ */
+export interface OsNavState {
+  enterOs?: boolean;
+  exitToWeb?: { to: string };
+}

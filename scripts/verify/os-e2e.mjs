@@ -117,7 +117,11 @@ const check = (id, name, fn, opt = {}) => CHECKS.push({ id, name, fn, ...opt });
 async function unsavedCase(a, route, via) {
   const prelude = route === '#/settings' ? '#/dashboard' : '#/records';
   const p = await open(prelude);
-  await p.eval(`location.hash=${JSON.stringify(route)}`);
+  if (via === 'history') {
+    // browser Back is only blockable/restorable when the entries were created by the router (history.state.idx): a bare
+    // `location.hash=` entry has no idx, so RR cannot restore the URL on a blocked POP. Navigate in-app instead.
+    await sleep(500); await runCommand(p, route === '#/settings' ? 'set' : 'new');
+  } else await p.eval(`location.hash=${JSON.stringify(route)}`);
   await p.waitFor(`location.hash.startsWith(${JSON.stringify(route)})`, 3000);
   await settled(p, 5000); await sleep(500);
   const field = await makeDirty(p);
@@ -125,7 +129,12 @@ async function unsavedCase(a, route, via) {
   const i = await phasesNow(p); const h0 = await hashOf(p);
   if (via === 'esc') { await p.eval(`document.activeElement.blur(); document.getElementById('main').focus()`); await p.key('Escape'); }
   else if (via === 'back') await clickSel(p, SEL.back);
-  else if (via === 'history') await p.eval('history.back()');
+  else if (via === 'history') {
+    // Chrome fires the native beforeunload prompt first for a dirty form (RecordForm/SettingsPage register it; same on baseline web mode).
+    // Unhandled, Runtime.evaluate hangs. Decline it (stay) and check the in-app confirm that follows.
+    p.listeners.push((m) => { if (m.method === 'Page.javascriptDialogOpening') p.send('Page.handleJavaScriptDialog', { accept: false }).catch(() => {}); });
+    await p.eval('setTimeout(()=>history.back(),30);1');
+  }
   else if (via === 'palette') { await p.eval('document.activeElement.blur()'); await runCommand(p, 'dash'); }
   const shown = await p.waitFor(`document.querySelector('[role=alertdialog]')`, 3000).then(() => true, () => false);
   a.ok(shown, `${via}: confirm dialog (alertdialog) appears`);
@@ -173,6 +182,90 @@ check('E2.edit-form', 'unsaved edit form (direct #/records/<id>/edit): ◀ HUB a
   a.ok(!(await phasesSince(p, i)).some(isTransPhase), 'no transition played', await phasesSince(p, i));
 });
 
+// ---- E2 (designer ruling): every mode swap is first a router navigation that useBlocker can intercept
+async function dirtyAt(route) {
+  const prelude = route === '#/settings' ? '#/dashboard' : '#/records';
+  const p = await open(prelude);
+  await p.eval(`location.hash=${JSON.stringify(route)}`);
+  await p.waitFor(`location.hash.startsWith(${JSON.stringify(route)})`, 3000);
+  await settled(p, 5000); await sleep(500);
+  const field = await makeDirty(p);
+  return { p, field };
+}
+const cancelLabel = (d) => d.buttons.find((b) => /繼續|留在|取消/.test(b));
+const leaveLabel = (d) => d.buttons.find((b) => /^離開/.test(b)) ?? d.buttons[d.buttons.length - 1];
+const formMounted = (p) => p.eval(`!!document.getElementById('main') && !!document.querySelector('main input, main textarea')`);
+for (const [route, key, label] of [['#/records/new', 'new', 'new-record form'], ['#/settings', 'settings', 'settings page']]) {
+  check(`E2.exit-cmd.${key}`, `dirty ${label}: palette exit asks first; cancel keeps form+mode; leave switches to web on the same path`, async (a) => {
+    const { p } = await dirtyAt(route);
+    const i = await phasesNow(p); const h0 = await hashOf(p);
+    await p.eval('document.activeElement.blur()'); await runCommand(p, 'exit');
+    const shown = await p.waitFor(`document.querySelector('[role=alertdialog]')`, 3000).then(() => true, () => false);
+    a.ok(shown, 'confirm dialog appears');
+    if (!shown) return;
+    a.ok((await modeOf(p)) === 'os' && (await hashOf(p)) === h0 && (await phaseOf(p)) === 'station', 'still OS mode, same route, station while asking', [await modeOf(p), await hashOf(p), await phaseOf(p)]);
+    a.ok(!(await p.eval(`!!${q(SEL.palette)}`)), 'palette closed before the dialog');
+    const dlg = await alertDialog(p);
+    await clickByText(p, '[role=alertdialog] button', cancelLabel(dlg));
+    await p.waitFor(`!document.querySelector('[role=alertdialog]')`, 3000); await sleep(900);
+    a.ok((await modeOf(p)) === 'os' && (await hashOf(p)) === h0 && (await phaseOf(p)) === 'station', 'cancel: OS mode, route and station unchanged', [await modeOf(p), await hashOf(p), await phaseOf(p)]);
+    a.ok(!(await phasesSince(p, i)).some(isTransPhase), 'cancel: no transition played', await phasesSince(p, i));
+    a.ok((await lsGet(p, 'pld.mode')) === 'os', 'cancel: pld.mode still os', await lsGet(p, 'pld.mode'));
+    a.ok(await formMounted(p), 'cancel: the form is still mounted');
+    await p.eval('document.activeElement.blur()'); await runCommand(p, 'exit');
+    await p.waitFor(`document.querySelector('[role=alertdialog]')`, 3000);
+    const dlg2 = await alertDialog(p);
+    await clickByText(p, '[role=alertdialog] button', leaveLabel(dlg2));
+    await p.waitFor(`document.documentElement.getAttribute('data-mode')===null`, 5000).catch(() => {});
+    await sleep(700);
+    a.ok((await modeOf(p)) === null, 'leave: web mode');
+    a.ok((await hashOf(p)) === h0, 'leave: ends on the same path', await hashOf(p));
+    a.ok((await lsGet(p, 'pld.mode')) === 'web', 'leave: pld.mode=web', await lsGet(p, 'pld.mode'));
+    a.ok(!(await phasesSince(p, i)).some((x) => x === 'hub' || x === 'exiting-pre'), 'leave: no hub flash / exit animation', await phasesSince(p, i));
+    a.ok(await p.eval(`document.activeElement===document.getElementById('main')`), 'leave: focus on #main');
+    await p.close();
+  });
+  check(`E2.sidebar.${key}`, `dirty ${label} in web mode: sidebar OS button asks first; cancel keeps form+mode; leave enters OS mode`, async (a) => {
+    const prelude = route === '#/settings' ? '#/dashboard' : '#/records';
+    const p = await open(prelude, { mode: 'web', width: 1280, height: 800 });
+    await p.eval(`location.hash=${JSON.stringify(route)}`);
+    await p.waitFor(`location.hash.startsWith(${JSON.stringify(route)})`, 3000); await sleep(900);
+    await makeDirty(p);
+    const h0 = await hashOf(p);
+    await clickSel(p, SEL.enterOs);
+    const shown = await p.waitFor(`document.querySelector('[role=alertdialog]')`, 3000).then(() => true, () => false);
+    a.ok(shown, 'confirm dialog appears');
+    if (!shown) return;
+    a.ok((await modeOf(p)) === null && (await hashOf(p)) === h0, 'still web mode on the same route while asking', [await modeOf(p), await hashOf(p)]);
+    const dlg = await alertDialog(p);
+    await clickByText(p, '[role=alertdialog] button', cancelLabel(dlg));
+    await p.waitFor(`!document.querySelector('[role=alertdialog]')`, 3000); await sleep(700);
+    a.ok((await modeOf(p)) === null && (await hashOf(p)) === h0, 'cancel: web mode, route unchanged', [await modeOf(p), await hashOf(p)]);
+    a.ok((await lsGet(p, 'pld.mode')) !== 'os', 'cancel: pld.mode not os', await lsGet(p, 'pld.mode'));
+    a.ok(await formMounted(p), 'cancel: the form is still mounted');
+    await clickSel(p, SEL.enterOs);
+    await p.waitFor(`document.querySelector('[role=alertdialog]')`, 3000);
+    const dlg2 = await alertDialog(p);
+    await clickByText(p, '[role=alertdialog] button', leaveLabel(dlg2));
+    await waitPhase(p, 'hub', 15000); await sleep(500);
+    a.ok((await modeOf(p)) === 'os' && (await hashOf(p)) === '#/os', 'leave: OS mode, hub', [await modeOf(p), await hashOf(p)]);
+    a.ok((await lsGet(p, 'pld.mode')) === 'os', 'leave: pld.mode=os');
+    await p.close();
+  });
+}
+check('E2.exit-button', 'EXIT TO WEB (hub only): a dirty form is confirmed on the way to the hub; EXIT then leaves without further prompts', async (a) => {
+  const { p } = await dirtyAt('#/records/new');
+  await clickSel(p, SEL.back);
+  await p.waitFor(`document.querySelector('[role=alertdialog]')`, 3000);
+  const dlg = await alertDialog(p);
+  await clickByText(p, '[role=alertdialog] button', leaveLabel(dlg));
+  await waitPhase(p, 'hub', 8000); await sleep(500);
+  await clickSel(p, SEL.exit); await sleep(1200);
+  a.ok((await modeOf(p)) === null && (await hashOf(p)) === '#/dashboard', 'EXIT from the hub: web mode on #/dashboard', [await modeOf(p), await hashOf(p)]);
+  a.ok(!(await p.eval(`!!document.querySelector('[role=alertdialog]')`)), 'no further prompt');
+  await p.close();
+});
+
 // ================================================================ E3 history / direct URL
 check('E3.history', 'Back/Forward play the §3.3 transitions (hub->ch enter, ch->hub exit, ch->ch switch, same channel none)', async (a) => {
   const p = await open('');
@@ -194,8 +287,9 @@ check('E3.history', 'Back/Forward play the §3.3 transitions (hub->ch enter, ch-
 });
 check('E3.direct', 'direct #/records/<id>/edit in OS mode lands in the CH-02 station with the edit form, no transition', async (a) => {
   const id = ctx.recordId; if (!id) return a.skip('no record id from /api/records');
-  const p = await open(`#/records/${id}/edit`); await sleep(600);
-  const seq = await phasesSince(p, 0);
+  const p = await open(`#/records/${id}/edit`);
+  await p.waitFor(`${PHASE_EXPR}!==null`, 8000, 30); await sleep(600); // OsShell is lazy: the hook records an initial null before it mounts
+  const seq = (await phasesSince(p, 0)).filter((x) => x !== null);
   a.ok(seq.length === 1 && seq[0] === 'station', 'phases since load are just [station] (no entry transition)', seq);
   a.ok((await hashOf(p)) === `#/records/${id}/edit`, 'route kept', await hashOf(p));
   a.ok(await p.eval(`!!document.getElementById('rf-problem')`), 'edit form present (#rf-problem)');
@@ -230,6 +324,8 @@ check('E5.save-toast', 'form save redirect (CH-03 -> CH-01) and toast 「查看�
   const id = ctx.recordId; if (!id) return a.skip('no record id');
   const p = await open(`#/records/new?copy=${id}`); await sleep(900);
   await p.waitFor(`document.querySelector('[data-testid="copy-banner"]')`, 4000).catch(() => a.note('copy banner not found (continuing)'));
+  // copying clears the equipment on purpose (required): type a valid one, otherwise the form never submits
+  await p.eval(`document.getElementById('rf-equipment').focus()`); await p.insertText('示範機台A'); await sleep(300);
   await expectTransition(p, a, 'submit (save redirect)', async () => { await clickSel(p, 'main button[type=submit]'); }, 'switching-pre', 'station');
   const h = await hashOf(p);
   a.ok(h === '#/dashboard', 'save redirected to #/dashboard', h);

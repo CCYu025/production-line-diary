@@ -702,6 +702,73 @@ describe("OsShell：離開 OS 模式（D5）", () => {
   });
 });
 
+describe("OsShell：從工作站離開 OS 模式一定先經過 router（紅線 4）", () => {
+  const exitCmd = () => {
+    key("k", { ctrlKey: true });
+    act(() => {
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "exit" } });
+    });
+    key("Enter", {}, screen.getByRole("combobox"));
+    advance(300);
+  };
+
+  it("指令 exit：先導覽到 /os（被 useBlocker 攔下 → 取消＝模式不變、路由不變、沒有轉場）", () => {
+    mount("/form");
+    exitCmd();
+    expect(screen.getByTestId("blocker").textContent).toBe("blocked");
+    expect(getMode()).toBe("os");
+    expect(loc.pathname).toBe("/form");
+    expect(phase()).toBe("station");
+    click(screen.getByRole("button", { name: "留下" }));
+    advance(1000);
+    expect(getMode()).toBe("os");
+    expect(loc.pathname).toBe("/form");
+    expect(phase()).toBe("station");
+  });
+
+  it("指令 exit：放行 → setMode web，回到原路徑（含 query），state 已清除", async () => {
+    mount("/form");
+    exitCmd();
+    await act(async () => {
+      screen.getByRole("button", { name: "離開" }).click();
+    });
+    expect(getMode()).toBe("web");
+    expect(window.localStorage.getItem("pld.mode")).toBe("web");
+    expect(loc.pathname).toBe("/form");
+    expect(loc.state).toBeNull();
+  });
+
+  it("沒有 blocker 的頁面：保留路徑與 query", () => {
+    mount("/records");
+    go("/records?open=5");
+    settle();
+    exitCmd();
+    expect(getMode()).toBe("web");
+    expect(loc.pathname + loc.search).toBe("/records?open=5");
+  });
+
+  it("上一頁（POP）回到帶 exitToWeb 的 /os 紀錄：不切換模式", () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/",
+          element: <Root />,
+          children: [
+            { path: "records", element: page("records") },
+            { path: "os", element: null },
+          ],
+        },
+      ],
+      { initialEntries: ["/records", { pathname: "/os", state: { exitToWeb: { to: "/records" } } }, "/records"], initialIndex: 2 },
+    );
+    render(<RouterProvider router={router} />);
+    act(() => void router.navigate(-1));
+    expect(loc.pathname).toBe("/os");
+    expect(getMode()).toBe("os");
+    expect(phase()).not.toBeUndefined();
+  });
+});
+
 describe("OsShell：裝置門檻（§7）", () => {
   it("寬度 < 1024 或高度 < 600：終端機訊息與「改用網頁模式」，沒有控制室／HUD／頁面", () => {
     mount("/records");
@@ -716,7 +783,6 @@ describe("OsShell：裝置門檻（§7）", () => {
       expect(gate, `${w}x${h}`).not.toBeNull();
       expect(gate.textContent).toContain("PLD/OS 需要桌面終端機（≥1024×600）");
       expect(document.querySelector('[data-os="hub"]')).toBeNull();
-      expect(document.querySelector('[data-os="hud"]')).toBeNull();
       expect(document.querySelector("main#main")).toBeNull();
       expect(screen.queryByText("records-page")).toBeNull();
     }

@@ -4,7 +4,8 @@
  * Radix 浮層（指令列、對話框、燈箱）與 toast 是 z-50 以上，蓋在所有 OS 圖層之上。
  */
 import * as React from "react";
-import { Outlet, useLocation, useMatches, useNavigate } from "react-router-dom";
+import { Outlet, useLocation, useMatches, useNavigate, useNavigationType } from "react-router-dom";
+import type { OsNavState } from "@/app/osEntry";
 import { consumeBoot } from "@/app/BootScreen";
 import type { RouteHandle } from "@/app/AppShell";
 import { notify } from "@/lib/feedback";
@@ -87,9 +88,10 @@ function doneAnnouncement(s: DirectorState): string {
 export default function OsShell() {
   const title = useRouteTitle();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
-  const pathRef = React.useRef(pathname);
-  pathRef.current = pathname;
+  const { pathname, search, state: locState } = useLocation();
+  const navType = useNavigationType();
+  const pathRef = React.useRef(pathname + search);
+  pathRef.current = pathname + search;
   const navRef = React.useRef(navigate);
   navRef.current = navigate;
 
@@ -122,9 +124,27 @@ export default function OsShell() {
 
   /** 離開 OS 模式（D5）：留在目前路徑；在控制室（沒有可留的頁面）則到儀表板。焦點由 ModeShell 在 AppShell 掛上後移到 #main。 */
   const exitToWeb = React.useCallback(() => {
-    if (isHubPath(pathRef.current)) void navRef.current("/dashboard", { replace: true });
-    setMode("web");
+    const here = pathRef.current;
+    if (isHubPath(here.split("?")[0]!)) {
+      void navRef.current("/dashboard", { replace: true });
+      setMode("web");
+      return;
+    }
+    // 在工作站：先「導覽」到 /os（帶 exitToWeb），頁面的 useBlocker 可以攔下（取消＝什麼都不發生）；
+    // 抵達後由下面的 layout effect 切換模式並 replace 回原路徑。
+    const state: OsNavState = { exitToWeb: { to: here } };
+    void navRef.current(HUB_PATH, { state });
   }, []);
+
+  // 抵達 /os 且帶 exitToWeb（PUSH／REPLACE，不含上一頁）：先 replace 回原路徑，再切換成網頁模式。這段期間不渲染舞台（不閃控制室、不建 WebGL）。
+  const exitTo = (locState as OsNavState | null)?.exitToWeb?.to;
+  const leaving = !!exitTo && navType !== "POP" && isHubPath(pathname);
+  // 用 passive effect：剛離開的頁面的 useBlocker 要先解除註冊（卸載的清理先於這裡），否則回原路徑的導覽會被同一個頁面再攔一次
+  React.useEffect(() => {
+    if (!leaving || !exitTo) return;
+    void navRef.current(exitTo, { replace: true });
+    setMode("web");
+  }, [leaving, exitTo]);
 
   /** WebGL 不支援／初始化失敗／context 遺失後沒恢復（§7）：改用網頁模式（不記住為 os）、這次載入維持 cyber。 */
   const failedRef = React.useRef(false);
@@ -141,6 +161,7 @@ export default function OsShell() {
     if (!webglAvailable()) onWebglFailure();
   }, [onWebglFailure]);
 
+  if (leaving) return null;
   return (
     <DeviceGate>
       <OsStage onExitWeb={exitToWeb} onWebglFailure={onWebglFailure} />
