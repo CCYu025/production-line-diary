@@ -15,8 +15,8 @@ Chrome path: `C:/Program Files/Google/Chrome/Application/chrome.exe`, override w
 Build first (`npm run build` in each worktree → `web/dist`), then:
 
 ```
-node scripts/verify/serve.mjs --root C:/Users/tomof/pld-wt/os-x0    --port 3114 --scratch <scratch dir>
-node scripts/verify/serve.mjs --root C:/Users/tomof/pld-wt/main-base --port 3115 --scratch <scratch dir>
+node scripts/verify/serve.mjs --root <branch worktree> --port 3114 --scratch <scratch dir>
+node scripts/verify/serve.mjs --root <main worktree>   --port 3115 --scratch <scratch dir>
 ```
 
 Flags: `--root` worktree, `--port`, `--data-from` (default `backend/data/example`, relative to root), `--scratch`
