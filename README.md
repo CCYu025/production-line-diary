@@ -26,6 +26,7 @@
 - 設備對照設定：F3/F4/G5/G6/F7/F8 目前對應的品號/原料類別，換線時更新一次，
   之後新增紀錄選了設備會自動帶入
 - 介面主題：預設跟隨系統的淺色／深色；側欄（手機在「更多」面板）的「CYBER 介面」可切換成 Cyber-Terminal 深色主題，選擇會被記住（重新整理不會先閃一下標準主題，多個分頁會同步），列印報表與列印輸出不受影響（目前已有主題骨架與切換、靜態的 Cyber 外觀（切角面板、霓虹強調色、終端機風裝飾前綴、點陣背景與掃描線），以及按壓／聚焦／彈出選單／面板／對話框／toast 等微互動動畫（會尊重系統的「減少動態效果」）；以及開機畫面、KPI 數字鎖定、長條／趨勢／日曆依序進場、標題打字、側欄高亮條、主題切換掃描等招牌效果（P3，已合併；換頁不使用 View Transitions，避免吞點擊），規格見 [`docs/cyber-theme-spec.md`](docs/cyber-theme-spec.md)）
+- PLD/OS 1995 體驗模式（實驗性，僅桌面）：網址加 `?mode=os` 進入向量線框 3D 控制室，目前只有一個頻道（紀錄工作站）；X0 技術驗證階段的偏好只記在**這個分頁**（`?mode=web` 回到網頁模式），預設與列印完全不受影響，規格見 [`docs/os-mode-spec.md`](docs/os-mode-spec.md)
 - 匯出為 Excel：維持跟原始 Excel 相容的 8 欄格式，方便還不用這個 App 的人也看得懂
 - 列印報表：選單日或日期範圍，產生報紙排版風格的報表畫面（襯線字體、分隔線、直角無陰影），
   每筆紀錄為邊欄式版面（上方刊頭條放時間・設備・分類，左側其餘事實、右側標題＝問題＋處理＋根本原因＋依張數排成格的編號照片，
@@ -83,16 +84,17 @@ backend/
 web/                   前端（網址 /）：React 18 + Vite + TypeScript + Tailwind CSS + shadcn/ui
   src/app/             外殼（側欄／底部分頁列）、hash 路由
   src/components/      共用元件（ui/ 是 shadcn 風格元件）
-  src/features/        各頁面：dashboard（儀表板）、records（列表／篩選／詳情面板／新增與編輯表單 form/）、calendar、trash、settings（設備對照）、report（列印報表；report.css 是報紙式排版與列印規則）
+  src/features/        os/（PLD/OS 體驗模式，延遲載入）與各頁面：dashboard（儀表板）、records（列表／篩選／詳情面板／新增與編輯表單 form/）、calendar、trash、settings（設備對照）、report（列印報表；report.css 是報紙式排版與列印規則）
   src/lib/             api.ts（型別化 API client）、TanStack Query、URL query helper、toast、theme.ts（介面主題）、fx/（Cyber 主題的動畫工具：useFx、ScrambleNumber、useStagger、useReplayPhase、useGhostRows）
   src/styles/          設計 token（淺色／深色／Cyber）、cyber.css（Cyber 主題的元件層樣式）
 docs/
   refactor-plan.md      重構計畫書（分階段工作包、必須保留的行為、進度表）
   cyber-theme-spec.md   Cyber-Terminal 主題設計規格書（紅線、token、分期；P0 主題骨架、P1 靜態外觀、P2 微互動已合併，P3 招牌效果已合併，P4 效能與列印收尾已合併（PR #46））
-  os-mode-spec.md       PLD/OS 1995 體驗模式設計規格書（向量線框 3D 控制室；規格草案，尚未實作）
+  os-mode-spec.md       PLD/OS 1995 體驗模式設計規格書（向量線框 3D 控制室；X0 技術驗證已合併（PR #49），X1 起尚未實作）
 scripts/
   migrate.js            一次性搬遷腳本
   ensure-web-build.js   npm start 前置：web/dist 不存在或過期時自動建置（失敗時印錯誤並留下 .web-build-error.log，伺服器仍啟動並顯示「介面建置失敗」頁）
+  verify/               驗證腳本（C1 樣式比對、OS 模式交接／效能／延遲載入大小檢查；沿用 Chrome DevTools Protocol，不新增相依套件；`npm run verify:os-bundle` 是 CI 第六步，用法見 verify/README.md）
 test/                   後端 node:test，見下方
 .github/workflows/ci.yml
 ```
@@ -109,7 +111,7 @@ npm run test:web   # 前端 Vitest
 npm run build      # 前端 vite build → web/dist
 ```
 
-CI（`.github/workflows/ci.yml`）在每次 push / PR 到 `main` 時自動跑這五步；`main` 分支
+CI（`.github/workflows/ci.yml`）在每次 push / PR 到 `main` 時自動跑這六步；`main` 分支
 有 branch protection，只能透過 PR 合併，且 CI 必須綠燈——開發流程細節見
 [`CLAUDE.md`](CLAUDE.md)（「Git 工作流程」章節）。
 

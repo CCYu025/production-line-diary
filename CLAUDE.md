@@ -77,6 +77,10 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
 | `web/src/lib/fx/` | Cyber 主題的 JS 動畫小工具。`useFx()`：回傳「是否要播 cyber 的 JS 動畫」（`data-theme="cyber"` 且沒開啟 `prefers-reduced-motion`），jsdom 測試裡永遠是 `false`，**所有 JS 動畫都要先檢查它**；`ScrambleNumber`（KPI 數字亂跳鎖定，真實數字在 `sr-only`、亂碼層 `aria-hidden` 且結束後移除）；`useStagger`／`useStaggerCap`（依序進場，輸出 `data-fx-in` 與 `--i`，桌面 20／< 768 為 10 項上限）；`useReplayPhase(signature)`（簽名改變時 `data-fx-phase` 在 `"a"`／`"b"` 間翻面，CSS 換 `animation-name` 重播，**不重掛 DOM**）；`useGhostRows`／`ghostProps`（回收桶被移除列的 250ms 視覺殘影，`inert`＋`aria-hidden`）；`titleType.ts`（標題打字的 `--chars`） |
 | `web/src/styles/index.css` | 設計 token（淺色／深色兩套，文字色對比 ≥ 4.5:1）與 Tailwind 主題；也有第三套 `:root[data-theme="cyber"]`（Cyber 色票、cyber 專用 token）、圓角執行期 token `--r-sm/md/lg`、動態 token `--dur-*`／`--ease-*`（P2 專用的動畫時間 token 不放這裡，在 `cyber.css` 的 cyber 區塊） |
 | `web/src/styles/cyber.css` | Cyber-Terminal 主題的元件層樣式（`main.tsx` 在 `index.css` 之後載入）。**每條規則都以 `:root[data-theme="cyber"]` 開頭**，由 `cyberCss.test.ts`（解析工具在 `web/src/test/cssRules.ts`）把關；檔尾 `@media print` 負責還原所有裝飾與 token。P0 有三段：`#report-output` 的嚴重度 token 隔離、內文字型、檔尾的列印還原；P1 起加上元件層外觀（掃描線 `body::after`、背景點陣、切角面板、按鈕、焦點與裝飾前綴等）——**只用 `data-fx`／`data-variant`／`data-severity`／`data-state`／ARIA 屬性當選擇器，不寫 Tailwind class 選擇器**；P1 是靜態外觀（`/* === P2 START === */` 之前不得有 `@keyframes`／`transition`）；P2 起在 `P2 START` 之後加上純 CSS 動畫與 P2 專用時間 token（`--dur-close`／`--dur-open` 等） |
+| `web/src/lib/mode.ts` | 體驗模式（網頁／OS）的選擇邏輯。X0 的偏好是**這個分頁專用**：`?mode=os`／`?mode=web` 寫進 `sessionStorage`（key `pld.mode.session`），套用後從網址移除；**不讀寫 `localStorage` 的 `pld.mode`**（跨分頁記憶與 D2 留到 X1）。所有儲存存取都包 try/catch |
+| `web/src/app/ModeShell.tsx` | 依模式決定根外殼：網頁模式走原本的 `AppShell`＋路由，OS 模式走 `OsShell`（`React.lazy` 延遲載入，網頁模式的進入點不含 three／OS 程式碼） |
+| `web/src/features/os/` | PLD/OS 1995 體驗模式（X0 技術驗證）：`director/`（狀態機 reducer＋輸入閘 `inputGate`，轉場期間吞掉一整個手勢）、`hub/`（控制室線框 canvas）、`crt/`（CRT 著色器管線）、`transition/`（進出轉場與交接點）、`station/`（CH-02 紀錄工作站外框）、`hud/`、`channels.ts`、`os.css`。**`os.css` 每條規則都以 `:root[data-mode="os"]` 開頭**（`osCss.test.ts` 把關），列印時所有 OS 外觀一律隱藏 |
+| `scripts/verify/` | 手動／CI 驗證腳本（不新增相依套件，沿用 Chrome DevTools Protocol）：`c1.mjs`（逐元素樣式比對）、`os-handoff.mjs`（OS 進出交接）、`os-perf.mjs`（效能）、`os-bundle.mjs`（A5：網頁模式進入點不含 OS 程式碼且大小不超標，baseline 在 `bundle-baseline.json`，CI 第六步）。`serve.mjs` 有安全規則：一律把範例資料複製到暫存資料夾再啟動、拒絕 3000／3001 埠與路徑含真實資料夾名稱（`工作日誌`）的目錄；用法見 `scripts/verify/README.md` |
 | `scripts/ensure-web-build.js` | `npm start` 的前置步驟：`web/dist` 不存在或過期才建置（只比檔案的 mtime，不比資料夾的）。**失敗不擋伺服器啟動但絕不沉默**：主控台印錯誤、寫 `.web-build-error.log`、結束碼 0，讓 `/` 顯示「介面建置失敗」頁 |
 | `scripts/migrate.js` | 一次性搬遷腳本（CLI，`--force` 才會覆蓋既有資料） |
 
@@ -379,7 +383,7 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
   port 不是防線。這層中介層掛在最前面，連前端頁面、靜態檔與照片都受它保護，不只 `/api`（`test/webUi.test.js` 檢查 `/`、`/next/`、照片都回 403）。
 - **前端與共用邏輯的規則**：
   - **共用邏輯用 import，不複製**：`backend/lib/aggregate.js` 由前端經 `@shared` alias 引用；型別宣告 `aggregate.d.ts`／`types.d.ts` 要跟著改（漂移測試 `web/src/lib/shared.test.ts`）。
-  - **測試分開跑**：`npm test` 只跑後端 `test/**/*.test.js`（`node:test`）；前端用 `npm run test:web`（Vitest）、`npm run typecheck`、`npm run build`；CI 五個指令（check／test／typecheck／test:web／build）都要綠燈。
+  - **測試分開跑**：`npm test` 只跑後端 `test/**/*.test.js`（`node:test`）；前端用 `npm run test:web`（Vitest）、`npm run typecheck`、`npm run build`；CI 六個指令（check／test／typecheck／test:web／build／verify:os-bundle）都要綠燈。
   - **建置失敗不能讓使用者看到空白頁**：見〈快速啟動〉——主控台錯誤、`.web-build-error.log`、`/` 的「介面建置失敗」頁。`test/webUiBuildFailed.test.js` 檢查這個行為。
   - **字型自行託管，不連 Google Fonts**（`@fontsource`，只打包用到的字重）——這是離線／內網也要能用的本機工具。
   - **文字色 token 對比度 ≥ 4.5:1**（淺色、深色都是；`ink-muted` 曾經只有約 3.4:1）。`web/src/test/contrast.test.ts` 直接讀 `index.css` 的色票把關，調色票時不要把它改回難讀的顏色。
@@ -391,7 +395,7 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
   - 換頁後焦點移到主內容（`AppShell`），手機「更多」面板開啟時焦點在第一個項目。
   - **焦點細節（標準與 cyber 主題都適用）**：詳情面板按上一筆／下一筆後焦點留在被按的按鈕（到底而 disabled 時移到另一顆）；驗證失敗聚焦首個無效 Combobox 時不自動展開建議清單（`focusWithoutOpening`）；375 寬 `ResponsivePopover` 的底部 Sheet 開啟後焦點落在面板本身（不落在搜尋框，免得彈出軟鍵盤；下一個 Tab 才到第一個控制項）；手機固定底部的分頁列（與新增表單的固定操作列）用 `html` 的 `scroll-padding-bottom` 讓聚焦捲動避開；側欄連結、列表列、趨勢柱因外層 `overflow` 會裁掉焦點環，改用內縮焦點環（`focus-visible:outline-offset-[-2px]`，色彩粗細不變）；列印報表一律用淺色嚴重度色票（`report.css` 的 `@media print`）。新增會被 `overflow` 裁切的可聚焦元素時沿用內縮焦點環。
   - **Cyber-Terminal 主題（opt-in 的第三套主題）**：規格與分期見 [`docs/cyber-theme-spec.md`](docs/cyber-theme-spec.md)（§2 是不可破壞的紅線）。**現況：P0 主題骨架與切換、P1 靜態外觀（`data-fx` 掛勾、切角面板、按鈕、裝飾前綴、背景點陣與掃描線）已合併（PR #40、#41）；P2 微互動與浮層（hover／按壓／聚焦、彈出選單、詳情面板與確認對話框、toast、驗證錯誤、骨架、燈箱等純 CSS 動畫，FX-28／31 移 P3）已合併（PR #42）；P3 招牌效果（開機畫面、數字鎖定、長條／趨勢／日曆／列表依序進場、標題打字與游標、nav-indicator 高亮條、帶入閃爍、嚴重度建議光暈、回收桶溶解、主題切換掃描等；FX-02 換頁 View Transitions 評估後移除）已合併（PR #43）；P4 效能與列印收尾（量測為主：掃描線浮層旗標、捲動與冷啟動歸因；僅還原匯出中圖示的列印 `visibility`）已合併（PR #46）**。切換入口是側欄／「更多」面板的「CYBER 介面」（`aria-pressed` 的按鈕）。以下規則寫新樣式或新元件時都要遵守：
-  - **PLD/OS 1995 體驗模式（規格草案，尚未實作）**：規格與分期見 [`docs/os-mode-spec.md`](docs/os-mode-spec.md)（§2 是紅線：網頁模式零差異、轉場絕不擋操作、禁用 View Transitions、不改頁面元件、`/os` 整棵延遲載入）。
+  - **PLD/OS 1995 體驗模式（X0 技術驗證已合併，PR #49）**：規格與分期見 [`docs/os-mode-spec.md`](docs/os-mode-spec.md)；目前只能用 `?mode=os` 進入（側欄沒有按鈕，X1 才加）。§2 紅線（規格 §13 也列出）：**網頁模式零差異**；**轉場不擋操作**——轉場期間 input gate 會吞掉交接前的「一整個手勢」（pointerdown 到 click 都不穿透到底下的 UI），再跳到轉場結尾；**禁用 View Transitions**；**不改頁面元件**（OS 只是外殼，頁面照舊）；**`/os` 整棵延遲載入**（A5，由 `npm run verify:os-bundle` 檢查，CI 第六步）。
     - **cyber 規則一律以 `:root[data-theme="cyber"]` 開頭**——「開新視窗」的報表沒有 `data-theme`，整份都不會套用；裝飾用的 `content` 宣告一律加不朗讀的替代文字（`content: "> " / "";`）。`cyberCss.test.ts` 檢查這兩條。
     - **報表不受影響**：`ReportDocument` 的任何元素**不加 `data-fx`**（P1 起 cyber 的元件層外觀與動畫都掛在 `data-fx`；`ReportDocument` 也不出現 `data-variant`／`data-fx-alert`，`ReportDocument.noFx.test.tsx` 與 `test/dataFx.test.tsx` 把關；`ReportPage` 的控制列在 `#report-output` 外，可以有掛勾），`report.css` 不改（P1 起也一樣）；列印預覽下 cyber 與標準必須一致。
     - **報表本體的嚴重度 token 隔離**：`report.css` 沒有覆寫 `--good／--warning／--serious／--critical`，所以 `cyber.css` 在 `:root[data-theme="cyber"] #report-output` 內把這四個還原成標準淺色值。**任何新增的 cyber token 或裝飾都不得漏進 `#report-output`**（要隔離就加在這個區段，值取自標準淺色 `:root`）。
@@ -413,11 +417,12 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
 npm run check      # 後端 node --check 語法檢查
 npm test           # 後端 node:test（test/**/*.test.js），目前 169 個測試
 npm run typecheck  # 前端 tsc --noEmit（strict）
-npm run test:web   # 前端 Vitest（jsdom + Testing Library），目前 601 個測試（32 個檔案）
+npm run test:web   # 前端 Vitest（jsdom + Testing Library），目前 824 個測試（52 個檔案）
 npm run build      # 前端 vite build → web/dist
+npm run verify:os-bundle  # A5：OS 模式延遲載入與大小檢查（需先 build）
 ```
 
-CI（`.github/workflows/ci.yml`）在每次 push/PR 到 `main` 時自動跑這五步。
+CI（`.github/workflows/ci.yml`）在每次 push/PR 到 `main` 時自動跑這六步（第六步是 `npm run verify:os-bundle`）。
 
 手動驗證（改動 `web/` 或 API 之後建議實際跑一次，不要只看程式碼；一律用範例資料的**複本**當 `DATA_DIR`，埠號設成 3000 以外，
 例如 `DATA_DIR=<複本路徑> PORT=3114 NO_OPEN_BROWSER=1 npm start`；**不要對真實資料夾跑**）：
@@ -480,6 +485,7 @@ CI（`.github/workflows/ci.yml`）在每次 push/PR 到 `main` 時自動跑這�
     「列印／另存 PDF」預覽與「開新視窗」的報表在 cyber 與標準下**一致**（紙本配色，沒有黑底或裝飾；在 App 其他頁按列印也一樣，cyber 列印 ≡ 標準淺色列印，報表的嚴重度色塊是標準的綠黃橘紅而不是霓虹色）；
     **P2 微互動另外確認**（Tab／滑鼠／觸控各走一遍）：確認對話框、詳情面板、燈箱、彈出選單開啟中立刻點得到按鈕；表單驗證失敗只抖一次且錯誤訊息文字可讀；開啟系統「減少動態效果」後沒有任何移動或閃爍；toast、骨架、錯誤狀態外觀正確；列印預覽與標準淺色一致。
     **P1 靜態外觀另外確認**：Tab 走過各頁，每個可聚焦元素（含切角面板內的 KPI 卡、列表列、按鈕、表單欄位）的焦點環都完整可見、沒被切角裁掉；375／320 寬沒有橫向捲動；頁面標題前綴與裝飾字元不會被螢幕閱讀器唸出；掃描線不擋點擊；**P3 招牌效果另外確認**：冷啟動儀表板有開機行且資料一到立刻換成內容（按任意鍵可跳過、重新整理不再出現）、KPI 數字亂跳後鎖定、長條／趨勢／日曆依序進場、換頁標題打字與游標不使標題換行（320 寬）、側欄高亮條滑到目前頁、換頁與主題切換當下點擊不被吞掉、長條切換範圍後焦點不掉、回收桶復原／刪除後列殘影不可點；嚴重度四色與處理狀態 ○ ◐ ● 在 cyber 下一眼可分；在儀表板、列表、新增表單等 App 頁面按列印，預覽與標準淺色一致（沒有黑底、掃描線、點陣、切角、前綴）
+14. OS 模式（改動 `web/src/features/os/`、`lib/mode.ts`、`app/ModeShell.tsx` 之後；一律用範例資料複本、非 3000 埠、`NO_OPEN_BROWSER=1`）：網址加 `?mode=os` 進入（桌面 Chrome），進入 CH-02 紀錄工作站並能退出；進出轉場期間亂點，轉場會跳到結尾、且點擊不會打到底下的頁面 UI；工作站內有未儲存的編輯時按 ◀ HUB 會跳確認；OS 模式下按列印，預覽沒有任何 OS 外觀（與網頁模式一致）；加 `?mode=web` 回到網頁模式。
 
 ## 敏感檔案清單
 

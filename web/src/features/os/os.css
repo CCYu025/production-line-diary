@@ -1,0 +1,243 @@
+/*
+ * PLD/OS 模式專用樣式（docs/os-mode-spec.md §3.5）。
+ * 規則（由 web/src/features/os/osCss.test.ts 把關）：
+ *   1. 每條規則的每個選擇器都以 :root[data-mode="os"] 開頭（網頁模式的 <html> 沒有這個屬性，整份都不會套用）。
+ *   2. 不寫死色碼：顏色一律取自 Cyber token（var(--…)）。
+ *   3. 檔尾是 @media print：隱藏所有 OS 元素、讓列印和標準淺色主題列印一模一樣。
+ * 圖層（由下到上）：控制室 3D（0）→ HUD（20，互動層）→ 工作站（10）→ 轉場疊層（40）；Radix 浮層與 toast 是 z-50 以上。
+ */
+
+:root[data-mode="os"],
+:root[data-mode="os"] body {
+  overflow: hidden;
+}
+
+:root[data-mode="os"] .os-root {
+  position: fixed;
+  inset: 0;
+}
+
+/* ---------- 控制室 3D 層（A 區） ---------- */
+
+:root[data-mode="os"] .os-hub {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: var(--page);
+}
+
+:root[data-mode="os"] .os-hub[data-visible="false"] {
+  display: none;
+}
+
+:root[data-mode="os"] .os-hub canvas {
+  display: block;
+}
+
+:root[data-mode="os"] .os-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--accent-text);
+  font-family: "IBM Plex Mono", "Noto Sans TC", monospace;
+}
+
+:root[data-mode="os"] .os-fallback a {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+/* ---------- HUD（真實可操作的按鈕） ---------- */
+
+:root[data-mode="os"] .os-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  padding-bottom: 7vh;
+  pointer-events: none;
+}
+
+:root[data-mode="os"] .os-hud[data-active="false"] {
+  display: none;
+}
+
+:root[data-mode="os"] .os-hud > * {
+  pointer-events: auto;
+}
+
+:root[data-mode="os"] .os-hud-button {
+  min-height: 44px;
+  padding: 10px 32px;
+  border: 1px solid var(--accent);
+  background: var(--surface);
+  color: var(--accent-text);
+  font: 600 16px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+:root[data-mode="os"] .os-hud-button:hover {
+  background: var(--accent-wash);
+}
+
+:root[data-mode="os"] .os-hud-hint {
+  margin: 0;
+  color: var(--ink-2);
+  font: 400 13px/1.4 "IBM Plex Mono", "Noto Sans TC", monospace;
+}
+
+:root[data-mode="os"] .os-hud-hint a {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+/* ---------- 工作站（C 區內容＋B 區外框） ---------- */
+
+:root[data-mode="os"] .os-station {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: var(--page);
+}
+
+:root[data-mode="os"] .os-station[data-hidden="true"] {
+  /* visibility 之外再加 opacity：Cyber 的偽元素動畫可能把 visibility 蓋回 visible（會在交接點之前漏出來） */
+  visibility: hidden;
+  opacity: 0;
+}
+
+:root[data-mode="os"] .os-frame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+}
+
+:root[data-mode="os"] .os-frame-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px 14px 4px 4px;
+  background: var(--surface);
+}
+
+:root[data-mode="os"] .os-back {
+  min-height: 32px;
+  padding: 2px 12px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent-text);
+  font: 600 14px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+:root[data-mode="os"] .os-back:hover {
+  background: var(--accent-wash);
+}
+
+:root[data-mode="os"] .os-tag {
+  color: var(--accent-text);
+  font: 600 14px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.12em;
+}
+
+:root[data-mode="os"] .os-screen {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 2px solid var(--line-strong);
+  border-radius: 18px;
+  background: var(--page);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+:root[data-mode="os"] .os-screen-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+:root[data-mode="os"] .os-skip {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  z-index: 45;
+  padding: 8px 16px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+:root[data-mode="os"] .os-skip:focus {
+  left: 12px;
+}
+
+/* ---------- 轉場疊層（A 區）：永遠不接收點擊 ---------- */
+
+:root[data-mode="os"] #os-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: none;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+
+:root[data-mode="os"] #os-overlay[data-active="true"] {
+  display: block;
+}
+
+/* ---------- 列印：所有 OS 元素都不印，版面和標準淺色主題列印相同 ---------- */
+
+@media print {
+  :root[data-mode="os"] .os-hub,
+  :root[data-mode="os"] .os-hud,
+  :root[data-mode="os"] #os-overlay,
+  :root[data-mode="os"] .os-frame-bar,
+  :root[data-mode="os"] .os-skip,
+  :root[data-mode="os"] [data-os-chrome] {
+    display: none !important;
+  }
+
+  :root[data-mode="os"],
+  :root[data-mode="os"] body {
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  :root[data-mode="os"] .os-root,
+  :root[data-mode="os"] .os-station,
+  :root[data-mode="os"] .os-frame,
+  :root[data-mode="os"] .os-screen,
+  :root[data-mode="os"] .os-screen-inner {
+    position: static !important;
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: none !important;
+  }
+}
