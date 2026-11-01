@@ -53,5 +53,7 @@ export function getChannel(id: ChannelId): Channel {
 }
 
 export function isHubPath(pathname: string): boolean {
-  return normalize(pathname) === HUB_PATH;
+  // "/" 是 index 路由，OS 模式下立刻導向 /os：直接當控制室，才不會冷啟動時先當成工作站再播一段離開轉場
+  const p = normalize(pathname);
+  return p === HUB_PATH || p === "/";
 }

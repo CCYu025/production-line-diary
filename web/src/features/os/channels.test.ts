@@ -36,6 +36,7 @@ describe("channels", () => {
     expect(channelForPath("/os")).toBeNull();
     expect(channelForPath("/nope")).toBeNull();
     expect(isHubPath("/os")).toBe(true);
+    expect(isHubPath("/")).toBe(true);
     expect(isHubPath("/records")).toBe(false);
   });
 

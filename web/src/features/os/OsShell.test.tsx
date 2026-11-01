@@ -2,7 +2,7 @@ import { act, render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BootLoading, resetBootForTest } from "@/app/BootScreen";
-import { getThemePreference, THEME_STORAGE_KEY } from "@/lib/theme";
+import { applyTheme, getThemePreference, THEME_STORAGE_KEY } from "@/lib/theme";
 
 const themeMock = vi.hoisted(() => ({ switchTheme: vi.fn() }));
 vi.mock("@/lib/theme", async (orig) => ({ ...(await orig<typeof import("@/lib/theme")>()), switchTheme: themeMock.switchTheme }));
@@ -95,6 +95,17 @@ describe("OsShell", () => {
       vi.advanceTimersByTime(500);
     });
     expect(screen.queryByText(/連線本機伺服器/)).toBeNull();
+  });
+
+  it("別的分頁改了主題（重新套用標準）：OS 模式期間立刻維持 cyber", () => {
+    mount("/records");
+    act(() => applyTheme("standard"));
+    expect(document.documentElement.dataset.theme).toBe("cyber");
+  });
+
+  it("冷啟動停在 /（index 路由）：直接是 hub，不播離開轉場", () => {
+    mount("/");
+    expect(phase()).toBe("hub");
   });
 
   it("直接載入頻道路徑：station，沒有轉場；有 main#main 與頁面", () => {

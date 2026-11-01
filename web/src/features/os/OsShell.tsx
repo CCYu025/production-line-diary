@@ -7,7 +7,7 @@ import { Outlet, useLocation, useMatches, useNavigate } from "react-router-dom";
 import { consumeBoot } from "@/app/BootScreen";
 import type { RouteHandle } from "@/app/AppShell";
 import { useMediaQuery } from "@/lib/useMediaQuery";
-import { applyTheme, getThemePreference } from "@/lib/theme";
+import { applyTheme, getAppliedTheme, getThemePreference, subscribeTheme } from "@/lib/theme";
 import { getChannel, HUB_PATH, type ChannelId } from "./channels";
 import { placeOf, phaseOf, type DirectorState } from "./director/reducer";
 import { useDirector } from "./director/useDirector";
@@ -65,7 +65,12 @@ export default function OsShell() {
     root.dataset.mode = "os";
     applyTheme("cyber");
     consumeBoot();
+    // 別的分頁改了 pld.theme（storage 事件會重新套用標準）：OS 模式期間一律維持 cyber
+    const unsubscribe = subscribeTheme(() => {
+      if (getAppliedTheme() !== "cyber") applyTheme("cyber");
+    });
     return () => {
+      unsubscribe();
       delete root.dataset.mode;
       delete root.dataset.osPhase;
       applyTheme(getThemePreference());
@@ -112,7 +117,7 @@ export default function OsShell() {
 
   return (
     <div className="os-root" data-os="root">
-      <div className="os-hub" data-os="hub" data-visible={hubVisible ? "true" : "false"} aria-hidden="true">
+      <div className="os-hub" data-os="hub" data-visible={hubVisible ? "true" : "false"}>
         <HubCanvas running={hubVisible} mode={hubMode(state)} clock={clock} reduced={reduced} />
       </div>
       <Hud channel={channel} active={hudActive} buttonRef={hudButtonRef} onEnter={() => void navigate(channel.path, { flushSync: true })} />

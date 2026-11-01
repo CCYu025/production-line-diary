@@ -15,6 +15,7 @@ const route = (to: Place, instant = false): DirectorEvent => ({ type: "ROUTE", t
 describe("placeOf / initialState", () => {
   it("/os → hub；頻道路徑 → channel；未知路徑 → ch null", () => {
     expect(placeOf("/os")).toEqual(toHub);
+    expect(placeOf("/")).toEqual(toHub);
     expect(placeOf("/records")).toEqual(toCh("CH-02"));
     expect(placeOf("/records/9/edit")).toEqual(toCh("CH-02"));
     expect(placeOf("/_ui")).toEqual(toCh(null));
@@ -90,6 +91,21 @@ describe("EXITING", () => {
     expect(reduce(EXI_POST, route(toCh("CH-02")))).toEqual(ENT_PRE);
   });
   it("轉場中又換到 /os：跳到 HUB 後維持 HUB", () => expect(reduce(EXI_PRE, route(toHub))).toEqual(HUB));
+});
+
+describe("補充覆蓋", () => {
+  it("instant 路由時轉場中的狀態直接到終點", () => {
+    expect(reduce(ENT_PRE, route(toHub, true))).toEqual(HUB);
+    expect(reduce(EXI_PRE, route(toCh("CH-02"), true))).toEqual(STA);
+  });
+  it("交接後的轉場遇到路由變化", () => {
+    expect(reduce(ENT_POST, route(toCh("CH-03")))).toEqual({ kind: "STATION", ch: "CH-03" });
+    expect(reduce(EXI_POST, route(toHub))).toEqual(HUB);
+  });
+  it("STATION 即時切換到另一頻道、HUB 到未知路徑", () => {
+    expect(reduce(STA, route(toCh("CH-01"), true))).toEqual({ kind: "STATION", ch: "CH-01" });
+    expect(reduce(HUB, route(toCh(null)))).toEqual({ kind: "ENTERING", ch: null, handoff: false });
+  });
 });
 
 describe("輔助", () => {
