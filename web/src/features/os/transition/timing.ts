@@ -39,3 +39,32 @@ export const SWITCH = {
 export const ENTER_TOTAL_CAP_MS = 1200;
 export const EXIT_TOTAL_CAP_MS = 900;
 export const SWITCH_TOTAL_CAP_MS = 300;
+
+/**
+ * 開機序列（§5.5；X2）。B1（PRESS ANY KEY）留到 X4，開機從 B2 自動開始。
+ * 完整版 ≤ 4,000ms（每個分頁工作階段只播一次）；短版（只有 B3＋B4）≤ 1,000ms。
+ * 區間為相對於開機開始的毫秒 [起, 迄)，供 3D 層與 BIOS 文字疊層共用。
+ */
+export const BOOT_FULL = {
+  /** 總長上限 ≤ 4,000ms */
+  total: 4000,
+  /** B2：BIOS 自檢文字逐行出現 */
+  B2: [0, 2400],
+  /** B3：一條亮線展開成全畫面 */
+  B3: [2400, 3000],
+  /** B4：線框從中心向外描繪 */
+  B4: [3000, 4000],
+} as const;
+
+export const BOOT_SHORT = {
+  /** 總長上限 ≤ 1,000ms */
+  total: 1000,
+  B3: [0, 300],
+  B4: [300, 1000],
+} as const;
+
+export const BOOT_FULL_CAP_MS = 4000;
+export const BOOT_SHORT_CAP_MS = 1000;
+
+/** 待機巡視：控制室無輸入達這麼久（毫秒）就開始（§4.3）。 */
+export const PATROL_IDLE_MS = 60_000;

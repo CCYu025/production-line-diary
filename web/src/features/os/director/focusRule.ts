@@ -30,6 +30,7 @@ export function arrivalOf(before: DirectorState, after: DirectorState): Arrival 
     return null;
   }
   if (after.kind === "HUB") {
+    if (before.kind === "BOOT") return "hub"; // 開機結束（播完或被跳過）：焦點到選中的頻道按鈕
     if (before.kind === "EXITING") return before.handoff ? null : "hub";
     if (before.kind === "STATION" || isEnterish(before)) return "hub"; // 減少動態效果：直接切換
     return null;

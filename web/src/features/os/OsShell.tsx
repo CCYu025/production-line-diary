@@ -326,7 +326,7 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
   const channel = getChannel(selected);
   const showStation = state.kind === "STATION" || state.kind === "ENTERING" || state.kind === "SWITCHING";
   const stationHidden = (state.kind === "ENTERING" || state.kind === "SWITCHING") && !state.handoff;
-  const hubVisible = state.kind === "HUB" || state.kind === "EXITING" || (state.kind === "ENTERING" && !state.handoff);
+  const hubVisible = state.kind === "HUB" || state.kind === "BOOT" || state.kind === "EXITING" || (state.kind === "ENTERING" && !state.handoff);
   const hudActive = state.kind === "HUB" || (state.kind === "EXITING" && state.handoff);
   const overlayKind = transitionKindOf(state);
   const cardCh = stationCh ? getChannel(stationCh) : channel;

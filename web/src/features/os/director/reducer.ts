@@ -6,8 +6,7 @@
  * HANDOFF／DONE 事件帶著「計時器建立時的 gen」，只有與目前轉場的 gen 相同才生效。
  * 所以舊轉場留下的計時器（已被新路由取代）永遠不會影響新轉場。
  *
- * BOOT 在 X1 沒有持續時間（執行期永遠不會進入，initialState 直接從 HUB／STATION 開始），
- * 但狀態機完整支援：BOOT 帶著目的地 dest；ROUTE 更新 dest；INPUT／DONE／HANDOFF 一律結束開機 → initialState(dest)。
+ * BOOT（X2 起有持續時間：完整 ≤ 4s、短 ≤ 1s，計時器由 useDirector 送 DONE；是否開機由 boot.ts 決定）：BOOT 帶著目的地 dest；ROUTE 更新 dest；INPUT／DONE／HANDOFF 一律結束開機 → initialState(dest)。
  */
 import { channelForPath, isHubPath, type ChannelId } from "../channels";
 
@@ -15,7 +14,8 @@ import { channelForPath, isHubPath, type ChannelId } from "../channels";
 export type Place = { kind: "hub" } | { kind: "channel"; ch: ChannelId | null };
 
 export type DirectorState =
-  | { kind: "BOOT"; dest: Place; gen: number }
+  /** short＝短開機（只有 B3＋B4，≤ 1s）；省略或 false＝完整開機（≤ 4s）。見 boot.ts／transition/timing.ts */
+  | { kind: "BOOT"; dest: Place; gen: number; short?: boolean }
   | { kind: "HUB"; gen: number }
   | { kind: "ENTERING"; ch: ChannelId | null; handoff: boolean; gen: number }
   | { kind: "STATION"; ch: ChannelId | null; gen: number }
@@ -61,9 +61,17 @@ export function initialState(place: Place, gen = 0): DirectorState {
   return place.kind === "hub" ? { kind: "HUB", gen } : { kind: "STATION", ch: place.ch, gen };
 }
 
-/** 開機狀態（X1 執行期不使用；狀態機與測試完整支援）。 */
-export function bootState(dest: Place, gen = 0): DirectorState {
-  return { kind: "BOOT", dest, gen };
+/** 開機狀態（X2：控制室第一次顯示時由 boot.ts 的 decideBoot 決定是否進入）。 */
+export function bootState(dest: Place, gen = 0, short = false): DirectorState {
+  return short ? { kind: "BOOT", dest, gen, short: true } : { kind: "BOOT", dest, gen };
+}
+
+/**
+ * 輸入閘是否該啟動：轉場在交接點之前，或開機中（X2）。
+ * 開機中的第一次按鍵／點擊＝跳過開機，而且那次輸入被閘吃掉、不會傳給下面的畫面。
+ */
+export function isGateActive(s: DirectorState): boolean {
+  return s.kind === "BOOT" || isPreHandoff(s);
 }
 
 /** 轉場的終點（非轉場狀態原樣回傳；BOOT 的終點是它的目的地）。 */

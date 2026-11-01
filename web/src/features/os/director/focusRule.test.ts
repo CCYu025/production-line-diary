@@ -45,4 +45,8 @@ describe("arrivalOf", () => {
   it("新轉場的交接點（gen 不同）仍算抵達", () => {
     expect(arrivalOf(sw(true, 1), sw(true, 2))).toBe("station");
   });
+
+  it("開機結束（BOOT → HUB）：焦點到控制室", () => {
+    expect(arrivalOf({ kind: "BOOT", dest: { kind: "hub" }, gen: 0 }, { kind: "HUB", gen: 0 })).toBe("hub");
+  });
 });

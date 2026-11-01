@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { ENTER, ENTER_TOTAL_CAP_MS, EXIT, EXIT_TOTAL_CAP_MS, SWITCH, SWITCH_TOTAL_CAP_MS } from "./timing";
+import {
+  BOOT_FULL,
+  BOOT_FULL_CAP_MS,
+  BOOT_SHORT,
+  BOOT_SHORT_CAP_MS,
+  ENTER,
+  ENTER_TOTAL_CAP_MS,
+  EXIT,
+  EXIT_TOTAL_CAP_MS,
+  PATROL_IDLE_MS,
+  SWITCH,
+  SWITCH_TOTAL_CAP_MS,
+} from "./timing";
 
 describe("timing", () => {
   it("總長不超過規格上限", () => {
@@ -51,4 +63,25 @@ describe("timing", () => {
       expect(SWITCH.total).toBeLessThan(ENTER.total);
     });
   });
+});
+
+describe("A4：開機時間 token", () => {
+  it("完整版 ≤ 4000ms，短版 ≤ 1000ms", () => {
+    expect(BOOT_FULL.total).toBeLessThanOrEqual(BOOT_FULL_CAP_MS);
+    expect(BOOT_SHORT.total).toBeLessThanOrEqual(BOOT_SHORT_CAP_MS);
+    expect(BOOT_FULL_CAP_MS).toBe(4000);
+    expect(BOOT_SHORT_CAP_MS).toBe(1000);
+  });
+  it("完整版 B2→B3→B4 首尾相接並止於總長", () => {
+    expect(BOOT_FULL.B2[0]).toBe(0);
+    expect(BOOT_FULL.B3[0]).toBe(BOOT_FULL.B2[1]);
+    expect(BOOT_FULL.B4[0]).toBe(BOOT_FULL.B3[1]);
+    expect(BOOT_FULL.B4[1]).toBe(BOOT_FULL.total);
+  });
+  it("短版 B3→B4 首尾相接並止於總長（沒有 B2）", () => {
+    expect(BOOT_SHORT.B3[0]).toBe(0);
+    expect(BOOT_SHORT.B4[0]).toBe(BOOT_SHORT.B3[1]);
+    expect(BOOT_SHORT.B4[1]).toBe(BOOT_SHORT.total);
+  });
+  it("待機巡視 60 秒", () => expect(PATROL_IDLE_MS).toBe(60_000));
 });
