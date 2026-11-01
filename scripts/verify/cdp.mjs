@@ -53,12 +53,17 @@ export class Browser {
       this.pending.set(id, { res: (v) => { clearTimeout(t); res(v); }, rej: (e) => { clearTimeout(t); rej(e); } });
     });
   }
-  async newPage({ width = 1280, height = 900, scheme = 'light', media = 'screen', context = true, url = 'about:blank', mobile = false, preScripts = [] } = {}) {
-    let browserContextId;
-    if (context) browserContextId = (await this.send('Target.createBrowserContext', { disposeOnDetach: true })).browserContextId;
+  /**
+   * @param {object} [o.contextOf] another Page: open the new page in the SAME browser context (shared localStorage / cookies,
+   *   i.e. "a new tab"). Closing such a page does not dispose the shared context.
+   */
+  async newPage({ width = 1280, height = 900, scheme = 'light', media = 'screen', context = true, url = 'about:blank', mobile = false, preScripts = [], contextOf = null } = {}) {
+    let browserContextId, owns = false;
+    if (contextOf) browserContextId = contextOf.ctx;
+    else if (context) { browserContextId = (await this.send('Target.createBrowserContext', { disposeOnDetach: true })).browserContextId; owns = true; }
     const { targetId } = await this.send('Target.createTarget', { url: 'about:blank', browserContextId });
     const { sessionId } = await this.send('Target.attachToTarget', { targetId, flatten: true });
-    const p = new Page(this, sessionId, targetId, browserContextId);
+    const p = new Page(this, sessionId, targetId, browserContextId); p.ownsContext = owns;
     await p.send('Page.enable'); await p.send('Runtime.enable'); await p.send('Network.enable'); await p.send('DOM.enable');
     await p.setViewport(width, height, mobile);
     await p.setMedia(scheme, media);
@@ -158,13 +163,34 @@ export class Page {
     await this.mouseDown(x, y);
     await this.mouseUp(x, y);
   }
+  /** Types text into the focused element (Input.insertText: no key events). */
+  async insertText(text) { await this.send('Input.insertText', { text }); }
+  /**
+   * CDP screencast: resolves to a stop() function that returns the collected frames
+   * [{t (ms, epoch wall clock of the frame), data (base64 jpeg/png)}]. Frames are only produced when the page repaints.
+   */
+  async startScreencast({ format = 'jpeg', quality = 70, maxWidth, maxHeight } = {}) {
+    const frames = [];
+    const l = (m) => {
+      if (m.method !== 'Page.screencastFrame') return;
+      frames.push({ t: (m.params.metadata?.timestamp ?? Date.now() / 1000) * 1000, recv: Date.now(), data: m.params.data });
+      this.send('Page.screencastFrameAck', { sessionId: m.params.sessionId }).catch(() => {});
+    };
+    this.listeners.push(l);
+    await this.send('Page.startScreencast', { format, quality, maxWidth, maxHeight, everyNthFrame: 1 });
+    return async () => {
+      try { await this.send('Page.stopScreencast'); } catch {}
+      this.listeners = this.listeners.filter((x) => x !== l);
+      return frames;
+    };
+  }
   async rectOf(selExpr) { // selExpr: JS expression returning an Element
     return this.eval(`(()=>{const e=(${selExpr});if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()`);
   }
   async clickEl(selExpr) { const r = await this.rectOf(selExpr); if (!r) throw new Error('no el ' + selExpr); await this.click(r.x + r.width / 2, r.y + r.height / 2); }
   async close() {
     try { await this.b.send('Target.closeTarget', { targetId: this.targetId }); } catch {}
-    if (this.ctx) try { await this.b.send('Target.disposeBrowserContext', { browserContextId: this.ctx }); } catch {}
+    if (this.ctx && this.ownsContext) try { await this.b.send('Target.disposeBrowserContext', { browserContextId: this.ctx }); } catch {}
   }
 }
 
