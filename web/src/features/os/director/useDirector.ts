@@ -106,6 +106,11 @@ export function useDirector(place: Place, instant: boolean) {
     wasBooting.current = booting;
   }, [booting]);
 
+  // 開機中打開「減少動態效果」：直接跳到結束（像跳過，但不吞任何輸入，也不經過輸入閘）
+  React.useEffect(() => {
+    if (instant && state.kind === "BOOT") setState((s) => reduce(s, { type: "INPUT" }));
+  }, [instant, state.kind]);
+
   const skip = React.useCallback(() => setState((s) => reduce(s, { type: "INPUT", swallowed: true })), []);
   return { state, dispatch, skip, clock, gateActive: isGateActive(state) };
 }

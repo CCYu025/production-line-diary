@@ -37,7 +37,18 @@ interface Card {
   canvas: HTMLCanvasElement;
 }
 
+/** 台標卡快取（key＝卡上的文字）：在控制室閒置時先畫好，進入轉場開始那一刻不必在點擊的工作裡建 canvas、畫字。 */
+const cardCache = new Map<string, Card>();
 function makeCard(p: OverlayPalette, code: string): Card {
+  let c = cardCache.get(code);
+  if (!c) {
+    c = buildCard(p, code);
+    cardCache.set(code, c);
+  }
+  return c;
+}
+
+function buildCard(p: OverlayPalette, code: string): Card {
   const c = document.createElement("canvas");
   c.width = OVERLAY_W;
   c.height = OVERLAY_H;
@@ -58,25 +69,58 @@ function makeCard(p: OverlayPalette, code: string): Card {
   return { canvas: c };
 }
 
-function drawNoise(ctx: CanvasRenderingContext2D, p: OverlayPalette, alpha: number) {
-  const img = ctx.createImageData(OVERLAY_W, OVERLAY_H);
-  const d = img.data;
-  const tint = mixRgb(p.lineStrong, p.accent, 0.5);
-  const a = Math.round(255 * alpha);
-  for (let i = 0; i < d.length; i += 4) {
-    const v = Math.random();
-    const t = v * v;
-    d[i] = p.page[0] + (tint[0] - p.page[0]) * t * 2.2;
-    d[i + 1] = p.page[1] + (tint[1] - p.page[1]) * t * 2.2;
-    d[i + 2] = p.page[2] + (tint[2] - p.page[2]) * t * 2.2;
-    d[i + 3] = a;
-  }
-  // 疊在目前畫面上（putImageData 會取代像素，所以先用暫存 canvas）
+/**
+ * 雜訊緩衝（只建一次）：暫存 canvas、ImageData 與它的 32 位元視圖。每一幀不再配置 ImageData／canvas，
+ * 也不對 23 萬個像素逐一呼叫 Math.random（4× CPU 節流下這一段曾是進入轉場最大的 JS 成本）：
+ * 用 xorshift32 取每個像素的 8 位元亂數，查一張 256 項的顏色表（顏色與原本的 t = v² 分布相同，只是量化成 256 階）。
+ */
+interface NoiseBuf {
+  tmp: HTMLCanvasElement;
+  tctx: CanvasRenderingContext2D;
+  img: ImageData;
+  d32: Uint32Array;
+  lut: Uint32Array;
+}
+let noiseBuf: NoiseBuf | null = null;
+const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+
+function getNoiseBuf(): NoiseBuf | null {
+  if (noiseBuf) return noiseBuf;
   const tmp = document.createElement("canvas");
   tmp.width = OVERLAY_W;
   tmp.height = OVERLAY_H;
-  tmp.getContext("2d")!.putImageData(img, 0, 0);
-  ctx.drawImage(tmp, 0, 0);
+  const tctx = tmp.getContext("2d");
+  if (!tctx) return null;
+  const img = tctx.createImageData(OVERLAY_W, OVERLAY_H);
+  noiseBuf = { tmp, tctx, img, d32: new Uint32Array(img.data.buffer), lut: new Uint32Array(256) };
+  return noiseBuf;
+}
+
+const byte = (x: number) => Math.max(0, Math.min(255, Math.round(x)));
+const pack = (r: number, g: number, b: number, a: number) => (LITTLE_ENDIAN ? ((a << 24) | (b << 16) | (g << 8) | r) >>> 0 : ((r << 24) | (g << 16) | (b << 8) | a) >>> 0);
+
+function drawNoise(ctx: CanvasRenderingContext2D, p: OverlayPalette, alpha: number) {
+  const nb = getNoiseBuf();
+  if (!nb) return;
+  const tint = mixRgb(p.lineStrong, p.accent, 0.5);
+  const a = Math.round(255 * alpha);
+  for (let k = 0; k < 256; k++) {
+    const v = k / 255;
+    const t = v * v * 2.2;
+    nb.lut[k] = pack(byte(p.page[0] + (tint[0] - p.page[0]) * t), byte(p.page[1] + (tint[1] - p.page[1]) * t), byte(p.page[2] + (tint[2] - p.page[2]) * t), a);
+  }
+  const d = nb.d32;
+  const lut = nb.lut;
+  let x = (Math.random() * 0xffffffff) | 1;
+  for (let i = 0; i < d.length; i++) {
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    d[i] = lut[(x >>> 24) & 255]!;
+  }
+  // 疊在目前畫面上（putImageData 會取代像素，所以先放到暫存 canvas）
+  nb.tctx.putImageData(nb.img, 0, 0);
+  ctx.drawImage(nb.tmp, 0, 0);
 }
 
 /** 進入轉場的第 t 毫秒（E1 無疊層；E2 台標卡；E3 雜訊＋水平撕裂＋垂直滾動；E4 淡出）。 */
@@ -167,6 +211,26 @@ export interface TransitionOverlayProps {
 
 export function TransitionOverlay({ kind, clock, cardText }: TransitionOverlayProps) {
   const ref = React.useRef<HTMLCanvasElement>(null);
+
+  // 控制室閒置時預先畫好目前頻道的台標卡與雜訊緩衝（進入轉場開始時不建立任何東西）
+  React.useEffect(() => {
+    if (kind) return;
+    const warm = () => {
+      try {
+        makeCard(readPalette(), cardText);
+        getNoiseBuf();
+      } catch {
+        /* 沒有 2D canvas（測試環境）：進入轉場開始時再建 */
+      }
+    };
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (h: number) => void };
+    if (w.requestIdleCallback) {
+      const h = w.requestIdleCallback(warm, { timeout: 1500 });
+      return () => w.cancelIdleCallback?.(h);
+    }
+    const t = window.setTimeout(warm, 200);
+    return () => window.clearTimeout(t);
+  }, [kind, cardText]);
 
   React.useLayoutEffect(() => {
     const canvas = ref.current;

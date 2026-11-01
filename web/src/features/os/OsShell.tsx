@@ -245,6 +245,22 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
     if (suspended) setPaletteOpen(false);
   }, [suspended]);
 
+  // 控制室閒置時先載入工作站會用到的中文字型子集（進入時第一次排版不必等字型、也少一點字形快取的冷啟動成本）
+  React.useEffect(() => {
+    if (!inHub || suspended || !document.fonts?.load) return;
+    const sample = CHANNELS.map((c) => c.name).join("") + "待處理今日本月機台設備異常嚴重狀態日期時間篩選匯出儲存取消確認刪除還原";
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (h: number) => void };
+    const run = () => {
+      for (const weight of [400, 500, 700]) void document.fonts.load(`${weight} 14px "Noto Sans TC"`, sample).catch(() => {});
+    };
+    if (w.requestIdleCallback) {
+      const h = w.requestIdleCallback(run, { timeout: 2000 });
+      return () => w.cancelIdleCallback?.(h);
+    }
+    const t = window.setTimeout(run, 300);
+    return () => window.clearTimeout(t);
+  }, [inHub, suspended]);
+
   // ---- 驗證用：目前階段 ----
   React.useLayoutEffect(() => {
     document.documentElement.dataset.osPhase = phase;
@@ -368,7 +384,7 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
           boot={state.kind === "BOOT" ? (state.short ? "short" : "full") : null}
           bootCounts={counts}
           level={crtLevel}
-          pickable={inHub && !suspended}
+          pickable={hudActive && !suspended}
           onPick={enterChannel}
           onFailure={onWebglFailure}
         />

@@ -67,8 +67,9 @@ function rec(over: Partial<DiaryRecord> = {}): DiaryRecord {
   } as DiaryRecord;
 }
 
+let router: ReturnType<typeof createMemoryRouter>;
 function mount(initial: string) {
-  const router = createMemoryRouter(
+  router = createMemoryRouter(
     [
       {
         path: "/",
@@ -138,12 +139,23 @@ describe("HUD 頻道按鈕：即時訊號", () => {
     ]);
     mount("/os");
     await flush();
-    expect(hudButton("CH-01 儀表板 · 待處理 1")).toHaveTextContent("CH-01 儀表板 · 待處理 1");
+    expect(hudButton("CH-01 儀表板 · 待處理 1")).toBeInTheDocument();
     expect(hudButton("CH-02 紀錄 · 今日 2")).toBeInTheDocument();
     expect(hudButton("CH-03 新增 · READY")).toBeInTheDocument();
     expect(hudButton(`CH-04 日曆 · 今日 2`)).toBeInTheDocument();
     expect(hudButton("CH-06 回收桶 · 1 筆")).toBeInTheDocument();
     expect(hudButton("CH-07 設定 · 2 台")).toBeInTheDocument();
+  });
+
+  it("窄版（< 1440px）的精簡文字「CH-02 紀錄 2」與完整文字都在按鈕裡（CSS 擇一顯示）；accessible name 永遠是完整的", async () => {
+    apiMock.list.mockResolvedValue([rec(), rec({ equipment: "F2" })]);
+    mount("/os");
+    await flush();
+    const b = hudButton("CH-02 紀錄 · 今日 2");
+    expect(b.querySelector(".os-hud-full")!.textContent).toBe("CH-02 紀錄 · 今日 2");
+    expect(b.querySelector(".os-hud-compact")!.textContent).toBe("CH-02 紀錄 2");
+    expect(b.querySelector(".os-hud-compact")!.textContent).not.toContain("今日");
+    expect(b.getAttribute("aria-label")).toBe("CH-02 紀錄 · 今日 2");
   });
 
   it("資料還沒載入：只有名稱", () => {
@@ -249,6 +261,20 @@ describe("螢幕點選（只在 HUB）", () => {
     expect(hubMock.props?.pickable).toBe(false);
   });
 
+  it("離開轉場過了交接點（exiting-post）：和 HUD 鍵一樣可以點螢幕", () => {
+    mount("/records");
+    act(() => {
+      void router.navigate("/os");
+    });
+    expect(phase()).toBe("exiting-pre");
+    expect(hubMock.props?.pickable).toBe(false);
+    advance(300);
+    expect(phase()).toBe("exiting-post");
+    expect(hubMock.props?.pickable).toBe(true);
+    act(() => hubMock.props!.onPick("CH-05"));
+    expect(loc.pathname).toBe("/report");
+  });
+
   it("開機中不可點選", () => {
     bootMock.real = true;
     mount("/os");
@@ -303,6 +329,63 @@ describe("待機巡視（60 秒無輸入）", () => {
     advance(120_000);
     expect(hubMock.props?.patrolling).toBe(false);
     expect(hubMock.props?.reduced).toBe(true);
+  });
+});
+
+describe("開機：輸入與減少動態效果", () => {
+  it("跳過開機的那次 keydown 與它的 keyup 都不傳給下面", () => {
+    bootMock.real = true;
+    mount("/os");
+    const seen: string[] = [];
+    const on = (e: Event) => seen.push(e.type);
+    document.addEventListener("keydown", on);
+    document.addEventListener("keyup", on);
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "3", code: "Digit3", bubbles: true, cancelable: true }));
+    });
+    expect(phase()).toBe("hub");
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent("keyup", { key: "3", code: "Digit3", bubbles: true, cancelable: true }));
+    });
+    // 之後的按鍵照常傳遞
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent("keyup", { key: "3", code: "Digit3", bubbles: true, cancelable: true }));
+    });
+    document.removeEventListener("keydown", on);
+    document.removeEventListener("keyup", on);
+    expect(seen).toEqual(["keyup"]);
+  });
+
+  it("開機中打開「減少動態效果」：直接跳到結束，不吞輸入、寫入開機 key", () => {
+    bootMock.real = true;
+    let reduce = false;
+    const listeners = new Set<() => void>();
+    vi.spyOn(window, "matchMedia").mockImplementation(
+      (q: string) =>
+        ({
+          get matches() {
+            return q.includes("reduce") && reduce;
+          },
+          media: q,
+          addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+          removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+        }) as unknown as MediaQueryList,
+    );
+    mount("/os");
+    expect(phase()).toBe("boot");
+    const seen: string[] = [];
+    const on = (e: Event) => seen.push(e.type);
+    document.addEventListener("keydown", on);
+    reduce = true;
+    act(() => Array.from(listeners).forEach((l) => l()));
+    expect(phase()).toBe("hub");
+    expect(window.sessionStorage.getItem("pld.os.boot")).toBe("1");
+    // 輸入閘沒有被啟動：之後的按鍵正常傳遞
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "x", code: "KeyX", bubbles: true, cancelable: true }));
+    });
+    document.removeEventListener("keydown", on);
+    expect(seen).toEqual(["keydown"]);
   });
 });
 
