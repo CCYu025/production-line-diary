@@ -558,6 +558,9 @@ B 區的紋理與掃描線只能蓋在 HUD 與外框範圍內，**不得蓋到�
   - E5：頁面導航留在 OsShell 內；**跨頻道**的（複製、存檔跳轉、圖表點進、toast「查看」換頻道）播短轉場，**同頻道**的（詳情面板編輯 `/records?open=…` → `/records/63/edit`、編輯存檔回 `/records?open=…`）不播轉場（§3.3 為準）。
   - `Ctrl+K`：有任何對話框／浮層開著時不作用（「除外」只指焦點在輸入框時仍可用）。
   - 任何模式切換都先是一次路由導覽，讓 `useBlocker` 能攔截（紅線 4）：工作站中 `exit` 先導向 `/os`（location state 標記 exit-to-web，導演即時處理、不播離開轉場）；被取消就中止（留在原處、不換外殼）；通過才 `setMode("web")` 並 `replace` 回原路徑。側欄「OS 模式」同樣先導向 `/os`，通過才 `setMode("os")`。
+  - export 指令（設計師核准，E1 對等）：指令列 `export`／`匯出` 沿用 `useExportAction`（同一套路徑檢查、toast、錯誤處理），因為 OS 模式沒有側欄的匯出按鈕。
+  - 裝置門檻不卸載工作站：視窗縮到 1024×600 以下時工作站只 `hidden`＋`inert`（3D 迴圈暫停、不銷毀 GL），表單不丟；門檻上的「改用網頁模式」走與 EXIT TO WEB 相同的 route-first 路徑（髒表單會先確認）。
+  - 離開 OS 模式的中繼導覽用 `replace`，上一頁一次回到進入該頁之前；進入 OS 模式的中繼導覽為 push，上一頁一次回原頁且不切換模式（POP 不切換）。
   - Esc 規則的「浮層」判斷：`aria-expanded="true"` 只在元素是 `role="combobox"` 或有 `aria-haspopup`（非 false）時算；一般展開式區塊不擋 Esc。
 - 驗證的權威 I1／I2／I4 數字是有畫面、開硬體加速的 Chrome（記錄繪製器），1× 與 4×；無頭（SwiftShader）結果僅供參考。
 
