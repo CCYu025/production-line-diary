@@ -23,10 +23,10 @@ export const SEGMENTS_PER_BLIP = 5;
 export const PULSE_POOL = 6;
 export const PULSE_SEGMENTS = 24;
 /** 雷達台：位置（弧的內側、鏡頭與螢幕牆之間）、半徑、台緣高度 */
-export const RADAR = { x: 0, z: 4.4, radius: 1.8, rim: 0.14 } as const;
+export const RADAR = { x: 0, z: 7.6, radius: 2.4, rim: 0.16 } as const;
 const PLOT_Y = RADAR.rim + 0.01;
-const BLIP_SIZE = 0.07;
-const BLIP_STICK = 0.32;
+const BLIP_SIZE = 0.1;
+const BLIP_STICK = 0.45;
 
 export interface HubLineColors {
   /** 地板網格 */
@@ -61,8 +61,8 @@ function floorGrid(color: THREE.ColorRepresentation): THREE.LineSegments {
   const extent = 70;
   const step = 1.5;
   const pts: number[] = [];
-  for (let x = -extent; x <= extent; x += step) pts.push(x, 0, -extent, x, 0, 16);
-  for (let z = -extent; z <= 16; z += step) pts.push(-extent, 0, z, extent, 0, z);
+  for (let x = -extent; x <= extent; x += step) pts.push(x, 0, -extent, x, 0, 26);
+  for (let z = -extent; z <= 26; z += step) pts.push(-extent, 0, z, extent, 0, z);
   return new THREE.LineSegments(lineGeometry(pts), basic(color, true));
 }
 
@@ -80,20 +80,20 @@ function edgesInto(out: number[], geometry: THREE.BufferGeometry, m: THREE.Matri
 }
 
 /** 線框 CRT 外殼：前殼（箱）＋螢幕邊框＋後殼（四角錐台）＋頸＋底座，合併成一份 geometry（7 台共用）。 */
-function housingGeometry(): THREE.BufferGeometry {
+export function housingGeometry(): THREE.BufferGeometry {
   const pts: number[] = [];
   const at = (x: number, y: number, z: number) => new THREE.Matrix4().makeTranslation(x, y, z);
-  edgesInto(pts, new THREE.BoxGeometry(2.6, 2.0, 0.5), at(0, 1.55, 0.35));
-  edgesInto(pts, new THREE.BoxGeometry(2.3, 1.7, 0.08), at(0, 1.55, 0.64));
+  edgesInto(pts, new THREE.BoxGeometry(2.34, 2.0, 0.5), at(0, 1.55, 0.35));
+  edgesInto(pts, new THREE.BoxGeometry(2.1, 1.7, 0.08), at(0, 1.55, 0.64));
   // 後殼：上小下大的四角錐台（CylinderGeometry 四邊形，轉 45° 與前殼對齊）
   const back = new THREE.Matrix4().compose(
     new THREE.Vector3(0, 1.55, -0.65),
     new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, Math.PI / 4, 0)),
     new THREE.Vector3(1, 1, 0.78),
   );
-  edgesInto(pts, new THREE.CylinderGeometry(0.9, 1.7, 1.6, 4, 1), back);
+  edgesInto(pts, new THREE.CylinderGeometry(0.5, 0.95, 1.6, 4, 1), back);
   edgesInto(pts, new THREE.BoxGeometry(0.6, 0.35, 0.6), at(0, 0.42, 0));
-  edgesInto(pts, new THREE.BoxGeometry(1.7, 0.12, 1.3), at(0, 0.18, 0));
+  edgesInto(pts, new THREE.BoxGeometry(1.5, 0.12, 1.1), at(0, 0.18, 0));
   return lineGeometry(pts);
 }
 

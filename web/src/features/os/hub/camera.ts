@@ -2,22 +2,19 @@
  * 控制室鏡頭的純數學（docs/os-mode-spec.md §4.3、§5.2–5.3、§5.6；X2）：不依賴 three，HubCanvas 的 Rig 每幀呼叫。
  *  - 休息位置：整面螢幕牆在目前畫面長寬比內都看得到（layout.fitRestCamera）。
  *  - 進入推近／離開拉遠：終點是「選中的那台螢幕」前方（layout.dollyTarget），不是畫面中央。
- *  - 選取偏航（≤ 8°）：easeToward 趨近，不擋輸入；減少動態效果時直接套用。
+ *  - 選取偏航（≤ 3°、不位移）：easeToward 趨近，不擋輸入；減少動態效果時直接套用。
  *  - 待機巡視：慢速左右偏航，進入時淡入、輸入時快速收回。
  */
 import { ENTER, EXIT } from "../transition/timing";
-import { dollyTarget, easeToward, fitRestCamera, poseForChannel, selectYawDeg, type Vec3 } from "./layout";
+import { CAMERA_FOV, dollyTarget, easeToward, fitRestCamera, poseForChannel, selectYawDeg, type Vec3 } from "./layout";
 import type { ChannelId } from "../channels";
 import { channelIndex } from "../channels";
 
 export type HubMode = "hub" | "entering" | "exiting" | "station";
 
-/** 垂直視角（度） */
-export const CAMERA_FOV = 45;
+export { CAMERA_FOV };
 /** 休息位置的長寬比下限（太窄的視窗不再往後退） */
 export const MIN_REST_ASPECT = 1.2;
-/** 休息位置每側留的邊距：4% 基本邊距＋選取偏航（≤ 8°）把牆往一側推時還看得到最外側的螢幕 */
-export const REST_MARGIN = 0.14;
 
 export const PATROL_YAW_MAX_DEG = 24;
 export const PATROL_PERIOD_S = 40;
@@ -47,8 +44,16 @@ export interface CameraPose {
   lookAt: Vec3;
 }
 
+const restCache = new Map<number, CameraPose>();
+/** 休息位置（依長寬比；解算一次後快取，Rig 每幀呼叫）。 */
 export function restPose(aspect: number): CameraPose {
-  return fitRestCamera(CAMERA_FOV, Math.max(MIN_REST_ASPECT, aspect), { marginFrac: REST_MARGIN });
+  const a = Math.round(Math.max(MIN_REST_ASPECT, aspect) * 1000) / 1000;
+  let p = restCache.get(a);
+  if (!p) {
+    p = fitRestCamera(CAMERA_FOV, a);
+    restCache.set(a, p);
+  }
+  return p;
 }
 
 export function dollyPose(ch: ChannelId): CameraPose {

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { blipLocal, buildBracket, buildHubLines, countSegments, HUB_SEGMENT_CAP, MAX_BLIPS, PULSE_POOL, PULSE_SEGMENTS, RADAR, SEGMENTS_PER_BLIP } from "./hubLines";
-import { MONITOR_COUNT } from "./layout";
+import { blipLocal, buildBracket, buildHubLines, countSegments, housingGeometry, HUB_SEGMENT_CAP, MAX_BLIPS, PULSE_POOL, PULSE_SEGMENTS, RADAR, SEGMENTS_PER_BLIP } from "./hubLines";
+import { CASING_HULL_XZ, CASING_Y, MONITOR_COUNT } from "./layout";
 import type { Blip } from "./radar";
 
 const colors = {
@@ -77,6 +77,29 @@ describe("hubLines（X2：7 台螢幕＋雷達台）", () => {
       const r = Math.hypot(p.x, p.z);
       expect(r).toBeGreaterThanOrEqual(0.35 * RADAR.radius - 1e-9);
       expect(r).toBeLessThanOrEqual(0.9 * RADAR.radius + 1e-9);
+    }
+  });
+
+  it("外殼的所有頂點都在 layout 的凸包稜柱內（投影間距與構圖測試依賴它）", () => {
+    const pos = housingGeometry().getAttribute("position");
+    const poly = CASING_HULL_XZ;
+    const inside = (x: number, z: number) => {
+      // 凸多邊形（逆時針或順時針皆可）：所有邊的叉積同號（含邊上）
+      let sign = 0;
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i]!;
+        const b = poly[(i + 1) % poly.length]!;
+        const c = (b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0]);
+        if (Math.abs(c) < 1e-6) continue;
+        if (sign === 0) sign = Math.sign(c);
+        else if (Math.sign(c) !== sign) return false;
+      }
+      return true;
+    };
+    for (let i = 0; i < pos.count; i++) {
+      expect(inside(pos.getX(i), pos.getZ(i)), `頂點 ${i}`).toBe(true);
+      expect(pos.getY(i)).toBeGreaterThanOrEqual(CASING_Y[0] - 1e-6);
+      expect(pos.getY(i)).toBeLessThanOrEqual(CASING_Y[1] + 1e-6);
     }
   });
 

@@ -242,7 +242,7 @@ function HubScene({
   React.useEffect(() => {
     const page = new THREE.Color(built.colors.page);
     scene.background = page;
-    scene.fog = new THREE.Fog(page, 9, 34);
+    scene.fog = new THREE.Fog(page, 16, 60);
     scene.add(built.parts.group);
     return () => {
       scene.remove(built.parts.group);
@@ -378,7 +378,7 @@ function Pipeline({
     const bs = clock.bootStart;
     if (b && bs != null) {
       const f = bootFrame(b, performance.now() - bs, 5);
-      pipeline.setBoot(f.done ? null : { reveal: f.reveal, band: f.band, bandMix: f.bandMix });
+      pipeline.setBoot(f.done ? null : { reveal: f.reveal, band: f.band, bandW: f.bandW, line: f.line, glow: f.glow });
       if (f.biosOn) {
         const { width: w, height: h } = pipeline.lowSize;
         if (!bios.current || bios.current.w !== w || bios.current.h !== h) {
