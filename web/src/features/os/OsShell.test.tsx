@@ -33,6 +33,7 @@ const webglMock = vi.hoisted(() => ({ available: vi.fn(() => true) }));
 vi.mock("./webgl", async (orig) => ({ ...(await orig<typeof import("./webgl")>()), webglAvailable: webglMock.available }));
 
 import { resetBootDoneForTest } from "./director/boot";
+import { COMMANDS } from "./hud/commands";
 import OsShell from "./OsShell";
 import { shouldKeepCyberOnExit, WEBGL_FALLBACK_TEXT } from "./webgl";
 
@@ -409,7 +410,7 @@ describe("OsShell：指令列", () => {
     expect(input()).toHaveAttribute("aria-expanded", "true");
     expect(input()).not.toHaveAttribute("aria-activedescendant");
     const options = within(list).getAllByRole("option");
-    expect(options.length).toBe(11);
+    expect(options.length).toBe(COMMANDS.length);
     key("ArrowDown", {}, input());
     expect(input()).toHaveAttribute("aria-activedescendant", options[0]!.id);
     expect(options[0]).toHaveAttribute("aria-selected", "true");
@@ -1007,5 +1008,24 @@ describe("OsShell：開機（X2）", () => {
     expect(phase()).toBe("boot");
     advance(1000);
     expect(phase()).toBe("hub");
+  });
+});
+
+describe("OsShell：crt 指令", () => {
+  it("crt max 立刻生效並寫入 pld.os.crt；crt（無參數）顯示目前強度", () => {
+    mount("/os");
+    key("k", { ctrlKey: true });
+    const input = () => screen.getByRole("combobox");
+    act(() => {
+      fireEvent.change(input(), { target: { value: "crt" } });
+    });
+    key("Enter", {}, input());
+    expect(screen.getByRole("alert").textContent).toContain("標準");
+    act(() => {
+      fireEvent.change(input(), { target: { value: "crt max" } });
+    });
+    key("Enter", {}, input());
+    expect(window.localStorage.getItem("pld.os.crt")).toBe("max");
+    window.localStorage.removeItem("pld.os.crt");
   });
 });

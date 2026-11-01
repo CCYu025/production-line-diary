@@ -18,6 +18,8 @@ vi.mock("./AppShell", () => ({
 }));
 vi.mock("@/features/os/hub/HubCanvas", () => ({ default: () => null, WebglFallback: () => null }));
 vi.mock("@/features/os/webgl", async (orig) => ({ ...(await orig<typeof import("@/features/os/webgl")>()), webglAvailable: () => true }));
+// 開機（X2）在這些測試不是重點：關掉，維持「抵達即控制室」
+vi.mock("@/features/os/director/boot", async (orig) => ({ ...(await orig<typeof import("@/features/os/director/boot")>()), decideBoot: () => null }));
 
 import { ENTER_OS_STATE } from "./osEntry";
 import { IndexRedirect, ModeShell, OsRouteElement } from "./ModeShell";
