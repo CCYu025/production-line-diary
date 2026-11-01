@@ -6,7 +6,7 @@
 import * as React from "react";
 import { mixRgb, parseCssColor, readOsColors, rgbCss, type Rgb } from "../colors";
 import type { TransitionClock } from "../director/useDirector";
-import { ENTER, EXIT } from "./timing";
+import { ENTER, EXIT, SWITCH } from "./timing";
 
 export const OVERLAY_W = 640;
 export const OVERLAY_H = 360;
@@ -134,10 +134,34 @@ export function drawExit(ctx: CanvasRenderingContext2D, p: OverlayPalette, t: nu
   }
 }
 
+/** 短轉場的雜訊不透明度（t 為毫秒）：0 到交接點完全不透明（遮住目的地現身）、到 150ms 為 0.85、150–300ms 淡出。 */
+export function switchNoiseAlpha(t: number): number {
+  if (t < 0 || t >= SWITCH.total) return 0;
+  if (t < SWITCH.handoff) return 1;
+  if (t < SWITCH.noise[1]) return 0.85;
+  return 0.85 * (1 - clamp01((t - SWITCH.lock[0]) / (SWITCH.lock[1] - SWITCH.lock[0])));
+}
+
+/** 短轉場是否還要在雜訊底下畫目的地的台標卡（只到交接點為止；之後下面是真正的工作站）。 */
+export function switchShowsCard(t: number): boolean {
+  return t >= 0 && t < SWITCH.handoff;
+}
+
+/** 短轉場的第 t 毫秒（§5.4）：目的地頻道的台標卡被不透明雜訊蓋住 → 交接點後工作站現身、雜訊 0.85 → 訊號鎖定淡出。 */
+export function drawSwitch(ctx: CanvasRenderingContext2D, p: OverlayPalette, card: Card, t: number) {
+  ctx.clearRect(0, 0, OVERLAY_W, OVERLAY_H);
+  const alpha = switchNoiseAlpha(t);
+  if (alpha <= 0) return;
+  if (switchShowsCard(t)) ctx.drawImage(card.canvas, 0, 0);
+  drawNoise(ctx, p, alpha);
+}
+
+export type OverlayKind = "enter" | "exit" | "switch";
+
 export interface TransitionOverlayProps {
-  kind: "enter" | "exit" | null;
+  kind: OverlayKind | null;
   clock: TransitionClock;
-  /** 台標卡上的文字，例如 CH-02 RECORDS */
+  /** 台標卡上的文字，例如 CH-02 RECORDS（切換時是目的地頻道） */
   cardText: string;
 }
 
@@ -154,13 +178,14 @@ export function TransitionOverlay({ kind, clock, cardText }: TransitionOverlayPr
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const palette = readPalette();
-    const card = kind === "enter" ? makeCard(palette, cardText) : null;
-    const total = kind === "enter" ? ENTER.total : EXIT.X3[1];
+    const card = kind === "exit" ? null : makeCard(palette, cardText);
+    const total = kind === "enter" ? ENTER.total : kind === "switch" ? SWITCH.total : EXIT.X3[1];
     canvas.style.display = "";
     let raf = 0;
     const frame = () => {
       const t = clock.start == null ? 0 : performance.now() - clock.start;
       if (kind === "enter") drawEnter(ctx, palette, card!, t);
+      else if (kind === "switch") drawSwitch(ctx, palette, card!, t);
       else drawExit(ctx, palette, t);
       if (t < total) raf = requestAnimationFrame(frame);
       else if (kind === "exit") canvas.style.display = "none"; // 疊層的部分在 400ms 就結束了（鏡頭拉回到 900ms）

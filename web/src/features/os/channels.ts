@@ -52,6 +52,21 @@ export function getChannel(id: ChannelId): Channel {
   return CHANNELS.find((c) => c.id === id)!;
 }
 
+/** 第 index 個頻道（0–6）；超出範圍回傳 undefined。 */
+export function channelByIndex(index: number): Channel | undefined {
+  return CHANNELS[index];
+}
+
+/** 頻道在清單中的位置（0–6）。 */
+export function channelIndex(id: ChannelId): number {
+  return CHANNELS.findIndex((c) => c.id === id);
+}
+
+/** HUD 頻道按鈕的文字（也是它的 accessible name），例如 "CH-02 紀錄"。 */
+export function channelButtonLabel(ch: Channel): string {
+  return `${ch.id} ${ch.name}`;
+}
+
 export function isHubPath(pathname: string): boolean {
   // "/" 是 index 路由，OS 模式下立刻導向 /os：直接當控制室，才不會冷啟動時先當成工作站再播一段離開轉場
   const p = normalize(pathname);

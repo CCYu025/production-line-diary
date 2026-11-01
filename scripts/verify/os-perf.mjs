@@ -1,6 +1,7 @@
 // P1 + P2 performance checks for the OS mode.
 //   P1: HEADED Chrome (real GPU), 1920x1080, hub idle 10s: median fps >= 55 (1x CPU), >= 30 (4x CPU throttle).
 //       Exit 2 + "INVALID" if the WebGL renderer is software (SwiftShader / llvmpipe / software).
+//   (the click uses the selected HUD channel button: [data-os="hud-ch"][aria-current="true"])
 //   P2: at station (phase 'station'), requestAnimationFrame calls attributable to OS lazy chunks over 3s must be 0.
 //       (rAF is wrapped via Page.addScriptToEvaluateOnNewDocument; stacks are matched against OS chunk file names from web/dist)
 // node scripts/verify/os-perf.mjs --url http://localhost:3114/ [--only p1,p2] [--dist web/dist] [--osdebug nobloom,nosway,nophosphor]
@@ -88,7 +89,7 @@ try {
         else {
           await p.goto(osUrl(A.url, { osdebug: dbg }), { settle: 300 });
           await waitPhase(p, 'hub', 15000); await sleep(500);
-          const c = await centerOf(p, q(SEL.hudCh02)); if (!c) throw new Error('no HUD CH-02 button');
+          const c = (await centerOf(p, q(SEL.hudSelected))) ?? (await centerOf(p, q(SEL.hudAny))); if (!c) throw new Error('no HUD channel button ([data-os="hud-ch"][aria-current="true"])');
           await p.click(c.x, c.y);
         }
         await waitPhase(p, 'station', 15000);

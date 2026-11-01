@@ -34,11 +34,23 @@ describe("os.css", () => {
     expect(nonPrintAfter).toEqual([]);
   });
 
-  it("@media print 隱藏所有 OS 元素（3D、HUD、疊層、外框頂列、跳過連結）", () => {
+  it("@media print 隱藏所有 OS 元素（3D、HUD、狀態列、頻道清單、裝置門檻、指令列、疊層、外框頂列、跳過連結）", () => {
     const hidden = rules
       .filter((r) => r.context.some((c) => /^@media\s+print\b/.test(c)) && /display:\s*none/.test(r.declarations))
       .flatMap((r) => r.selectors);
-    for (const must of [".os-hub", ".os-hud", "#os-overlay", ".os-frame-bar", ".os-skip", "[data-os-chrome]"]) {
+    for (const must of [
+      ".os-hub",
+      ".os-hud",
+      ".os-statusbar",
+      ".os-channels",
+      ".os-gate",
+      ".os-palette",
+      ".os-palette-overlay",
+      "#os-overlay",
+      ".os-frame-bar",
+      ".os-skip",
+      "[data-os-chrome]",
+    ]) {
       expect(hidden, must).toContain(`${OS_SCOPE} ${must}`);
     }
   });

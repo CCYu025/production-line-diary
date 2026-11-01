@@ -33,8 +33,11 @@ fs.cpSync(src, dataDir, { recursive: true });
 
 const env = { ...process.env, DATA_DIR: dataDir, PORT: String(port), NO_OPEN_BROWSER: '1' };
 const child = spawn(process.execPath, ['backend/server.js'], { cwd: root, env, stdio: ['ignore', 'inherit', 'inherit'] });
+// Marker so other scripts can prove "this port serves a scratch copy" before doing anything state-mutating (see safety.mjs).
+fs.writeFileSync(path.join(scratch, `serve-${port}.json`), JSON.stringify({ port, root, dataDir, scratch, pid: process.pid, startedAt: new Date().toISOString() }, null, 2));
 console.log(`serve.mjs: http://localhost:${port}/  (root ${root}, DATA_DIR ${dataDir})`);
-const stop = () => { try { child.kill(); } catch {} };
+const marker = path.join(scratch, `serve-${port}.json`);
+const stop = () => { try { child.kill(); } catch {} try { fs.unlinkSync(marker); } catch {} };
 process.on('SIGINT', () => { stop(); process.exit(0); });
 process.on('SIGTERM', () => { stop(); process.exit(0); });
 process.on('exit', stop);

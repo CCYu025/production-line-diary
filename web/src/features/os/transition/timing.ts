@@ -24,5 +24,18 @@ export const EXIT = {
   X4: [300, 900],
 } as const;
 
+/** 短轉場（§5.4，頻道之間切換）：雜訊 150ms＋訊號鎖定 150ms。 */
+export const SWITCH = {
+  /** 總長上限 ≤ 300ms */
+  total: 300,
+  /** 交接點（雜訊遮蔽下目的地現身） */
+  handoff: 75,
+  /** 雜訊（不透明度 0.85，從 t=0 蓋住目的地台標卡直到交接點之後） */
+  noise: [0, 150],
+  /** 訊號鎖定（雜訊淡出） */
+  lock: [150, 300],
+} as const;
+
 export const ENTER_TOTAL_CAP_MS = 1200;
 export const EXIT_TOTAL_CAP_MS = 900;
+export const SWITCH_TOTAL_CAP_MS = 300;

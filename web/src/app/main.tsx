@@ -16,15 +16,17 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 import { createQueryClient } from "@/lib/queryClient";
-import { initMode } from "@/lib/mode";
-import { initTheme } from "@/lib/theme";
+import { getMode, initMode } from "@/lib/mode";
+import { applyTheme, initTheme } from "@/lib/theme";
 import { Providers } from "./Providers";
 import { createRouter } from "./routes";
 
 // 主題要在 createRoot 之前同步套用（網址 ?theme= ＞ 已儲存的偏好），避免先閃一下標準主題。
 initTheme();
-// 模式（?mode=os｜web，只在這個分頁有效）同樣在 createRoot 之前決定，整個頁面生命週期內不變。
+// 模式（?mode=os｜web ＞ localStorage 的 pld.mode）同樣在 createRoot 之前決定；之後可在執行期切換（lib/mode.ts 的 setMode）。
 initMode();
+// OS 模式一律用 cyber 外觀：只套用、不寫入偏好（index.html 的 inline script 通常已先套好，這裡補上 ?theme=standard 之類的情況）。
+if (getMode() === "os") applyTheme("cyber");
 
 const queryClient = createQueryClient();
 const router = createRouter();

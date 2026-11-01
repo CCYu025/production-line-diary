@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { routes } from "@/app/routes";
-import { CHANNELS, channelForPath, getChannel, isHubPath } from "./channels";
+import { CHANNELS, channelButtonLabel, channelByIndex, channelForPath, channelIndex, getChannel, isHubPath } from "./channels";
 
 const concrete = (p: string) => p.replace(/:\w+/g, "1");
 const rootChildren = (routes[0]!.children ?? []) as { path?: string; index?: boolean }[];
@@ -42,5 +42,19 @@ describe("channels", () => {
 
   it("getChannel", () => {
     expect(getChannel("CH-02").name).toBe("紀錄");
+  });
+});
+
+describe("channels 輔助", () => {
+  it("channelByIndex／channelIndex", () => {
+    expect(channelByIndex(0)?.id).toBe("CH-01");
+    expect(channelByIndex(6)?.id).toBe("CH-07");
+    expect(channelByIndex(7)).toBeUndefined();
+    expect(channelByIndex(-1)).toBeUndefined();
+    for (const c of CHANNELS) expect(channelByIndex(channelIndex(c.id))).toBe(c);
+  });
+  it("channelButtonLabel：代號＋中文名稱", () => {
+    expect(channelButtonLabel(getChannel("CH-02"))).toBe("CH-02 紀錄");
+    expect(channelButtonLabel(getChannel("CH-07"))).toBe("CH-07 設定");
   });
 });

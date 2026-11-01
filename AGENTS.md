@@ -77,10 +77,10 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
 | `web/src/lib/fx/` | Cyber 主題的 JS 動畫小工具。`useFx()`：回傳「是否要播 cyber 的 JS 動畫」（`data-theme="cyber"` 且沒開啟 `prefers-reduced-motion`），jsdom 測試裡永遠是 `false`，**所有 JS 動畫都要先檢查它**；`ScrambleNumber`（KPI 數字亂跳鎖定，真實數字在 `sr-only`、亂碼層 `aria-hidden` 且結束後移除）；`useStagger`／`useStaggerCap`（依序進場，輸出 `data-fx-in` 與 `--i`，桌面 20／< 768 為 10 項上限）；`useReplayPhase(signature)`（簽名改變時 `data-fx-phase` 在 `"a"`／`"b"` 間翻面，CSS 換 `animation-name` 重播，**不重掛 DOM**）；`useGhostRows`／`ghostProps`（回收桶被移除列的 250ms 視覺殘影，`inert`＋`aria-hidden`）；`titleType.ts`（標題打字的 `--chars`） |
 | `web/src/styles/index.css` | 設計 token（淺色／深色兩套，文字色對比 ≥ 4.5:1）與 Tailwind 主題；也有第三套 `:root[data-theme="cyber"]`（Cyber 色票、cyber 專用 token）、圓角執行期 token `--r-sm/md/lg`、動態 token `--dur-*`／`--ease-*`（P2 專用的動畫時間 token 不放這裡，在 `cyber.css` 的 cyber 區塊） |
 | `web/src/styles/cyber.css` | Cyber-Terminal 主題的元件層樣式（`main.tsx` 在 `index.css` 之後載入）。**每條規則都以 `:root[data-theme="cyber"]` 開頭**，由 `cyberCss.test.ts`（解析工具在 `web/src/test/cssRules.ts`）把關；檔尾 `@media print` 負責還原所有裝飾與 token。P0 有三段：`#report-output` 的嚴重度 token 隔離、內文字型、檔尾的列印還原；P1 起加上元件層外觀（掃描線 `body::after`、背景點陣、切角面板、按鈕、焦點與裝飾前綴等）——**只用 `data-fx`／`data-variant`／`data-severity`／`data-state`／ARIA 屬性當選擇器，不寫 Tailwind class 選擇器**；P1 是靜態外觀（`/* === P2 START === */` 之前不得有 `@keyframes`／`transition`）；P2 起在 `P2 START` 之後加上純 CSS 動畫與 P2 專用時間 token（`--dur-close`／`--dur-open` 等） |
-| `web/src/lib/mode.ts` | 體驗模式（網頁／OS）的選擇邏輯。X0 的偏好是**這個分頁專用**：`?mode=os`／`?mode=web` 寫進 `sessionStorage`（key `pld.mode.session`），套用後從網址移除；**不讀寫 `localStorage` 的 `pld.mode`**（跨分頁記憶與 D2 留到 X1）。所有儲存存取都包 try/catch |
+| `web/src/lib/mode.ts` | 體驗模式（網頁／OS）的選擇邏輯，可訂閱的 store（執行期切換，不重新載入頁面）。偏好存 `localStorage` 的 `pld.mode`（跨分頁記憶，不做跨分頁即時同步；X0 的 `sessionStorage` key `pld.mode.session` 在初始化時移除）。進入點：側欄「OS 模式」按鈕（桌面 ≥1024 才有，`app/osEntry.ts`）、網址 `?mode=os｜web`（套用並寫回後從網址移除）、OS 模式的 EXIT TO WEB。**任何模式切換都先是一次路由導覽**（`useBlocker` 才攔得到髒表單），**POP（上一頁）永遠不切換模式**。`web/index.html` 的 inline script 在 OS 模式首繪就套用 cyber；OS 模式下 `applyTheme('cyber')` 只套用、不寫入 `pld.theme`。所有儲存存取都包 try/catch |
 | `web/src/app/ModeShell.tsx` | 依模式決定根外殼：網頁模式走原本的 `AppShell`＋路由，OS 模式走 `OsShell`（`React.lazy` 延遲載入，網頁模式的進入點不含 three／OS 程式碼） |
-| `web/src/features/os/` | PLD/OS 1995 體驗模式（X0 技術驗證）：`director/`（狀態機 reducer＋輸入閘 `inputGate`，轉場期間吞掉一整個手勢）、`hub/`（控制室線框 canvas）、`crt/`（CRT 著色器管線）、`transition/`（進出轉場與交接點）、`station/`（CH-02 紀錄工作站外框）、`hud/`、`channels.ts`、`os.css`。**`os.css` 每條規則都以 `:root[data-mode="os"]` 開頭**（`osCss.test.ts` 把關），列印時所有 OS 外觀一律隱藏 |
-| `scripts/verify/` | 手動／CI 驗證腳本（不新增相依套件，沿用 Chrome DevTools Protocol）：`c1.mjs`（逐元素樣式比對）、`os-handoff.mjs`（OS 進出交接）、`os-perf.mjs`（效能）、`os-bundle.mjs`（A5：網頁模式進入點不含 OS 程式碼且大小不超標，baseline 在 `bundle-baseline.json`，CI 第六步）。`serve.mjs` 有安全規則：一律把範例資料複製到暫存資料夾再啟動、拒絕 3000／3001 埠與路徑含真實資料夾名稱（`工作日誌`）的目錄；用法見 `scripts/verify/README.md` |
+| `web/src/features/os/` | PLD/OS 1995 體驗模式（X1 骨架與導演）：`director/`（狀態機 reducer＋輸入閘 `inputGate`，轉場期間吞掉一整個手勢）、`hub/`（控制室線框 canvas）、`crt/`（CRT 著色器管線）、`transition/`（進出轉場與交接點）、`station/`（CH-02 紀錄工作站外框）、`hud/`（7 個頻道按鈕、狀態列、EXIT TO WEB、指令列 `CommandPalette`；快速鍵 ←/→、Enter、1–7、N、/、Ctrl+K，Esc 規則在 `director/escapeRule.ts`；指令：`dash`、`rec <id>`、`exit`、`help`、`export`／`匯出`）、`DeviceGate.tsx`（視窗 <1024×600 時工作站只 `hidden`＋`inert`、不卸載，表單不丟）、`webgl.ts`（WebGL 初始化失敗後備：寫入 `pld.mode=web`，只在該次載入套用 Cyber）、`channels.ts`、`os.css`。頻道間導覽播 300ms 短轉場；**`os.css` 每條規則都以 `:root[data-mode="os"]` 開頭**（`osCss.test.ts` 把關），列印時所有 OS 外觀一律隱藏 |
+| `scripts/verify/` | 手動／CI 驗證腳本（不新增相依套件，沿用 Chrome DevTools Protocol）：`c1.mjs`（逐元素樣式比對）、`os-handoff.mjs`（I1–I4 進出交接，X1 重寫）、`os-e2e.mjs`（E1–E7、裝置門檻、模式記憶、EXIT、側欄按鈕、WebGL 後備）、`os-shots.mjs`（設計審查截圖）、`safety.mjs`（證明目標是 `serve.mjs` 暫存伺服器；匯出前必檢）、`os-perf.mjs`（效能）、`os-bundle.mjs`（A5：網頁模式進入點不含 OS 程式碼且大小不超標，baseline 在 `bundle-baseline.json`，CI 第六步）。`serve.mjs` 有安全規則：一律把範例資料複製到暫存資料夾再啟動、拒絕 3000／3001 埠與路徑含真實資料夾名稱（`工作日誌`）的目錄；用法見 `scripts/verify/README.md` |
 | `scripts/ensure-web-build.js` | `npm start` 的前置步驟：`web/dist` 不存在或過期才建置（只比檔案的 mtime，不比資料夾的）。**失敗不擋伺服器啟動但絕不沉默**：主控台印錯誤、寫 `.web-build-error.log`、結束碼 0，讓 `/` 顯示「介面建置失敗」頁 |
 | `scripts/migrate.js` | 一次性搬遷腳本（CLI，`--force` 才會覆蓋既有資料） |
 
@@ -417,7 +417,7 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
 npm run check      # 後端 node --check 語法檢查
 npm test           # 後端 node:test（test/**/*.test.js），目前 169 個測試
 npm run typecheck  # 前端 tsc --noEmit（strict）
-npm run test:web   # 前端 Vitest（jsdom + Testing Library），目前 824 個測試（52 個檔案）
+npm run test:web   # 前端 Vitest（jsdom + Testing Library），目前 1164 個測試（61 個檔案）
 npm run build      # 前端 vite build → web/dist
 npm run verify:os-bundle  # A5：OS 模式延遲載入與大小檢查（需先 build）
 ```
@@ -485,7 +485,7 @@ CI（`.github/workflows/ci.yml`）在每次 push/PR 到 `main` 時自動跑這�
     「列印／另存 PDF」預覽與「開新視窗」的報表在 cyber 與標準下**一致**（紙本配色，沒有黑底或裝飾；在 App 其他頁按列印也一樣，cyber 列印 ≡ 標準淺色列印，報表的嚴重度色塊是標準的綠黃橘紅而不是霓虹色）；
     **P2 微互動另外確認**（Tab／滑鼠／觸控各走一遍）：確認對話框、詳情面板、燈箱、彈出選單開啟中立刻點得到按鈕；表單驗證失敗只抖一次且錯誤訊息文字可讀；開啟系統「減少動態效果」後沒有任何移動或閃爍；toast、骨架、錯誤狀態外觀正確；列印預覽與標準淺色一致。
     **P1 靜態外觀另外確認**：Tab 走過各頁，每個可聚焦元素（含切角面板內的 KPI 卡、列表列、按鈕、表單欄位）的焦點環都完整可見、沒被切角裁掉；375／320 寬沒有橫向捲動；頁面標題前綴與裝飾字元不會被螢幕閱讀器唸出；掃描線不擋點擊；**P3 招牌效果另外確認**：冷啟動儀表板有開機行且資料一到立刻換成內容（按任意鍵可跳過、重新整理不再出現）、KPI 數字亂跳後鎖定、長條／趨勢／日曆依序進場、換頁標題打字與游標不使標題換行（320 寬）、側欄高亮條滑到目前頁、換頁與主題切換當下點擊不被吞掉、長條切換範圍後焦點不掉、回收桶復原／刪除後列殘影不可點；嚴重度四色與處理狀態 ○ ◐ ● 在 cyber 下一眼可分；在儀表板、列表、新增表單等 App 頁面按列印，預覽與標準淺色一致（沒有黑底、掃描線、點陣、切角、前綴）
-14. OS 模式（改動 `web/src/features/os/`、`lib/mode.ts`、`app/ModeShell.tsx` 之後；一律用範例資料複本、非 3000 埠、`NO_OPEN_BROWSER=1`）：網址加 `?mode=os` 進入（桌面 Chrome），進入 CH-02 紀錄工作站並能退出；進出轉場期間亂點，轉場會跳到結尾、且點擊不會打到底下的頁面 UI；工作站內有未儲存的編輯時按 ◀ HUB 會跳確認；OS 模式下按列印，預覽沒有任何 OS 外觀（與網頁模式一致）；加 `?mode=web` 回到網頁模式。
+14. OS 模式（改動 `web/src/features/os/`、`lib/mode.ts`、`app/ModeShell.tsx` 之後；一律用範例資料複本、非 3000 埠、`NO_OPEN_BROWSER=1`）：網址加 `?mode=os` 進入（桌面 Chrome；也試側欄「OS 模式」按鈕，≥1024 才有），進入 CH-02 紀錄工作站並能退出；進出轉場期間亂點，轉場會跳到結尾、且點擊不會打到底下的頁面 UI；工作站內有未儲存的編輯時按 ◀ HUB 會跳確認，**表單有未儲存內容時按側欄「OS 模式」進入、或按 EXIT TO WEB／指令 `exit` 離開也都要跳確認**（取消則留在原處、不換外殼）；上一頁不會切換模式；OS 模式下按列印，預覽沒有任何 OS 外觀（與網頁模式一致）；加 `?mode=web` 或 EXIT TO WEB 回到網頁模式。
 
 ## 敏感檔案清單
 
