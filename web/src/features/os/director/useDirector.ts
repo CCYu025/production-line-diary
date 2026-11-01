@@ -53,6 +53,6 @@ export function useDirector(place: Place, instant: boolean) {
     };
   }, [transitionId, clock]);
 
-  const skip = React.useCallback(() => setState((s) => reduce(s, { type: "INPUT" })), []);
+  const skip = React.useCallback(() => setState((s) => reduce(s, { type: "INPUT", swallowed: true })), []);
   return { state, dispatch, skip, clock, gateActive: isPreHandoff(state) };
 }

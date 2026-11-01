@@ -21,8 +21,12 @@ export type DirectorEvent =
   | { type: "HANDOFF" }
   /** 轉場播完 */
   | { type: "DONE" }
-  /** 使用者輸入（按鍵或點擊）：交接點之前跳到終點，之後不做事 */
-  | { type: "INPUT" };
+  /**
+   * 使用者輸入（按鍵或點擊）：交接點之前跳到終點，之後不做事。
+   * swallowed＝輸入閘已經把這次輸入攔下來了（閘是以「已提交的畫面」為準，HANDOFF 的更新可能剛好排在它前面）：
+   * 這次輸入已經被吃掉，所以不管交接旗標，一律跳到終點，不讓使用者的點擊「既被吞掉、轉場又沒跳」。
+   */
+  | { type: "INPUT"; swallowed?: boolean };
 
 export type Phase = "hub" | "entering-pre" | "entering-post" | "station" | "exiting-pre" | "exiting-post";
 
@@ -86,6 +90,6 @@ export function reduce(state: DirectorState, event: DirectorEvent): DirectorStat
     case "DONE":
       return endOf(state);
     case "INPUT":
-      return isPreHandoff(state) ? endOf(state) : state;
+      return event.swallowed || isPreHandoff(state) ? endOf(state) : state;
   }
 }

@@ -45,6 +45,12 @@ describe("ENTERING", () => {
   });
   it("交接點前輸入 → 跳到終點 STATION", () => expect(reduce(ENT_PRE, { type: "INPUT" })).toEqual(STA));
   it("交接點後輸入 → 不做事", () => expect(reduce(ENT_POST, { type: "INPUT" })).toBe(ENT_POST));
+  it("輸入閘已攔下的輸入（swallowed）：即使 HANDOFF 剛好排在前面也跳到終點", () => {
+    expect(reduce(ENT_POST, { type: "INPUT", swallowed: true })).toEqual(STA);
+    expect(reduce(EXI_POST, { type: "INPUT", swallowed: true })).toEqual(HUB);
+    expect(reduce(STA, { type: "INPUT", swallowed: true })).toBe(STA);
+    expect(reduce(HUB, { type: "INPUT", swallowed: true })).toBe(HUB);
+  });
   it("轉場中換路由到 /os：先跳到 STATION，再 EXITING", () => {
     expect(reduce(ENT_PRE, route(toHub))).toEqual(EXI_PRE);
     expect(reduce(ENT_POST, route(toHub))).toEqual(EXI_PRE);

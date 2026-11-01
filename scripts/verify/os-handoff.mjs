@@ -28,7 +28,7 @@ const only = new Set(A.only.split(','));
 const ENTER_OFFSETS = []; for (let o = 0; o <= 850; o += +A['enter-step']) ENTER_OFFSETS.push(o);
 const EXIT_OFFSETS = []; for (let o = 0; o <= 250; o += +A['exit-step']) EXIT_OFFSETS.push(o);
 const KEY_ENTER_OFFSETS = [0, 400, 850], KEY_EXIT_OFFSETS = [0, 150, 250];
-const MAX_ATTEMPTS = 3;
+let MAX_ATTEMPTS = 3;
 
 const END = { enter: 'station', exit: 'hub' };
 const PRE = { enter: 'entering-pre', exit: 'exiting-pre' };
@@ -73,6 +73,15 @@ async function assertSwallowed(p, kind, hashBefore, notes) {
   if (/sort=asc/.test(st.hash)) bad('sort=asc in hash');
   if (st.dialogs) bad(`${st.dialogs} dialog(s) opened`);
   if (st.activeIsSort) bad('underlying sort control got focus');
+  // stale-timer check: after the jump to ${END} the phase must stay there (old timers must not push it back)
+  await sleep(1350);
+  const tl = await p.eval('__phases.map(x=>x.phase+"@"+Math.round(x.now))');
+  const endIdx = tl.map((x) => x.split('@')[0]).lastIndexOf(END[kind]);
+  const firstEnd = tl.map((x) => x.split('@')[0]).indexOf(END[kind], tl.map((x) => x.split('@')[0]).lastIndexOf(PRE[kind]));
+  const after = tl.slice(firstEnd + 1);
+  if (firstEnd >= 0 && after.length) bad('phase regressed after jump: ' + tl.slice(-5).join(' > '));
+  else if (endIdx < 0 && st.phase === END[kind]) bad('no END phase in timeline');
+  if (!ok) notes.push('timeline: ' + tl.slice(-6).join(' > '));
   return ok;
 }
 
@@ -111,10 +120,10 @@ async function pointerOnce(kind, variant, offset, throttle) {
   return { status, actual, notes, p };
 }
 
-async function withRetry(fn, planned) {
+async function withRetry(fn, planned, attempts = MAX_ATTEMPTS) {
   let offset = planned, last;
-  for (let i = 0; i < MAX_ATTEMPTS; i++) {
-    try { last = await fn(offset); } catch (e) { last = { status: 'FAIL', actual: null, notes: ['setup error: ' + String(e.message).slice(0, 120)] }; }
+  for (let i = 0; i < attempts; i++) {
+    try { last = await fn(offset); } catch (e) { last = { status: i < 1 ? 'LATE' : 'FAIL', actual: null, notes: ['setup error: ' + String(e.message).slice(0, 120)] }; }
     await last.p?.close();
     if (last.status !== 'LATE') break;
     offset = Math.max(0, offset - Math.max(5, (last.actual ?? planned) - planned + 10));
@@ -216,7 +225,7 @@ async function handoffOnce(kind, throttle) {
 }
 async function runI2(throttle) {
   for (const kind of ['enter', 'exit']) for (let i = 0; i < +A.reps; i++) {
-    const r = await withRetry(() => handoffOnce(kind, throttle), 0);
+    const r = await withRetry(() => handoffOnce(kind, throttle), 0, 6);
     record({ id: 'I2', test: 'handoff', kind, variant: '#' + (i + 1), throttle, offset: 0, actual: r.actual, status: r.status, notes: r.notes });
   }
 }
