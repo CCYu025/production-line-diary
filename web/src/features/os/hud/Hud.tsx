@@ -114,9 +114,16 @@ export const Hud = React.forwardRef<HudHandle, HudProps>(function Hud({ selected
                   data-ch={ch.id}
                   tabIndex={isSelected ? 0 : -1}
                   {...(isSelected ? { "aria-current": "true" as const } : {})}
+                  aria-label={signals[ch.id].name}
                   onClick={() => onEnter(ch.id)}
                 >
-                  {signals[ch.id].name}
+                  {/* accessible name 永遠是完整的 name（aria-label）；視窗 < 1440px 時 CSS 改顯示精簡文字 */}
+                  <span className="os-hud-full" aria-hidden="true">
+                    {signals[ch.id].name}
+                  </span>
+                  <span className="os-hud-compact" aria-hidden="true">
+                    {signals[ch.id].compact}
+                  </span>
                 </button>
               </li>
             );

@@ -67,6 +67,20 @@ describe("os.css", () => {
     expect(splitTopLevel(rule!.declarations, ";").some((d) => /pointer-events:\s*none/.test(d))).toBe(true);
   });
 
+  describe("HUD 頻道按鈕一行排完（X2）", () => {
+    const narrow = rules.filter((r) => r.context.some((c) => /max-width: *1439/.test(c)));
+    it("< 1440px：按鈕不換行、完整文字隱藏、精簡文字顯示", () => {
+      const has = (sel: string, decl: RegExp) => narrow.some((r) => r.selectors.includes(`${OS_SCOPE} ${sel}`) && decl.test(r.declarations));
+      expect(has(".os-channels ul", /flex-wrap: *nowrap/)).toBe(true);
+      expect(has(".os-hud-full", /display: *none/)).toBe(true);
+      expect(has(".os-hud-compact", /display: *inline/)).toBe(true);
+    });
+    it("≥ 1440px：精簡文字預設隱藏", () => {
+      const base = rules.find((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} .os-hud-compact`));
+      expect(base?.declarations).toMatch(/display: *none/);
+    });
+  });
+
   describe("B 區 CRT 疊層（X2）", () => {
     const overlay = rules.filter((r) => r.selectors.some((sel) => /::after$/.test(sel) && /os-(statusbar|channels|frame-bar|frame)/.test(sel)));
 

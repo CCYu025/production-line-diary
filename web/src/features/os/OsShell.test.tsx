@@ -266,7 +266,7 @@ describe("OsShell：HUD", () => {
     expect(document.querySelector('[data-os="clock"]')!.textContent).toMatch(/^\d{2}:\d{2}:\d{2}$/);
     expect(document.querySelector('[data-os="exit"]')!.textContent).toBe("EXIT TO WEB");
     const buttons = [...document.querySelectorAll<HTMLButtonElement>('[data-os="hud-ch"]')];
-    expect(buttons.map((b) => b.textContent)).toEqual([
+    expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual([
       "CH-01 儀表板",
       "CH-02 紀錄",
       "CH-03 新增",

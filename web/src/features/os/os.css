@@ -143,6 +143,37 @@
   cursor: pointer;
 }
 
+/* 頻道按鈕一行排完（1024px 起）：< 1440px 顯示精簡文字 "CH-02 紀錄 3"、更緊的內距 */
+:root[data-mode="os"] .os-hud-compact {
+  display: none;
+}
+
+@media (max-width: 1439.98px) {
+  :root[data-mode="os"] .os-channels {
+    padding: 10px 8px 16px;
+  }
+
+  :root[data-mode="os"] .os-channels ul {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  :root[data-mode="os"] .os-hud-button {
+    min-width: 0;
+    padding: 8px 6px;
+    font-size: 12.5px;
+    letter-spacing: 0.02em;
+  }
+
+  :root[data-mode="os"] .os-hud-full {
+    display: none;
+  }
+
+  :root[data-mode="os"] .os-hud-compact {
+    display: inline;
+  }
+}
+
 :root[data-mode="os"] .os-hud-button:hover {
   background: var(--accent-wash);
   color: var(--ink-1);

@@ -87,13 +87,19 @@ describe("computeSignals", () => {
     expect(s["CH-06"].name).toBe("CH-06 回收桶 · 1 筆");
     expect(s["CH-07"].name).toBe("CH-07 設定 · 2 台");
   });
-  it("螢幕文字：CH-04 是 MM/DD ＋ 當日筆數；CH-03 是 READY＋閃爍游標", () => {
-    expect(s["CH-04"].caption).toBe("11/01");
-    expect(s["CH-04"].big).toBe("2");
+  it("螢幕文字：只有短的英文大寫標籤（沒有小的中文）；CH-04 大字是 MM/DD、標籤 TODAY、當日筆數小字；CH-03 是 READY＋閃爍游標、沒有標籤", () => {
+    expect(CHANNELS.map((c) => s[c.id].caption)).toEqual(["PENDING", "TODAY", null, "TODAY", "MONTH", "TRASH", "UNITS"]);
+    for (const c of CHANNELS) expect(`${s[c.id].caption ?? ""}${s[c.id].big ?? ""}${s[c.id].small ?? ""}`).not.toMatch(/[㐀-鿿]/);
+    expect(s["CH-04"].big).toBe("11/01");
+    expect(s["CH-04"].small).toBe("2");
     expect(s["CH-03"].big).toBe("READY");
     expect(s["CH-03"].blinkCursor).toBe(true);
     expect(s["CH-02"].blinkCursor).toBe(false);
     expect(s["CH-01"].big).toBe("2");
+  });
+  it("窄版精簡文字：CH-02 紀錄 2（沒有「· 今日」）；accessible name 永遠是完整的 name", () => {
+    expect(CHANNELS.map((c) => s[c.id].compact)).toEqual(["CH-01 儀表板 2", "CH-02 紀錄 2", "CH-03 新增 READY", "CH-04 日曆 2", "CH-05 報表 2", "CH-06 回收桶 1", "CH-07 設定 2"]);
+    expect(s["CH-02"].name).toBe("CH-02 紀錄 · 今日 2");
   });
   it("資料還沒載入：只有名稱，沒有數字（CH-03 螢幕仍是 READY）", () => {
     const n = computeSignals(undefined, NOW);
