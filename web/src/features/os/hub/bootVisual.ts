@@ -16,8 +16,12 @@ export interface BootFrame {
   cursorOn: boolean;
   /** 傳給著色器 */
   reveal: number;
+  /** 暗光柵的半高（-1..1 座標單位；< 0＝沒有）、亮線與光柵的半寬 */
   band: number;
-  bandMix: number;
+  bandW: number;
+  /** 亮線亮度（峰值 1）與暗光柵亮度（<= GLOW_MAX） */
+  line: number;
+  glow: number;
   /** 開機是否已播完 */
   done: boolean;
 }
@@ -30,10 +34,19 @@ const smooth = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/** 亮線最細的半高（uv 單位）：約一條掃描線 */
+/** 亮線峰值亮度與暗光柵的最大亮度（光柵 <= 亮線的 20%：只有線是亮的，不是整個畫面閃白） */
+export const LINE_PEAK = 1;
+export const GLOW_MAX = 0.18;
+/** B3 內：前 BAND_OPEN_AT 比例是亮線由中心向兩側展開；之後垂直打開成暗光柵 */
+export const BAND_OPEN_AT = 0.4;
+/** B4 內：亮線與光柵淡出到這個比例就完全消失（與線框描繪交疊） */
+export const LINE_FADE_B4 = 0.3;
+export const GLOW_FADE_B4 = 0.65;
+const FULL = 1.02;
+/** 亮線最細的半高：約一條掃描線 */
 export const BAND_MIN = 0.004;
 
-/** B2 的逐行節奏：n 行平均分在 B2 區間（最後一行在 B2 結束前也已出現 BIOS_HOLD_MS 以上）。 */
+/** B2 的逐行節奏：n 行平均分在 B2 區間（最後一行在 B2 結束前也已出現）。 */
 export function biosVisibleLines(elapsedMs: number, total: number): number {
   const span = BOOT_FULL.B2[1] - BOOT_FULL.B2[0];
   const step = span / (total + 1);
@@ -44,19 +57,30 @@ export function biosVisibleLines(elapsedMs: number, total: number): number {
 export function bootFrame(kind: BootKind, elapsedMs: number, biosTotal: number): BootFrame {
   const t = BOOT_TIMES[kind];
   const done = elapsedMs >= t.total;
-  const base = { biosOn: false, biosLines: 0, cursorOn: false, reveal: 1, band: -1, bandMix: 0, done };
+  const base: BootFrame = { biosOn: false, biosLines: 0, cursorOn: false, reveal: 1, band: -1, bandW: 0, line: 0, glow: 0, done };
   if (done) return base;
   if (kind === "full" && elapsedMs < BOOT_FULL.B2[1]) {
     return { ...base, biosOn: true, biosLines: biosVisibleLines(elapsedMs, biosTotal), cursorOn: Math.floor(elapsedMs / 250) % 2 === 0, reveal: 1 };
   }
   if (elapsedMs < t.B3[1]) {
-    // B3：亮線從一條掃描線高展開到全畫面，亮度後半段退回背景（B4 開始時畫面和背景相同）
+    // B3：一條細亮線由中心向兩側展開到整個寬度，再垂直打開成暗光柵；亮線在打開時逐漸退去
     const x = clamp01((elapsedMs - t.B3[0]) / (t.B3[1] - t.B3[0]));
-    return { ...base, reveal: 0, band: BAND_MIN + (1.02 - BAND_MIN) * easeOut(x), bandMix: 1 - smooth(0.55, 1, x) };
+    const w = easeOut(clamp01(x / BAND_OPEN_AT));
+    const open = clamp01((x - BAND_OPEN_AT) / (1 - BAND_OPEN_AT));
+    return {
+      ...base,
+      reveal: 0,
+      bandW: FULL * w,
+      band: BAND_MIN + (FULL - BAND_MIN) * easeInOut(open),
+      line: LINE_PEAK * (1 - 0.7 * smooth(0, 1, open)),
+      glow: GLOW_MAX * smooth(0, 0.5, open),
+    };
   }
-  // B4：線框由中心向外描繪
+  // B4：線框由中心向外描繪；暗光柵與殘餘的亮線同時淡出（直接交疊，沒有黑畫面）
   const x = clamp01((elapsedMs - t.B4[0]) / (t.B4[1] - t.B4[0]));
-  return { ...base, reveal: easeInOut(x) };
+  const line = LINE_PEAK * 0.3 * (1 - smooth(0, LINE_FADE_B4, x));
+  const glow = GLOW_MAX * (1 - smooth(0, GLOW_FADE_B4, x));
+  return { ...base, reveal: easeInOut(x), band: line > 0 || glow > 0 ? FULL : -1, bandW: FULL, line, glow };
 }
 
 const BOOT_TIMES = {

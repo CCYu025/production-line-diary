@@ -27,10 +27,14 @@ export interface CrtOptions {
 export interface BootUniforms {
   /** B4：0..1，>= 1 不遮 */
   reveal: number;
-  /** B3：亮線半高 0..1，< 0 沒有亮線 */
+  /** B3：暗光柵半高（-1..1 座標單位），< 0 沒有 */
   band: number;
+  /** 亮線與光柵的半寬 */
+  bandW: number;
   /** 亮線亮度 0..1 */
-  bandMix: number;
+  line: number;
+  /** 暗光柵亮度（<= 亮線的 20%） */
+  glow: number;
 }
 
 export class CrtPipeline {
@@ -92,7 +96,9 @@ export class CrtPipeline {
         uFlicker: { value: opts.flicker && zone.effects ? 1 : 0 },
         uReveal: { value: 1 },
         uBand: { value: -1 },
-        uBandMix: { value: 0 },
+        uBandW: { value: 0 },
+        uLine: { value: 0 },
+        uGlow: { value: 0 },
         uBandColor: { value: new THREE.Vector3(band.r, band.g, band.b) },
       },
       depthTest: false,
@@ -129,7 +135,9 @@ export class CrtPipeline {
     const u = this.crtMat.uniforms;
     u.uReveal!.value = b ? b.reveal : 1;
     u.uBand!.value = b ? b.band : -1;
-    u.uBandMix!.value = b ? b.bandMix : 0;
+    u.uBandW!.value = b ? b.bandW : 0;
+    u.uLine!.value = b ? b.line : 0;
+    u.uGlow!.value = b ? b.glow : 0;
   }
 
   /** 蓋滿整個場景緩衝的貼圖（BIOS 文字）；null＝不畫。貼圖由呼叫端擁有與釋放。 */

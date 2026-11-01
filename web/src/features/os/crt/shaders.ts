@@ -41,8 +41,10 @@ uniform float uVignette;    // 四角變暗比例
 uniform float uBarrel;      // 桶狀弧面邊緣位移
 uniform float uFlicker;     // 0 或 1（減少動態效果時 0）
 uniform float uReveal;      // 開機 B4：由中心向外描繪的半徑（0..1）；>= 1 表示不遮
-uniform float uBand;        // 開機 B3：亮線半高（uv 單位，0..1）；< 0 表示沒有亮線
-uniform float uBandMix;     // 亮線的亮度（1＝全亮、0＝與背景相同）
+uniform float uBand;        // 開機 B3：暗光柵的半高（-1..1 的座標單位）；< 0 表示沒有
+uniform float uBandW;       // 開機 B3：亮線與暗光柵的半寬
+uniform float uLine;        // 亮線亮度（1＝最亮）
+uniform float uGlow;        // 暗光柵亮度（<= 亮線的 20%）
 uniform vec3 uBandColor;    // 亮線顏色（由 --accent 往白色混）
 varying vec2 vUv;
 
@@ -97,10 +99,13 @@ void main() {
     float m = 1.0 - smoothstep(edgeR - 0.025, edgeR, d);
     col = mix(uPage, col, m);
   }
-  // 開機 B3：一條亮線展開成全畫面
+  // 開機 B3：一條細亮線由中心向兩側展開到整個寬度，再垂直打開成「暗」光柵（只有線是亮的）；B4 時光柵逐漸淡出、與線框描繪交疊（沒有黑畫面）
   if (uBand >= 0.0) {
-    float inside = 1.0 - smoothstep(uBand, uBand + 0.006, abs(c.y));
-    col = mix(uPage, uBandColor, inside * uBandMix);
+    float inX = 1.0 - smoothstep(uBandW, uBandW + 0.01, abs(c.x));
+    float rect = inX * (1.0 - smoothstep(uBand, uBand + 0.01, abs(c.y)));
+    float line = inX * (1.0 - smoothstep(0.004, 0.011, abs(c.y)));
+    col = mix(col, uBandColor, rect * uGlow);
+    col = mix(col, uBandColor, line * uLine);
   }
 
   if (uEffects > 0.5) {

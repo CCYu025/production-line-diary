@@ -5,6 +5,9 @@ import {
   blipPosition,
   BLIP_TOKEN,
   computeBlips,
+  blipLocalUnit,
+  HASH_SEED_ANGLE,
+  HASH_SEED_RADIUS,
   hashName,
   newAnomalyTracker,
   observeAnomalies,
@@ -79,7 +82,7 @@ describe("computeBlips", () => {
   it("沒資料＝沒有光點；token 對照", () => {
     expect(computeBlips(undefined, NOW)).toEqual([]);
     expect(computeBlips([], NOW)).toEqual([]);
-    expect(BLIP_TOKEN).toEqual({ good: "--good", warning: "--warning", serious: "--serious", critical: "--critical", dim: "--line" });
+    expect(BLIP_TOKEN).toEqual({ good: "--good", warning: "--warning", serious: "--serious", critical: "--critical", dim: "--line-strong" });
   });
 });
 
@@ -97,6 +100,29 @@ describe("blipPosition：穩定雜湊", () => {
       expect(p.angle).toBeGreaterThanOrEqual(0);
       expect(p.angle).toBeLessThan(Math.PI * 2);
     }
+  });
+  it("角度與半徑用獨立的雜湊（不同種子）", () => {
+    expect(hashName("F3", HASH_SEED_ANGLE)).not.toBe(hashName("F3", HASH_SEED_RADIUS));
+    // 兩者沒有相關：很多名稱的（角度比例, 半徑比例）相關係數接近 0
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let i = 0; i < 400; i++) {
+      xs.push(hashName(`M${i}`, HASH_SEED_ANGLE) / 2 ** 32);
+      ys.push(hashName(`M${i}`, HASH_SEED_RADIUS) / 2 ** 32);
+    }
+    const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
+    const mx = mean(xs);
+    const my = mean(ys);
+    const cov = mean(xs.map((x, i) => (x - mx) * (ys[i]! - my)));
+    const corr = cov / Math.sqrt(mean(xs.map((x) => (x - mx) ** 2)) * mean(ys.map((y) => (y - my) ** 2)));
+    expect(Math.abs(corr)).toBeLessThan(0.15);
+  });
+  it("F3／K1／M9 在雷達上彼此分散（距離 > 0.15 個半徑），F1–F9 的角度各不相同", () => {
+    const three = ["F3", "K1", "M9"].map((n) => blipLocalUnit(blipPosition(n)));
+    for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) expect(Math.hypot(three[i]!.x - three[j]!.x, three[i]!.z - three[j]!.z)).toBeGreaterThan(0.15);
+  });
+  it("F1–F9 角度各不相同", () => {
+    expect(new Set(Array.from({ length: 9 }, (_, i) => blipPosition(`F${i + 1}`).angle.toFixed(3))).size).toBe(9);
   });
   it("相近名稱分散（F1／F2／F3 不重疊）", () => {
     const ps = ["F1", "F2", "F3"].map(blipPosition);

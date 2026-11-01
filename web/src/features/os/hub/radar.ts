@@ -2,7 +2,7 @@
  * 雷達台光點（docs/os-mode-spec.md §4.3–4.4）：純函式。
  * - 光點：近 7 天（本機日期的今天往前 6 天，共 7 天）有未刪除紀錄的機台各一個。
  * - 顏色鍵：該機台（7 天內）最嚴重的「未解決」（狀態不是已解決）紀錄的嚴重度；全部已解決＝dim。
- *     輕微→good、一般→warning、嚴重→serious、重大→critical、dim→--line（呼叫端以 readToken 取色，不寫死色碼）。
+ *     輕微→good、一般→warning、嚴重→serious、重大→critical、dim→--line-strong（全部已解決：完整不透明、比嚴重度色安靜；呼叫端以 readToken 取色，不寫死色碼）。
  * - 位置：機台名稱的穩定雜湊 → 角度 0..2π、半徑 0.35..0.9（占雷達半徑的比例），每次開啟位置相同。
  * - 新異常：進入 HUB 時看到的最大 id 為基準；之後出現、id 大於基準的未刪除紀錄。第一次載入不算。
  */
@@ -15,13 +15,13 @@ export const RADAR_RADIUS_MAX = 0.9;
 
 export type BlipColorKey = "good" | "warning" | "serious" | "critical" | "dim";
 
-/** 顏色鍵 → Cyber token 名稱（--good／--warning／--serious／--critical／--line）。 */
+/** 顏色鍵 → Cyber token 名稱（--good／--warning／--serious／--critical／--line-strong）。 */
 export const BLIP_TOKEN: Record<BlipColorKey, string> = {
   good: "--good",
   warning: "--warning",
   serious: "--serious",
   critical: "--critical",
-  dim: "--line",
+  dim: "--line-strong",
 };
 
 const SEVERITY_KEY: Record<Severity, Exclude<BlipColorKey, "dim">> = {
@@ -42,9 +42,13 @@ export interface Blip {
   count: number;
 }
 
-/** 32 位元 FNV-1a ＋ murmur 終結混合（讓相近名稱 F1／F2 也分散）。穩定、與平台無關。 */
-export function hashName(name: string): number {
-  let h = 0x811c9dc5;
+/** 角度與半徑各用一個獨立的雜湊（不同的 FNV 起始值），F3／K1／M9 這種相近名稱才不會擠在一起。 */
+export const HASH_SEED_ANGLE = 0x811c9dc5;
+export const HASH_SEED_RADIUS = 0x9e3779b1;
+
+/** 32 位元 FNV-1a ＋ murmur3 的 fmix32 終結混合（讓相近名稱 F1／F2 也分散）。穩定、與平台無關；seed 是 FNV 的起始值。 */
+export function hashName(name: string, seed: number = HASH_SEED_ANGLE): number {
+  let h = seed >>> 0;
   for (let i = 0; i < name.length; i++) {
     h ^= name.charCodeAt(i);
     h = Math.imul(h, 0x01000193);
@@ -59,9 +63,8 @@ export function hashName(name: string): number {
 
 /** 機台名稱 → 角度與半徑（穩定）。 */
 export function blipPosition(name: string): { angle: number; radius: number } {
-  const h = hashName(name);
-  const a = (h & 0xffff) / 0x10000;
-  const r = (h >>> 16) / 0x10000;
+  const a = hashName(name, HASH_SEED_ANGLE) / 0x100000000;
+  const r = hashName(name, HASH_SEED_RADIUS) / 0x100000000;
   return { angle: a * Math.PI * 2, radius: RADAR_RADIUS_MIN + r * (RADAR_RADIUS_MAX - RADAR_RADIUS_MIN) };
 }
 
