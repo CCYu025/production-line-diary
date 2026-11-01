@@ -89,7 +89,9 @@ describe("suggest", () => {
     expect(names("r")).toEqual(["rec", "rec <id>", "rep"]);
     expect(names("re")).toEqual(["rec", "rec <id>", "rep"]);
     expect(names("rec")).toEqual(["rec", "rec <id>"]);
-    expect(names("e")).toEqual(["exit"]);
+    expect(names("e")).toEqual(["export", "exit"]);
+    expect(names("exp")).toEqual(["export"]);
+    expect(names("匯")).toEqual(["export"]);
     expect(names("t")).toEqual(["trash"]);
     expect(names("s")).toEqual(["set"]);
   });
@@ -118,5 +120,24 @@ describe("suggest", () => {
       if (s.command === "rec <id>") continue;
       expect(parseCommand(s.insert).type, s.insert).not.toBe("error");
     }
+  });
+});
+
+describe("export（匯出 Excel）", () => {
+  it("export 與別名「匯出」→ { type: export }（不分大小寫、容忍空白）", () => {
+    expect(parseCommand("export")).toEqual({ type: "export" });
+    expect(parseCommand("  EXPORT ")).toEqual({ type: "export" });
+    expect(parseCommand("匯出")).toEqual({ type: "export" });
+  });
+  it("不接受參數", () => {
+    const r = parseCommand("export all");
+    expect(r.type).toBe("error");
+    const r2 = parseCommand("匯出 x");
+    expect(r2.type).toBe("error");
+  });
+  it("在指令表（help 與自動完成都會列出）、Tab 補完成 export", () => {
+    expect(COMMANDS.some((c) => c.name === "export")).toBe(true);
+    expect(suggest("匯")[0]!.insert).toBe("export");
+    expect(suggest("exp")[0]!.insert).toBe("export");
   });
 });

@@ -266,6 +266,62 @@ check('E2.exit-button', 'EXIT TO WEB (hub only): a dirty form is confirmed on th
   await p.close();
 });
 
+// ---- device gate must not lose a dirty form; its web button is route-first (blocker-checked)
+check('E2.gate-dirty', 'dirty form + window shrinks below 1024x600: form survives shrink/grow; gate 「改用網頁模式」 asks first (cancel keeps gate+form, leave -> web on the same path)', async (a) => {
+  const { p } = await dirtyAt('#/records/new');
+  const val = () => p.eval(`(document.getElementById('rf-problem')||{}).value`);
+  const v0 = await val();
+  a.ok(v0 === 'x' || (v0 ?? '').length > 0, 'form has the dirty value', v0);
+  await p.setViewport(900, 700); await sleep(700);
+  a.ok(await p.eval(`!!document.querySelector('[data-os="device-gate"]')`), 'gate shown');
+  await p.setViewport(1440, 900); await sleep(700);
+  a.ok((await val()) === v0, 'shrink then grow: the form value is still there', await val());
+  a.ok((await phaseOf(p)) === 'station', 'phase station after growing', await phaseOf(p));
+  await p.setViewport(900, 700); await sleep(600);
+  await clickSel(p, SEL.gateWeb);
+  const shown = await p.waitFor(`document.querySelector('[role=alertdialog]')`, 3000).then(() => true, () => false);
+  a.ok(shown, 'gate web button: confirm dialog appears for a dirty form');
+  if (!shown) return;
+  const dlg = await alertDialog(p);
+  await clickByText(p, '[role=alertdialog] button', cancelLabel(dlg));
+  await p.waitFor(`!document.querySelector('[role=alertdialog]')`, 3000); await sleep(700);
+  a.ok(await p.eval(`!!document.querySelector('[data-os="device-gate"]')`), 'cancel: gate still shown');
+  a.ok((await modeOf(p)) === 'os' && (await lsGet(p, 'pld.mode')) === 'os', 'cancel: still OS mode');
+  await p.setViewport(1440, 900); await sleep(700);
+  a.ok((await val()) === v0, 'cancel then grow: the form value is still there');
+  await p.setViewport(900, 700); await sleep(600);
+  await clickSel(p, SEL.gateWeb);
+  await p.waitFor(`document.querySelector('[role=alertdialog]')`, 3000);
+  const dlg2 = await alertDialog(p);
+  await clickByText(p, '[role=alertdialog] button', leaveLabel(dlg2));
+  await p.waitFor(`document.documentElement.getAttribute('data-mode')===null`, 5000).catch(() => {});
+  await sleep(500);
+  a.ok((await modeOf(p)) === null && (await hashOf(p)) === '#/records/new', 'leave: web mode on the same path', [await modeOf(p), await hashOf(p)]);
+  await p.close();
+});
+
+// ---- history: no duplicate entries from the intermediate hop; Back must not flip the mode
+check('E2.history-enter', 'web #/dashboard -> sidebar OS button -> hub: ONE real Back (Alt+Left via CDP) returns to #/dashboard and does not leave OS mode', async (a) => {
+  const p = await open('#/dashboard', { mode: 'web', width: 1280, height: 800 }); await sleep(900);
+  await clickSel(p, SEL.enterOs);
+  await waitPhase(p, 'hub', 15000); await sleep(500);
+  a.ok((await hashOf(p)) === '#/os', 'at #/os', await hashOf(p));
+  await p.key('ArrowLeft', { modifiers: 1 }); await sleep(1500);
+  a.ok((await hashOf(p)) === '#/dashboard', 'Back once -> #/dashboard', await hashOf(p));
+  a.ok((await modeOf(p)) === 'os', 'mode is still os (Back did not switch mode)', await modeOf(p));
+  await p.close();
+});
+check('E2.history-exit', 'OS station #/records (reached in-app from #/dashboard) -> palette exit -> web: ONE real Back (Alt+Left) goes to #/dashboard, not #/records again', async (a) => {
+  const p = await open('#/dashboard', { mode: 'os' }); await settled(p, 5000); await sleep(400);
+  await runCommand(p, 'rec'); await settled(p, 5000); await sleep(500);
+  a.ok((await hashOf(p)) === '#/records', 'at #/records', await hashOf(p));
+  await p.eval('document.activeElement.blur()'); await runCommand(p, 'exit'); await sleep(1200);
+  a.ok((await modeOf(p)) === null && (await hashOf(p)) === '#/records', 'web mode on #/records', [await modeOf(p), await hashOf(p)]);
+  await p.key('ArrowLeft', { modifiers: 1 }); await sleep(1500);
+  a.ok((await hashOf(p)) === '#/dashboard', 'Back once -> #/dashboard (no duplicate #/records)', await hashOf(p));
+  await p.close();
+});
+
 // ================================================================ E3 history / direct URL
 check('E3.history', 'Back/Forward play the §3.3 transitions (hub->ch enter, ch->hub exit, ch->ch switch, same channel none)', async (a) => {
   const p = await open('');
@@ -471,14 +527,14 @@ check('E7.print', 'print layout: OS chrome hidden, <main> layout and PDF page co
 // ================================================================ device gate
 check('GATE', 'device gate: <1024 wide or <600 high shows the terminal message; enlarging enters; 「改用網頁模式」 persists web', async (a) => {
   const p = await open('', { width: 1280, height: 800 });
-  const gate = () => p.eval(`(()=>{const V=${VISIBLE_FN}; const g=document.querySelector('[data-os="device-gate"]'); return {gate:V(g), text:g?g.textContent.trim().slice(0,80):null, hub:!!document.querySelector('[data-os="hub"]'), hudBtn:document.querySelectorAll('[data-os="hud-ch"]').length, main:!!document.getElementById('main'), canvas:document.querySelectorAll('canvas').length}})()`);
+  const gate = () => p.eval(`(()=>{const V=${VISIBLE_FN}; const g=document.querySelector('[data-os="device-gate"]'); return {gate:V(g), text:g?g.textContent.trim().slice(0,80):null, hub:V(document.querySelector('[data-os="hub"]')), hudBtn:[...document.querySelectorAll('[data-os="hud-ch"]')].filter(V).length, main:V(document.getElementById('main')), canvas:[...document.querySelectorAll('canvas')].filter(V).length}})()`);
   for (const [w, h, expectGate] of [[1000, 700, true], [1280, 500, true], [1023, 768, true], [1024, 600, false], [1280, 720, false]]) {
     await p.setViewport(w, h); await sleep(900);
     const g = await gate();
     a.ok(g.gate === expectGate, `${w}x${h}: gate ${expectGate ? 'shown' : 'hidden'}`, g);
     if (expectGate) {
       a.ok(/PLD\/OS 需要桌面終端機/.test(g.text ?? ''), `${w}x${h}: message text`, g.text);
-      a.ok(!g.hub && g.hudBtn === 0 && !g.main && g.canvas === 0, `${w}x${h}: no hub/HUD/outlet/canvas while gated`, g);
+      a.ok(!g.hub && g.hudBtn === 0 && !g.main && g.canvas === 0, `${w}x${h}: no VISIBLE hub/HUD/outlet/canvas while gated (the mounted stage is hidden+inert, not unmounted)`, g);
     }
   }
   a.ok((await phaseOf(p)) === 'hub', 'after enlarging the hub is back (phase hub)', await phaseOf(p));

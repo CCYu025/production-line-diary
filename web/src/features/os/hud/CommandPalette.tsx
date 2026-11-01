@@ -14,9 +14,11 @@ export interface CommandPaletteProps {
   /** 導覽類指令：path 含 query（例如 /records?open=63） */
   onNavigate: (path: string) => void;
   onExit: () => void;
+  /** 匯出 Excel（與側欄相同的動作） */
+  onExport: () => void;
 }
 
-export function CommandPalette({ open, onOpenChange, onNavigate, onExit }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpenChange, onNavigate, onExit, onExport }: CommandPaletteProps) {
   const uid = React.useId();
   const listId = `${uid}-list`;
   const errorId = `${uid}-error`;
@@ -75,6 +77,9 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onExit }: Comma
         return;
       case "exit":
         closeThen(onExit);
+        return;
+      case "export":
+        closeThen(onExport);
         return;
       case "nav":
         closeThen(() => onNavigate(cmd.path));

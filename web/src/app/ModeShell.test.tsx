@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, Outlet, RouterProvider, useBlocker, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "@/lib/queryClient";
 import { getMode, resetModeForTest, setMode } from "@/lib/mode";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 
@@ -59,7 +61,19 @@ function mount(initial: string) {
     ],
     { initialEntries: [initial] },
   );
-  return render(<RouterProvider router={router} />);
+  return render(
+    <QueryClientProvider client={createQueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+}
+
+function renderWith(router: ReturnType<typeof createMemoryRouter>) {
+  return render(
+    <QueryClientProvider client={createQueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
 }
 
 const phase = () => document.documentElement.dataset.osPhase;
@@ -190,7 +204,7 @@ describe("側欄入口的導覽（ENTER_OS_STATE）", () => {
       ],
       { initialEntries: ["/records", { pathname: "/os", state: ENTER_OS_STATE }, "/records"], initialIndex: 2 },
     );
-    render(<RouterProvider router={router} />);
+    renderWith(router);
     act(() => void router.navigate(-1));
     await waitFor(() => expect(loc.pathname).toBe("/dashboard"));
     expect(getMode()).toBe("web");
@@ -219,5 +233,60 @@ describe("從工作站離開 OS 模式（整合）", () => {
     expect(loc.pathname).toBe("/records");
     expect(getMode()).toBe("web");
     expect(document.activeElement).toBe(document.getElementById("main"));
+  });
+});
+
+describe("歷史紀錄（上一頁）", () => {
+  function routerAt(entries: string[], index?: number) {
+    return createMemoryRouter(
+      [
+        {
+          path: "/",
+          element: (
+            <>
+              <Probe />
+              <ModeShell />
+            </>
+          ),
+          children: [
+            { path: "dashboard", element: <div>dashboard-page</div> },
+            { path: "records", element: <div>records-page</div> },
+            { path: "os", element: <OsRouteElement /> },
+          ],
+        },
+      ],
+      { initialEntries: entries, ...(index !== undefined ? { initialIndex: index } : {}) },
+    );
+  }
+
+  it("/dashboard → 側欄進入 OS 模式 → /os；上一頁一次回到 /dashboard，而且不會切換模式", async () => {
+    const router = routerAt(["/dashboard"]);
+    renderWith(router);
+    act(() => void nav("/os", { state: ENTER_OS_STATE }));
+    await waitFor(() => expect(phase()).toBe("hub"));
+    expect(router.state.location.pathname).toBe("/os");
+    act(() => void router.navigate(-1));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/dashboard"));
+    expect(getMode()).toBe("os");
+    // 再上一頁已經沒有歷史了：只有 /dashboard → /os 兩筆，沒有多出來的重複紀錄
+    expect(router.state.historyAction).toBe("POP");
+  });
+
+  it("工作站 /records 離開 OS 模式：歷史淨結果不變，上一頁回到進入 /records 之前（不是 /records 自己）", async () => {
+    setMode("os");
+    const router = routerAt(["/dashboard", "/records"], 1);
+    renderWith(router);
+    await waitFor(() => expect(phase()).toBe("station"));
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+    const input = await screen.findByRole("combobox");
+    fireEvent.change(input, { target: { value: "exit" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(screen.getByTestId("web-shell")).toBeInTheDocument());
+    expect(router.state.location.pathname).toBe("/records");
+    act(() => void router.navigate(-1));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/dashboard"));
+    expect(getMode()).toBe("web");
   });
 });

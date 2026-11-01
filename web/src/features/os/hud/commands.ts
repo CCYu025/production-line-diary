@@ -7,6 +7,7 @@ import { getChannel, type ChannelId } from "../channels";
 export type ParsedCommand =
   | { type: "nav"; path: string; label: string }
   | { type: "exit" }
+  | { type: "export" }
   | { type: "help" }
   | { type: "empty" }
   | { type: "error"; message: string };
@@ -19,6 +20,8 @@ export interface CommandDef {
   description: string;
   /** 導覽類指令的目的頻道 */
   channel?: ChannelId;
+  /** 別名（也算指令名稱；自動完成會補成 name） */
+  aliases?: readonly string[];
 }
 
 /** 指令表（順序即自動完成與 help 的顯示順序）。 */
@@ -31,6 +34,7 @@ export const COMMANDS: readonly CommandDef[] = [
   { name: "rep", usage: "rep", description: "報表", channel: "CH-05" },
   { name: "trash", usage: "trash", description: "回收桶", channel: "CH-06" },
   { name: "set", usage: "set", description: "設定", channel: "CH-07" },
+  { name: "export", usage: "export", description: "匯出 Excel（與側欄的「匯出 Excel」相同）", aliases: ["匯出"] },
   { name: "exit", usage: "exit", description: "離開 OS 模式，回到網頁模式" },
   { name: "help", usage: "help", description: "列出所有指令" },
 ];
@@ -72,12 +76,13 @@ export function parseCommand(text: string): ParsedCommand {
     return { type: "nav", path: `/records?open=${id}`, label: `${getChannel("CH-02").id} 紀錄 #${id}` };
   }
 
-  const def = COMMANDS.find((c) => c.name === name);
+  const def = COMMANDS.find((c) => c.name === name || c.aliases?.includes(name));
   if (!def) return { type: "error", message: `未知指令：${parts[0]}（${HELP_HINT}）` };
-  if (args.length > 0) return { type: "error", message: `${name} 不接受參數（${HELP_HINT}）` };
-  if (name === "exit") return { type: "exit" };
-  if (name === "help") return { type: "help" };
-  return navTo(name);
+  if (args.length > 0) return { type: "error", message: `${def.name} 不接受參數（${HELP_HINT}）` };
+  if (def.name === "exit") return { type: "exit" };
+  if (def.name === "export") return { type: "export" };
+  if (def.name === "help") return { type: "help" };
+  return navTo(def.name);
 }
 
 /**
@@ -93,7 +98,7 @@ export function suggest(text: string): Suggestion[] {
   const hasSpace = /\s/.test(lower);
 
   if (!hasSpace) {
-    return COMMANDS.filter((c) => c.name.startsWith(lower)).map((c) => ({
+    return COMMANDS.filter((c) => c.name.startsWith(lower) || c.aliases?.some((a) => a.startsWith(lower))).map((c) => ({
       command: c.usage,
       description: c.description,
       insert: c.usage === "rec <id>" ? "rec " : c.usage,

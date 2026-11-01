@@ -7,6 +7,7 @@ import * as React from "react";
 import { Outlet, useLocation, useMatches, useNavigate, useNavigationType } from "react-router-dom";
 import type { OsNavState } from "@/app/osEntry";
 import { consumeBoot } from "@/app/BootScreen";
+import { useExportAction } from "@/app/useExportAction";
 import type { RouteHandle } from "@/app/AppShell";
 import { notify } from "@/lib/feedback";
 import { setMode } from "@/lib/mode";
@@ -133,7 +134,8 @@ export default function OsShell() {
     // 在工作站：先「導覽」到 /os（帶 exitToWeb），頁面的 useBlocker 可以攔下（取消＝什麼都不發生）；
     // 抵達後由下面的 layout effect 切換模式並 replace 回原路徑。
     const state: OsNavState = { exitToWeb: { to: here } };
-    void navRef.current(HUB_PATH, { state });
+    // replace：導覽成功後再 replace 回原路徑，歷史紀錄淨結果不變（上一頁回到進入這頁之前的頁面）；useBlocker 對 replace 同樣會攔
+    void navRef.current(HUB_PATH, { state, replace: true });
   }, []);
 
   // 抵達 /os 且帶 exitToWeb（PUSH／REPLACE，不含上一頁）：先 replace 回原路徑，再切換成網頁模式。這段期間不渲染舞台（不閃控制室、不建 WebGL）。
@@ -163,25 +165,27 @@ export default function OsShell() {
 
   if (leaving) return null;
   return (
-    <DeviceGate>
-      <OsStage onExitWeb={exitToWeb} onWebglFailure={onWebglFailure} />
+    <DeviceGate onUseWeb={exitToWeb}>
+      {(active) => <OsStage suspended={!active} onExitWeb={exitToWeb} onWebglFailure={onWebglFailure} />}
     </DeviceGate>
   );
 }
 
 interface OsStageProps {
+  /** 視窗小於門檻：舞台保留（表單不丟）但暫停——不繪製、不收快速鍵、不跑時鐘 */
+  suspended: boolean;
   onExitWeb: () => void;
   onWebglFailure: () => void;
 }
 
-function OsStage({ onExitWeb, onWebglFailure }: OsStageProps) {
+function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
   const place = React.useMemo(() => placeOf(pathname), [pathname]);
 
   const { state, skip, clock, gateActive } = useDirector(place, reduced);
-  useInputGate(gateActive, skip);
+  useInputGate(gateActive && !suspended, skip);
 
   const phase = phaseOf(state);
   const mainRef = React.useRef<HTMLElement>(null);
@@ -198,8 +202,8 @@ function OsStage({ onExitWeb, onWebglFailure }: OsStageProps) {
   }
 
   // 事件處理用的最新值（監聽器只裝一次）
-  const latest = React.useRef({ phase, selected, navigate });
-  latest.current = { phase, selected, navigate };
+  const latest = React.useRef({ phase, selected, navigate, suspended });
+  latest.current = { phase, selected, navigate, suspended };
 
   const enterChannel = React.useCallback((id: ChannelId) => {
     setSelected(id);
@@ -207,12 +211,19 @@ function OsStage({ onExitWeb, onWebglFailure }: OsStageProps) {
   }, []);
 
   // ---- 指令列 ----
+  const exporter = useExportAction();
+  const runExport = exporter.run;
   const [paletteOpen, setPaletteOpen] = React.useState(false);
 
   // 「/」（index 路由）在控制室不會渲染 Outlet，IndexRedirect 不會跑：這裡把網址整理成 /os（同為控制室，不影響導演狀態）
   React.useEffect(() => {
     if (pathname === "/") void navigate(HUB_PATH, { replace: true });
   }, [pathname, navigate]);
+
+  // 視窗縮小時關掉指令列（它掛在 body，不在被隱藏的子樹裡）
+  React.useEffect(() => {
+    if (suspended) setPaletteOpen(false);
+  }, [suspended]);
 
   // ---- 驗證用：目前階段 ----
   React.useLayoutEffect(() => {
@@ -228,7 +239,7 @@ function OsStage({ onExitWeb, onWebglFailure }: OsStageProps) {
   // ---- 快速鍵（§5.4、A6）：window 冒泡階段；規則在 director/keymap.ts ----
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
+      if (e.defaultPrevented || latest.current.suspended) return;
       const action = resolveKey(e, {
         phase: latest.current.phase,
         targetIsInput: isInputTarget(e.target),
@@ -272,7 +283,9 @@ function OsStage({ onExitWeb, onWebglFailure }: OsStageProps) {
     () =>
       installEscapeRule(window, {
         getPhase: () => latest.current.phase,
-        onLeave: () => void latest.current.navigate(HUB_PATH),
+        onLeave: () => {
+          if (!latest.current.suspended) void latest.current.navigate(HUB_PATH);
+        },
       }),
     [],
   );
@@ -322,9 +335,9 @@ function OsStage({ onExitWeb, onWebglFailure }: OsStageProps) {
   return (
     <div className="os-root" data-os="root">
       <div className="os-hub" data-os="hub" data-visible={hubVisible ? "true" : "false"}>
-        <HubCanvas running={hubVisible} mode={hubMode(state)} clock={clock} reduced={reduced} channel={channel} onFailure={onWebglFailure} />
+        <HubCanvas running={hubVisible && !suspended} mode={hubMode(state)} clock={clock} reduced={reduced} channel={channel} onFailure={onWebglFailure} />
       </div>
-      <Hud ref={hudRef} selected={selected} active={hudActive} onEnter={enterChannel} onExit={onExitWeb} />
+      <Hud ref={hudRef} selected={selected} active={hudActive && !suspended} onEnter={enterChannel} onExit={onExitWeb} />
       {showStation ? (
         <div className="os-station" data-os="station" data-hidden={stationHidden ? "true" : "false"} {...(stationInert as object)}>
           <StationFrame tag={stationCh ?? ""} onBack={() => void navigate(HUB_PATH)} onSkipToMain={() => mainRef.current?.focus()}>
@@ -340,7 +353,7 @@ function OsStage({ onExitWeb, onWebglFailure }: OsStageProps) {
         </div>
       ) : null}
       <TransitionOverlay kind={overlayKind} clock={clock} cardText={`${cardCh.id} ${cardCh.code}`} />
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onNavigate={(path) => void navigate(path)} onExit={onExitWeb} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onNavigate={(path) => void navigate(path)} onExit={onExitWeb} onExport={() => void runExport()} />
       <div className="sr-only" role="status" aria-live="polite" data-os="live">
         {live}
       </div>

@@ -19,6 +19,9 @@ vi.mock("./hub/HubCanvas", () => ({
   WebglFallback: () => null,
 }));
 
+const exportMock = vi.hoisted(() => ({ run: vi.fn() }));
+vi.mock("@/app/useExportAction", () => ({ useExportAction: () => ({ run: exportMock.run, pending: false }) }));
+
 const webglMock = vi.hoisted(() => ({ available: vi.fn(() => true) }));
 vi.mock("./webgl", async (orig) => ({ ...(await orig<typeof import("./webgl")>()), webglAvailable: webglMock.available }));
 
@@ -129,6 +132,7 @@ beforeEach(() => {
   webglMock.available.mockReset();
   webglMock.available.mockReturnValue(true);
   hubMock.props = null;
+  exportMock.run.mockReset();
   Object.assign(window, { innerWidth: 1280, innerHeight: 800 });
 });
 afterEach(() => {
@@ -395,7 +399,7 @@ describe("OsShell：指令列", () => {
     expect(input()).toHaveAttribute("aria-expanded", "true");
     expect(input()).not.toHaveAttribute("aria-activedescendant");
     const options = within(list).getAllByRole("option");
-    expect(options.length).toBe(10);
+    expect(options.length).toBe(11);
     key("ArrowDown", {}, input());
     expect(input()).toHaveAttribute("aria-activedescendant", options[0]!.id);
     expect(options[0]).toHaveAttribute("aria-selected", "true");
@@ -475,7 +479,7 @@ describe("OsShell：指令列", () => {
     type("help");
     enter();
     const help = document.querySelector('[data-os="palette-help"]') as HTMLElement;
-    for (const name of ["dash", "rec", "rec <id>", "new", "cal", "rep", "trash", "set", "exit", "help"]) {
+    for (const name of ["dash", "rec", "rec <id>", "new", "cal", "rep", "trash", "set", "export", "exit", "help"]) {
       expect(within(help).getByText(name)).toBeInTheDocument();
     }
     expect(document.querySelector('[data-os="palette"]')).not.toBeNull();
@@ -516,6 +520,20 @@ describe("OsShell：指令列", () => {
     expect(getMode()).toBe("web");
     expect(window.localStorage.getItem("pld.mode")).toBe("web");
     expect(loc.pathname).toBe("/records");
+  });
+
+  it("export 與「匯出」：先關閉指令列，再執行與側欄相同的匯出動作；停在原處", () => {
+    mount("/records");
+    for (const cmd of ["export", "匯出"]) {
+      openPalette();
+      type(cmd);
+      enter();
+      advance(300);
+      expect(document.querySelector('[data-os="palette"]')).toBeNull();
+    }
+    expect(exportMock.run).toHaveBeenCalledTimes(2);
+    expect(loc.pathname).toBe("/records");
+    expect(phase()).toBe("station");
   });
 
   it("指令列開著時，控制室快速鍵不作用", () => {
@@ -770,31 +788,68 @@ describe("OsShell：從工作站離開 OS 模式一定先經過 router（紅線 
 });
 
 describe("OsShell：裝置門檻（§7）", () => {
-  it("寬度 < 1024 或高度 < 600：終端機訊息與「改用網頁模式」，沒有控制室／HUD／頁面", () => {
+  const gate = () => document.querySelector('[data-os="device-gate"]');
+  const host = () => document.querySelector('[data-os="stage-host"]') as HTMLElement | null;
+
+  it("寬度 < 1024 或高度 < 600：終端機訊息與「改用網頁模式」蓋在上面；舞台保留但隱藏＋inert", () => {
     mount("/records");
-    expect(document.querySelector('[data-os="device-gate"]')).toBeNull();
+    expect(gate()).toBeNull();
     for (const [w, h] of [
       [1000, 700],
       [1280, 500],
       [1023, 768],
     ] as const) {
       setViewport(w, h);
-      const gate = document.querySelector('[data-os="device-gate"]')!;
-      expect(gate, `${w}x${h}`).not.toBeNull();
-      expect(gate.textContent).toContain("PLD/OS 需要桌面終端機（≥1024×600）");
-      expect(document.querySelector('[data-os="hub"]')).toBeNull();
-      expect(document.querySelector("main#main")).toBeNull();
-      expect(screen.queryByText("records-page")).toBeNull();
+      expect(gate(), `${w}x${h}`).not.toBeNull();
+      expect(gate()!.textContent).toContain("PLD/OS 需要桌面終端機（≥1024×600）");
+      expect(host()).not.toBeNull();
+      expect(host()!.hidden).toBe(true);
+      expect(host()!.hasAttribute("inert")).toBe(true);
+      expect(host()!.getAttribute("aria-hidden")).toBe("true");
     }
     setViewport(1024, 600);
-    expect(document.querySelector('[data-os="device-gate"]')).toBeNull();
+    expect(gate()).toBeNull();
+    expect(host()!.hidden).toBe(false);
+    expect(host()!.hasAttribute("inert")).toBe(false);
     expect(phase()).toBe("station");
   });
 
-  it("放大後自動進入：直接落在目前路徑對應的狀態，沒有轉場", () => {
+  it("縮小再放大：表單內容與頁面實例都還在（同一個 DOM 節點）；3D 暫停（running=false）、快速鍵不作用", () => {
+    mount("/form");
+    const field = screen.getByLabelText("欄位") as HTMLInputElement;
+    act(() => {
+      fireEvent.change(field, { target: { value: "未儲存的內容" } });
+    });
+    setViewport(900, 700);
+    expect(screen.getByLabelText("欄位")).toBe(field);
+    key("k", { ctrlKey: true });
+    expect(document.querySelector('[data-os="palette"]')).toBeNull();
+    setViewport(1440, 900);
+    expect(screen.getByLabelText("欄位")).toBe(field);
+    expect(field.value).toBe("未儲存的內容");
+    expect(phase()).toBe("station");
+  });
+
+  it("縮小時關閉開著的指令列、暫停 3D", () => {
+    mount("/os");
+    key("k", { ctrlKey: true });
+    expect(document.querySelector('[data-os="palette"]')).not.toBeNull();
+    setViewport(900, 700);
+    expect(document.querySelector('[data-os="palette"]')).toBeNull();
+    expect(hubMock.props?.running).toBe(false);
+    key("ArrowRight");
+    setViewport(1440, 900);
+    expect(document.querySelector('[data-ch="CH-02"]')).toHaveAttribute("aria-current", "true");
+  });
+
+  it("冷啟動就太小：舞台完全不掛載；放大後直接落在目前路徑的狀態（沒有轉場）", () => {
     setViewport(900, 700);
     mount("/records");
-    expect(document.querySelector('[data-os="device-gate"]')).not.toBeNull();
+    expect(gate()).not.toBeNull();
+    expect(host()).toBeNull();
+    expect(document.querySelector("main#main")).toBeNull();
+    expect(screen.queryByText("records-page")).toBeNull();
+    expect(hubMock.props).toBeNull();
     setViewport(1440, 900);
     expect(phase()).toBe("station");
     expect(screen.getByText("records-page")).toBeInTheDocument();
@@ -809,12 +864,41 @@ describe("OsShell：裝置門檻（§7）", () => {
     expect(document.activeElement).toBe(hudButton());
   });
 
-  it("「改用網頁模式」：setMode web 並寫入 pld.mode", () => {
+  it("「改用網頁模式」（乾淨頁面）：走 route-first 的 exitToWeb，模式 web、停在同一路徑", () => {
+    mount("/records");
     setViewport(900, 700);
-    mount("/os");
     click(document.querySelector<HTMLElement>('[data-os="device-gate-web"]')!);
     expect(getMode()).toBe("web");
     expect(window.localStorage.getItem("pld.mode")).toBe("web");
+    expect(loc.pathname).toBe("/records");
+  });
+
+  it("「改用網頁模式」（在控制室）：導向 /dashboard", () => {
+    mount("/os");
+    setViewport(900, 700);
+    click(document.querySelector<HTMLElement>('[data-os="device-gate-web"]')!);
+    expect(getMode()).toBe("web");
+    expect(loc.pathname).toBe("/dashboard");
+  });
+
+  it("「改用網頁模式」（未儲存的表單）：先出現確認；取消 → 門檻與表單都還在、模式不變；離開 → 切換", async () => {
+    mount("/form");
+    setViewport(900, 700);
+    click(document.querySelector<HTMLElement>('[data-os="device-gate-web"]')!);
+    expect(screen.getByTestId("blocker").textContent).toBe("blocked");
+    expect(getMode()).toBe("os");
+    expect(gate()).not.toBeNull();
+    click(screen.getByRole("button", { name: "留下", hidden: true }));
+    expect(getMode()).toBe("os");
+    expect(loc.pathname).toBe("/form");
+    expect(gate()).not.toBeNull();
+    expect(screen.getByLabelText("欄位", { selector: "input" })).toBeInTheDocument();
+    click(document.querySelector<HTMLElement>('[data-os="device-gate-web"]')!);
+    await act(async () => {
+      screen.getByRole("button", { name: "離開", hidden: true }).click();
+    });
+    expect(getMode()).toBe("web");
+    expect(loc.pathname).toBe("/form");
   });
 });
 
