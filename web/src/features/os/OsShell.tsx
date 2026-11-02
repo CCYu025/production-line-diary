@@ -245,21 +245,16 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
     if (suspended) setPaletteOpen(false);
   }, [suspended]);
 
-  // 控制室閒置時先載入工作站會用到的中文字型子集（進入時第一次排版不必等字型、也少一點字形快取的冷啟動成本）
+  // 一掛載（開機的 B2 期間主執行緒最閒）就先載入工作站會用到的中文字型子集：
+  // 進入時第一次排版不必等字型，也不會在開機結束、控制室現身那一刻才處理字型（那一刻曾多出一個 ~80ms 的長工作）
   React.useEffect(() => {
-    if (!inHub || suspended || !document.fonts?.load) return;
+    if (suspended || !document.fonts?.load) return;
     const sample = CHANNELS.map((c) => c.name).join("") + "待處理今日本月機台設備異常嚴重狀態日期時間篩選匯出儲存取消確認刪除還原";
-    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (h: number) => void };
-    const run = () => {
+    const t = window.setTimeout(() => {
       for (const weight of [400, 500, 700]) void document.fonts.load(`${weight} 14px "Noto Sans TC"`, sample).catch(() => {});
-    };
-    if (w.requestIdleCallback) {
-      const h = w.requestIdleCallback(run, { timeout: 2000 });
-      return () => w.cancelIdleCallback?.(h);
-    }
-    const t = window.setTimeout(run, 300);
+    }, 100);
     return () => window.clearTimeout(t);
-  }, [inHub, suspended]);
+  }, [suspended]);
 
   // ---- 驗證用：目前階段 ----
   React.useLayoutEffect(() => {

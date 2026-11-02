@@ -57,10 +57,10 @@ export const BOOT_FULL = {
 } as const;
 
 export const BOOT_SHORT = {
-  /** 總長上限 ≤ 1,000ms */
-  total: 1000,
+  /** 總長上限 ≤ 1,000ms（量到「控制室現身」要 ≤ 1,000：計時器到點後還有約 5–10ms 的狀態更新與提交，所以 B4 收在 980） */
+  total: 980,
   B3: [0, 300],
-  B4: [300, 1000],
+  B4: [300, 980],
 } as const;
 
 export const BOOT_FULL_CAP_MS = 4000;
