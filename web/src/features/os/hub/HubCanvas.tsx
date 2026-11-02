@@ -24,7 +24,7 @@ import { blipLocal, buildHubLines, MAX_BLIPS, PULSE_POOL, type HubParts } from "
 import type { HubAnomalies } from "./useHubAnomalies";
 import { MONITOR_COUNT, SCREEN_LOCAL, SCREEN_SIZE } from "./layout";
 import { pickChannel } from "./pick";
-import { BLIP_TOKEN, type Blip, type BlipColorKey } from "./radar";
+import { BLIP_TOKEN, DIM_BLIP_MIX, type Blip, type BlipColorKey } from "./radar";
 import { drawMonitorScreen, TEX_H, TEX_W, UNSELECTED_BRIGHTNESS, type CursorRect } from "./screenTexture";
 import { signalKey, type HubSignals } from "./signals";
 
@@ -84,6 +84,9 @@ function mixColor(a: string, b: string, t: number): THREE.Color {
 function readBlipColors(): Record<BlipColorKey, THREE.Color> {
   const out = {} as Record<BlipColorKey, THREE.Color>;
   for (const k of BLIP_KEYS) out[k] = new THREE.Color(readToken(BLIP_TOKEN[k]));
+  // 已解決：--ink-muted 往 --page 混（亮度約為嚴重度色的2/3，在 --page 上仍清楚可見）
+  const c = readOsColors();
+  out.dim = new THREE.Color(c.page).lerp(new THREE.Color(c.inkMuted), DIM_BLIP_MIX);
   return out;
 }
 
@@ -141,8 +144,10 @@ function HubScene({
       c.width = TEX_W;
       c.height = TEX_H;
       const tex = new THREE.CanvasTexture(c);
-      tex.minFilter = THREE.LinearFilter;
-      tex.generateMipmaps = false;
+      // 螢幕只占低解析度緩衝的幾十個像素：用 mipmap＋非等向過濾縮小，不要讓字被取樣成雜點
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.generateMipmaps = true;
+      tex.anisotropy = 4;
       m.screenMat.map = tex;
       canvases.push(c);
       textures.push(tex);
