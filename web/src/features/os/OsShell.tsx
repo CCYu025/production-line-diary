@@ -27,6 +27,7 @@ import { useInputGate } from "./director/useInputGate";
 import { usePatrol } from "./director/usePatrol";
 import HubCanvas, { type HubMode } from "./hub/HubCanvas";
 import { bootCounts } from "./hub/signals";
+import { acknowledgeForChannel, acknowledgeRecord, recIdFromPath } from "./hub/alerts";
 import { useHubAnomalies } from "./hub/useHubAnomalies";
 import { useHubData } from "./hub/useHubSignals";
 import { CommandPalette } from "./hud/CommandPalette";
@@ -220,6 +221,11 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
     if (stationCh) setSelected(stationCh);
   }
 
+  // 確認未確認的新異常警示：進入 CH-01／CH-02（其他頻道不算）；`rec <id>` 在下面的指令列處理
+  React.useEffect(() => {
+    acknowledgeForChannel(stationCh);
+  }, [stationCh]);
+
   // 事件處理用的最新值（監聽器只裝一次）
   const latest = React.useRef({ phase, selected, navigate, suspended });
   latest.current = { phase, selected, navigate, suspended };
@@ -374,7 +380,7 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
           channel={channel}
           signals={hubData.signals}
           blips={anomalies.blips}
-          pulse={anomalies.pulse}
+          alerts={anomalies.alerts}
           patrolling={patrolling}
           boot={state.kind === "BOOT" ? (state.short ? "short" : "full") : null}
           bootCounts={counts}
@@ -400,7 +406,11 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
         </div>
       ) : null}
       <TransitionOverlay kind={overlayKind} clock={clock} cardText={`${cardCh.id} ${cardCh.code}`} />
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onNavigate={(path) => void navigate(path)} onExit={onExitWeb} onExport={() => void runExport()} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onNavigate={(path) => {
+          const recId = recIdFromPath(path);
+          if (recId !== null) acknowledgeRecord(recId);
+          void navigate(path);
+        }} onExit={onExitWeb} onExport={() => void runExport()} />
       <div className="sr-only" role="status" aria-live="polite" data-os="live">
         {live}
       </div>

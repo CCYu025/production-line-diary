@@ -26,7 +26,7 @@ export const BLIP_TOKEN: Record<BlipColorKey, string> = {
   dim: "--ink-muted",
 };
 
-const SEVERITY_KEY: Record<Severity, Exclude<BlipColorKey, "dim">> = {
+export const SEVERITY_KEY: Record<Severity, Exclude<BlipColorKey, "dim">> = {
   輕微: "good",
   一般: "warning",
   嚴重: "serious",
@@ -133,12 +133,6 @@ export function observeAnomalies(
   return { tracker: { baseline: maxId }, fresh };
 }
 
-/** 新異常的光點應脈衝的機台（去重；只含目前有光點的機台）。 */
-export function pulseMachines(fresh: readonly DiaryRecord[], blips: readonly Blip[]): string[] {
-  const have = new Set(blips.map((b) => b.machine));
-  return Array.from(new Set(fresh.map((r) => r.equipment))).filter((m) => have.has(m));
-}
-
 /**
  * aria-live polite 公告：一筆「新紀錄：F3（嚴重）」；多筆取最嚴重的一筆加總數「新紀錄 3 筆：F3（嚴重）等」。沒有新異常回傳 null。
  */
@@ -156,4 +150,121 @@ export function anomalyAnnouncement(fresh: readonly DiaryRecord[]): string | nul
  */
 export function blipLocalUnit(b: Pick<Blip, "angle" | "radius">): { x: number; z: number } {
   return { x: Math.cos(b.angle) * b.radius, z: -Math.sin(b.angle) * b.radius };
+}
+
+/* ---------- PPI 雷達：掃描點亮＋餘暉（X2） ---------- */
+
+/** 掃描一圈的秒數與角速度（rad/s） */
+export const SWEEP_PERIOD_S = 4;
+export const SWEEP_OMEGA = (Math.PI * 2) / SWEEP_PERIOD_S;
+/** 掃描線尾跡楔形長度（弧度）：與最慢的光點餘暉（tau 0.45s，約 1.3s 後幾乎消失）視覺一致 */
+export const SWEEP_TAU_S = 0.45;
+export const WEDGE_SPAN_S = 1.3;
+
+/** 光點分級（由顏色鍵決定）：resolved＝全部已解決；normal＝輕微／一般；serious；critical */
+export type BlipTier = "resolved" | "normal" | "serious" | "critical";
+
+export interface TierParams {
+  /** 餘暉指數衰減時間常數（秒） */
+  tau: number;
+  /** 兩次掃描之間的底光（0＝完全看不見） */
+  floor: number;
+  /** 掃描線掃過時發出一圈擴張的 ping 環 */
+  ping: boolean;
+  /** 菱形鎖定框（持續存在，慢速閃爍） */
+  lock: boolean;
+}
+
+export const TIER_PARAMS: Record<BlipTier, TierParams> = {
+  resolved: { tau: 0.3, floor: 0, ping: false, lock: false },
+  normal: { tau: SWEEP_TAU_S, floor: 0, ping: false, lock: false },
+  serious: { tau: SWEEP_TAU_S, floor: 0.15, ping: true, lock: false },
+  critical: { tau: SWEEP_TAU_S, floor: 0.15, ping: true, lock: true },
+};
+
+export function tierOf(key: BlipColorKey): BlipTier {
+  switch (key) {
+    case "dim":
+      return "resolved";
+    case "good":
+    case "warning":
+      return "normal";
+    case "serious":
+      return "serious";
+    case "critical":
+      return "critical";
+  }
+}
+
+/** 嚴重度 → 顏色鍵（新異常的外圈顏色用） */
+export function severityColorKey(s: Severity): Exclude<BlipColorKey, "dim"> {
+  return SEVERITY_KEY[s];
+}
+
+const TAU2 = Math.PI * 2;
+export function wrapAngle(a: number): number {
+  return ((a % TAU2) + TAU2) % TAU2;
+}
+
+/** 掃描線經過光點方位角之後經過的秒數：t = ((sweep - blip) mod 2π) / ω（0..週期）。 */
+export function secondsSinceSweep(sweepAngle: number, blipAngle: number): number {
+  return wrapAngle(sweepAngle - blipAngle) / SWEEP_OMEGA;
+}
+
+/** 磷光衰減：剛被掃過＝1，exp(-t/tau)。 */
+export function phosphor(tSince: number, tau: number): number {
+  return Math.exp(-Math.max(0, tSince) / tau);
+}
+
+/** 低於這個亮度視為完全熄滅（避免殘留的 0.001 讓畫面「看起來有點亮」） */
+const INVISIBLE_BELOW = 0.02;
+
+/** 光點亮度 0..1（只有顏色／不透明度，不動幾何）：掃描點亮後衰減，不低於該分級的底光。 */
+export function blipBrightness(tier: BlipTier, sweepAngle: number, blipAngle: number): number {
+  const p = TIER_PARAMS[tier];
+  const d = phosphor(secondsSinceSweep(sweepAngle, blipAngle), p.tau);
+  return Math.max(p.floor, d < INVISIBLE_BELOW ? 0 : d);
+}
+
+/** 柔和的開／關閃爍（不是硬閃）：hz 次/秒，亮度在 lo..1 之間，近似方波但邊緣是平滑的。 */
+export function blinkLevel(tSec: number, hz: number, lo = 0): number {
+  const s = 0.5 + 0.8 * Math.sin(TAU2 * hz * tSec);
+  return lo + (1 - lo) * Math.min(1, Math.max(0, s));
+}
+
+export const ALERT_BLINK_HZ = 2;
+export const LOCK_BLINK_HZ = 1;
+export const PING_MS = 500;
+/** 外圈慢速呼吸的週期（秒） */
+export const ALERT_RING_PERIOD_S = 2.4;
+
+/** 掃描線這一幀是否掃過了方位角（prev→cur，單位弧度，可以是未包裹的累積角）。間隔超過半圈（例如分頁被擱置）視為沒掃過。 */
+export function sweepCrossed(prev: number, cur: number, target: number): boolean {
+  const d = wrapAngle(cur - prev);
+  if (d === 0 || d > Math.PI) return false;
+  return wrapAngle(target - prev) <= d && wrapAngle(target - prev) > 0;
+}
+
+export interface BlipFrame {
+  /** 0..1：顏色往 --page 混的程度的反面（1＝完整顏色） */
+  brightness: number;
+  /** 鎖定框不透明度（0＝不顯示） */
+  lock: number;
+  /** 未確認警示：框要加粗（減少動態效果時取代閃爍） */
+  thick: boolean;
+}
+
+/**
+ * 一個光點在某一刻的外觀（純函式）。
+ * - 一般：掃描點亮＋餘暉。
+ * - 未確認警示（alert）：以 2Hz 閃爍，兩次掃描之間也看得見。
+ * - 重大：鎖定框持續存在，以 1Hz 柔和閃爍。
+ * - 減少動態效果：亮度固定 1、不閃爍；重大的框常亮；未確認警示用較粗的常亮框。
+ */
+export function blipFrame(tier: BlipTier, sweepAngle: number, blipAngle: number, alert: boolean, tSec: number, reduced: boolean): BlipFrame {
+  const lockTier = TIER_PARAMS[tier].lock;
+  if (reduced) return { brightness: 1, lock: lockTier || alert ? 1 : 0, thick: alert };
+  let brightness = blipBrightness(tier, sweepAngle, blipAngle);
+  if (alert) brightness = Math.max(brightness, blinkLevel(tSec, ALERT_BLINK_HZ, 0.1));
+  return { brightness, lock: lockTier ? blinkLevel(tSec, LOCK_BLINK_HZ, 0.2) : 0, thick: false };
 }

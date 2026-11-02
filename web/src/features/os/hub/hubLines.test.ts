@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { blipLocal, buildBracket, buildHubLines, countSegments, housingGeometry, HUB_SEGMENT_CAP, MAX_BLIPS, PULSE_POOL, PULSE_SEGMENTS, RADAR, SEGMENTS_PER_BLIP } from "./hubLines";
+import { ALERT_RING_SEGMENTS, blipLocal, buildBracket, buildHubLines, countSegments, housingGeometry, HUB_SEGMENT_CAP, LOCK_POOL, LOCK_SEGMENTS, MAX_BLIPS, PULSE_POOL, PULSE_SEGMENTS, RADAR, SEGMENTS_PER_BLIP, WEDGE_LINES } from "./hubLines";
 import { CASING_HULL_XZ, CASING_Y, MONITOR_COUNT } from "./layout";
 import type { Blip } from "./radar";
 
@@ -29,7 +29,12 @@ describe("hubLines（X2：7 台螢幕＋雷達台）", () => {
     expect(countSegments(parts.radar.blips)).toBe(MAX_BLIPS * SEGMENTS_PER_BLIP);
     expect(parts.radar.pulses).toHaveLength(PULSE_POOL);
     for (const p of parts.radar.pulses) expect(countSegments(p.ring)).toBe(PULSE_SEGMENTS);
-    expect(parts.segments).toBeGreaterThanOrEqual(MAX_BLIPS * SEGMENTS_PER_BLIP + PULSE_POOL * PULSE_SEGMENTS);
+    expect(parts.radar.locks).toHaveLength(LOCK_POOL);
+    for (const l of parts.radar.locks) expect(countSegments(l.obj)).toBe(LOCK_SEGMENTS);
+    expect(countSegments(parts.radar.alertRing.obj)).toBe(ALERT_RING_SEGMENTS);
+    expect(parts.segments).toBeGreaterThanOrEqual(
+      MAX_BLIPS * SEGMENTS_PER_BLIP + PULSE_POOL * PULSE_SEGMENTS + LOCK_POOL * LOCK_SEGMENTS + ALERT_RING_SEGMENTS + WEDGE_LINES,
+    );
   });
 
   it("有 7 台螢幕、每台一個外框與一個螢幕面", () => {

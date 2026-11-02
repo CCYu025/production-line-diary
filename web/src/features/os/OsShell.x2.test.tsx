@@ -32,6 +32,7 @@ vi.mock("@/lib/api", async (orig) => {
   return { ...actual, api: { ...actual.api, listRecords: apiMock.list } };
 });
 
+import { resetAlertsForTest } from "./hub/alerts";
 import { resetCrtForTest } from "./crt/settings";
 import { resetBootDoneForTest } from "./director/boot";
 import OsShell from "./OsShell";
@@ -77,6 +78,7 @@ function mount(initial: string) {
         children: [
           { path: "dashboard", element: <div>dash</div> },
           { path: "records", element: <div>records</div> },
+          { path: "records/new", element: <div>new</div> },
           { path: "report", element: <div>report</div> },
           { path: "os", element: null },
         ],
@@ -114,6 +116,7 @@ beforeEach(() => {
   resetModeForTest();
   resetCrtForTest();
   resetBootDoneForTest();
+  resetAlertsForTest();
   setMode("os");
   document.documentElement.removeAttribute("data-theme");
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
@@ -190,12 +193,12 @@ describe("新異常公告", () => {
     const region = document.querySelector('[data-os="anomaly-live"]')!;
     expect(region.getAttribute("aria-live")).toBe("polite");
     expect(region.textContent).toBe("");
-    expect(hubMock.props?.pulse).toBeNull();
+    expect(hubMock.props?.alerts).toEqual([]);
 
     apiMock.list.mockResolvedValue([rec({ id: 1, equipment: "F1" }), rec({ id: 2, equipment: "F3", severity: "嚴重", status: "待處理" })]);
     await flush(30_000);
     expect(region.textContent).toBe("新紀錄：F3（嚴重）");
-    expect(hubMock.props?.pulse?.machines).toEqual(["F3"]);
+    expect(hubMock.props?.alerts).toEqual([{ id: 2, machine: "F3", severity: "嚴重" }]);
     // 一般的轉場宣告區域不被異常公告污染
     expect(document.querySelector('[data-os="live"]')!.textContent).not.toContain("新紀錄");
   });
@@ -214,6 +217,53 @@ describe("新異常公告", () => {
     const atStation = apiMock.list.mock.calls.length;
     await flush(90_000);
     expect(apiMock.list.mock.calls.length).toBe(atStation);
+  });
+});
+
+describe("未確認的新異常警示", () => {
+  const withNew = async () => {
+    apiMock.list.mockResolvedValue([rec({ id: 1, equipment: "F1" })]);
+    mount("/os");
+    await flush();
+    expect(hubMock.props?.alerts).toEqual([]); // 第一次載入不算
+    apiMock.list.mockResolvedValue([rec({ id: 1, equipment: "F1" }), rec({ id: 2, equipment: "F3", severity: "重大", status: "待處理" })]);
+    await flush(30_000);
+    expect(hubMock.props?.alerts).toHaveLength(1);
+  };
+
+  it("進入 CH-03 不確認；回到控制室警示仍在，公告不重複", async () => {
+    await withNew();
+    act(() => {
+      key("3");
+    });
+    await flush(1500);
+    expect(phase()).toBe("station");
+    expect(hubMock.props?.alerts).toHaveLength(1);
+    await act(async () => {
+      fireEvent.keyDown(document.body, { key: "Escape" });
+    });
+    await flush(2500);
+    expect(phase()).toBe("hub");
+    expect(hubMock.props?.alerts).toHaveLength(1);
+    expect(document.querySelector('[data-os="anomaly-live"]')!.textContent).toBe("");
+  });
+
+  it("進入 CH-02 確認；回到控制室警示消失", async () => {
+    await withNew();
+    act(() => {
+      key("2");
+    });
+    await flush(1500);
+    expect(hubMock.props?.alerts).toEqual([]);
+  });
+
+  it("進入 CH-01 確認", async () => {
+    await withNew();
+    act(() => {
+      key("1");
+    });
+    await flush(1500);
+    expect(hubMock.props?.alerts).toEqual([]);
   });
 });
 

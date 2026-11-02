@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { blipLocalUnit, type Blip, type BlipColorKey } from "./radar";
+import { blipLocalUnit, phosphor, SWEEP_OMEGA, SWEEP_TAU_S, WEDGE_SPAN_S, type Blip, type BlipColorKey } from "./radar";
 import { MONITOR_COUNT, monitorPoses, SCREEN_LOCAL, SCREEN_SIZE } from "./layout";
 
 // 向量線框的顏色直接用 CSS token 的 sRGB 值，不做色彩管理轉換（輸出到離屏緩衝再由 CRT 著色器合成）
@@ -19,9 +19,16 @@ export const HUB_SEGMENT_CAP = 4000;
 export const MAX_BLIPS = 64;
 /** 每個光點的線段數：菱形 4 條＋一根細柱 1 條 */
 export const SEGMENTS_PER_BLIP = 5;
-/** 新異常脈衝環：同時存在的上限與每個環的線段數 */
-export const PULSE_POOL = 6;
+/** ping 環（嚴重／重大的光點被掃過時）：同時存在的上限與每個環的線段數（預先建立，執行時不配置） */
+export const PULSE_POOL = 12;
 export const PULSE_SEGMENTS = 24;
+/** 鎖定框池（重大光點＋未確認警示）：上限與每個框的線段數（菱形 4 個角 × 2 邊） */
+export const LOCK_POOL = 16;
+export const LOCK_SEGMENTS = 8;
+/** 未確認警示的外圈（粗線）線段數 */
+export const ALERT_RING_SEGMENTS = 64;
+/** 掃描線尾跡楔形的線數（涵蓋 WEDGE_SPAN_S 秒的餘暉） */
+export const WEDGE_LINES = 30;
 /** 雷達台：位置（弧的內側、鏡頭與螢幕牆之間）、半徑、台緣高度 */
 export const RADAR = { x: 0, z: 7.6, radius: 2.4, rim: 0.16 } as const;
 const PLOT_Y = RADAR.rim + 0.01;
@@ -54,6 +61,16 @@ function lineGeometry(pts: number[]): THREE.BufferGeometry {
 
 function basic(color: THREE.ColorRepresentation, fog: boolean): THREE.LineBasicMaterial {
   return new THREE.LineBasicMaterial({ color, fog, depthTest: false });
+}
+
+/** Line2 系列的線（可以比 1 像素粗；線寬以離屏緩衝的像素計）。pts 為成對的線段端點。 */
+function line2(pts: number[], color: THREE.ColorRepresentation, linewidth: number, transparent: boolean): { obj: LineSegments2; mat: LineMaterial } {
+  const geo = new LineSegmentsGeometry();
+  geo.setPositions(pts);
+  const mat = new LineMaterial({ color: new THREE.Color(color).getHex(), linewidth, worldUnits: false, depthTest: false, fog: false, transparent, opacity: 1 });
+  const obj = new LineSegments2(geo, mat);
+  obj.frustumCulled = false;
+  return { obj, mat };
 }
 
 /** 地板網格：延伸到霧中的 2 組平行線。 */
@@ -180,8 +197,13 @@ function circlePts(radius: number, segs: number, y: number): number[] {
 }
 
 export interface PulseParts {
-  ring: THREE.LineSegments;
-  mat: THREE.LineBasicMaterial;
+  ring: LineSegments2;
+  mat: LineMaterial;
+}
+
+export interface LockParts {
+  obj: LineSegments2;
+  mat: LineMaterial;
 }
 
 export interface RadarParts {
@@ -189,7 +211,12 @@ export interface RadarParts {
   /** 繞 y 軸旋轉（rotation.y 為逆時針角度，與光點角度同向） */
   sweep: THREE.Group;
   blips: THREE.LineSegments;
+  /** ping 環池（單位半徑，縮放與淡出由 radarAnim 驅動） */
   pulses: PulseParts[];
+  /** 菱形鎖定框池 */
+  locks: LockParts[];
+  /** 未確認警示的外圈（粗線；顏色與不透明度由 radarAnim 驅動） */
+  alertRing: LockParts;
 }
 
 function buildRadar(colors: HubLineColors): RadarParts {
@@ -217,16 +244,16 @@ function buildRadar(colors: HubLineColors): RadarParts {
   }
   group.add(new THREE.LineSegments(lineGeometry(fine), basic(colors.ringDim, true)));
 
-  // 掃描線＋尾跡（頂點色由 accent 往 page 淡出）
+  // 掃描線＋尾跡楔形：每條尾跡落後一小段角度，顏色依磷光衰減（與光點同一條 exp 曲線）由 accent 往 page 淡出
   const sweep = new THREE.Group();
-  const trail = 5;
   const sp: number[] = [];
   const sc: number[] = [];
   const accent = new THREE.Color(colors.accent);
   const page = new THREE.Color(colors.page);
-  for (let i = 0; i <= trail; i++) {
-    const a = -(i * (4 * Math.PI)) / 180; // 每條尾跡落後 4°
-    const c = accent.clone().lerp(page, i === 0 ? 0 : 0.35 + (i / trail) * 0.55);
+  const stepRad = (WEDGE_SPAN_S * SWEEP_OMEGA) / WEDGE_LINES;
+  for (let i = 0; i <= WEDGE_LINES; i++) {
+    const a = -i * stepRad;
+    const c = page.clone().lerp(accent, phosphor((i * stepRad) / SWEEP_OMEGA, SWEEP_TAU_S));
     sp.push(0, PLOT_Y, 0, Math.cos(a) * R * 0.98, PLOT_Y, -Math.sin(a) * R * 0.98);
     sc.push(c.r, c.g, c.b, c.r, c.g, c.b);
   }
@@ -247,20 +274,48 @@ function buildRadar(colors: HubLineColors): RadarParts {
   blips.frustumCulled = false;
   group.add(blips);
 
-  // 脈衝環（單位半徑；HubCanvas 縮放與淡出）
-  const ringGeo = lineGeometry(circlePts(1, PULSE_SEGMENTS, 0));
+  // ping 環池（單位半徑；radarAnim 縮放與淡出）。Line2 粗 2px：426×240 的低解析度下仍分得出來
+  const ringPts = circlePts(1, PULSE_SEGMENTS, 0);
   const pulses: PulseParts[] = [];
   for (let i = 0; i < PULSE_POOL; i++) {
-    const mat = new THREE.LineBasicMaterial({ color: colors.accent, transparent: true, opacity: 0, fog: false, depthTest: false });
-    const ring = new THREE.LineSegments(ringGeo, mat);
-    ring.renderOrder = 6;
-    ring.position.y = PLOT_Y;
-    ring.visible = false;
-    ring.frustumCulled = false;
-    group.add(ring);
-    pulses.push({ ring, mat });
+    const { obj, mat } = line2(ringPts, colors.accent, 2, true);
+    mat.opacity = 0;
+    obj.renderOrder = 6;
+    obj.position.y = PLOT_Y;
+    obj.visible = false;
+    group.add(obj);
+    pulses.push({ ring: obj, mat });
   }
-  return { group, sweep, blips, pulses };
+
+  // 菱形鎖定框池：四個角的 L 形標記（局部座標，貼著台面），位置由 radarAnim 指定
+  const ls = 0.24;
+  const tick = 0.09;
+  const lockPts: number[] = [];
+  for (const [cx, cz, ax, az, bx, bz] of [
+    [0, -ls, tick, tick, -tick, tick],
+    [ls, 0, -tick, tick, -tick, -tick],
+    [0, ls, -tick, -tick, tick, -tick],
+    [-ls, 0, tick, -tick, tick, tick],
+  ] as const) {
+    lockPts.push(cx, 0, cz, cx + ax, 0, cz + az, cx, 0, cz, cx + bx, 0, cz + bz);
+  }
+  const locks: LockParts[] = [];
+  for (let i = 0; i < LOCK_POOL; i++) {
+    const { obj, mat } = line2(lockPts, colors.accent, 2, true);
+    obj.renderOrder = 7;
+    obj.position.y = PLOT_Y;
+    obj.visible = false;
+    group.add(obj);
+    locks.push({ obj, mat });
+  }
+
+  // 未確認警示的外圈（比 1px 的外圈粗，疊在外圈上）
+  const ar = line2(circlePts(R * 0.98, ALERT_RING_SEGMENTS, PLOT_Y), colors.accent, 3, true);
+  ar.obj.renderOrder = 6;
+  ar.obj.visible = false;
+  group.add(ar.obj);
+
+  return { group, sweep, blips, pulses, locks, alertRing: { obj: ar.obj, mat: ar.mat } };
 }
 
 /** 光點在雷達群組局部座標的位置（世界單位）。 */

@@ -12,7 +12,6 @@ import {
   hashName,
   newAnomalyTracker,
   observeAnomalies,
-  pulseMachines,
   radarWindow,
   RADAR_RADIUS_MAX,
   RADAR_RADIUS_MIN,
@@ -204,8 +203,4 @@ describe("公告字串與脈衝", () => {
     );
   });
   it("沒有新異常＝null", () => expect(anomalyAnnouncement([])).toBeNull());
-  it("pulseMachines：去重、只含有光點的機台", () => {
-    const blips = computeBlips([rec({ equipment: "F3" })], new Date(2026, 10, 1));
-    expect(pulseMachines([rec({ equipment: "F3" }), rec({ equipment: "F3" }), rec({ equipment: "ZZ", date: "2020-01-01" })], blips)).toEqual(["F3"]);
-  });
 });

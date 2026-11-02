@@ -20,11 +20,12 @@ import { webglAvailable } from "../webgl";
 import { biosKey, bootFrame, drawBios, type BootCounts } from "./bootVisual";
 import { cameraProgress, CAMERA_FOV, poseAt, restPose, stepRig, type HubMode, type RigState } from "./camera";
 import { createContextGuard } from "./contextGuard";
-import { blipLocal, buildHubLines, MAX_BLIPS, PULSE_POOL, type HubParts } from "./hubLines";
+import { buildHubLines, type HubParts } from "./hubLines";
+import { RadarAnimator } from "./radarAnim";
 import type { HubAnomalies } from "./useHubAnomalies";
 import { MONITOR_COUNT, SCREEN_LOCAL, SCREEN_SIZE } from "./layout";
 import { pickChannel } from "./pick";
-import { BLIP_TOKEN, DIM_BLIP_MIX, type Blip, type BlipColorKey } from "./radar";
+import { BLIP_TOKEN, DIM_BLIP_MIX, SWEEP_OMEGA, type Blip, type BlipColorKey } from "./radar";
 import { drawMonitorScreen, TEX_H, TEX_W, UNSELECTED_BRIGHTNESS, type CursorRect } from "./screenTexture";
 import { signalKey, type HubSignals } from "./signals";
 
@@ -40,9 +41,9 @@ export interface HubCanvasProps {
   channel: Channel;
   /** 每個頻道的即時訊號（螢幕貼圖內容）；內容鍵沒變就不重畫 */
   signals: HubSignals;
-  /** 雷達光點與新異常的脈衝 */
+  /** 雷達光點與未確認的新異常警示 */
   blips: Blip[];
-  pulse: HubAnomalies["pulse"];
+  alerts: HubAnomalies["alerts"];
   /** 待機巡視中 */
   patrolling: boolean;
   /** 開機中（完整／短）；null＝不在開機中 */
@@ -69,11 +70,6 @@ function debugFlags(): Set<string> {
 
 const UP = new THREE.Vector3(0, 1, 0);
 const BLIP_KEYS: readonly BlipColorKey[] = ["good", "warning", "serious", "critical", "dim"];
-/** 雷達掃描一圈的秒數；脈衝環的毫秒與擴張半徑（世界單位） */
-const SWEEP_PERIOD_S = 4;
-const PULSE_MS = 600;
-const PULSE_R0 = 0.1;
-const PULSE_R1 = 0.55;
 /** 減少動態效果時掃描線停住的角度 */
 const SWEEP_STILL = 0.6;
 
@@ -100,7 +96,7 @@ interface Built {
   cursorGeo: THREE.PlaneGeometry;
   cursorMat: THREE.MeshBasicMaterial;
   blipColors: Record<BlipColorKey, THREE.Color>;
-  pulseState: Array<{ start: number; active: boolean }>;
+  anim: RadarAnimator;
 }
 
 const CURSOR_INDEX = CHANNELS.findIndex((c) => c.id === "CH-03");
@@ -118,9 +114,9 @@ function HubScene({
   channel,
   signals,
   blips,
-  pulse,
+  alerts,
   reduced,
-}: Pick<HubCanvasProps, "channel" | "signals" | "blips" | "pulse" | "reduced">) {
+}: Pick<HubCanvasProps, "channel" | "signals" | "blips" | "alerts" | "reduced">) {
   const scene = useThree((s) => s.scene);
   const latest = React.useRef({ channel, signals, reduced });
   latest.current = { channel, signals, reduced };
@@ -158,6 +154,7 @@ function HubScene({
     cursor.renderOrder = 3;
     cursor.visible = false;
     parts.monitors[CURSOR_INDEX]?.group.add(cursor);
+    const blipColors = readBlipColors();
     return {
       colors,
       parts,
@@ -167,8 +164,8 @@ function HubScene({
       cursor,
       cursorGeo,
       cursorMat,
-      blipColors: readBlipColors(),
-      pulseState: Array.from({ length: PULSE_POOL }, () => ({ start: 0, active: false })),
+      blipColors,
+      anim: new RadarAnimator(parts, new THREE.Color(colors.page), (k) => blipColors[k]),
     };
   }, []);
 
@@ -214,35 +211,10 @@ function HubScene({
     built.cursorMat.color.set(built.colors.accent).multiplyScalar(selectedIndex === CURSOR_INDEX ? 1 : UNSELECTED_BRIGHTNESS);
   }, [built, selectedIndex]);
 
-  // 光點
-  const blipsRef = React.useRef<readonly Blip[]>(blips);
+  // 光點與警示：改變時才寫入（位置、鎖定框、外圈顏色）；每幀只改顏色／不透明度（RadarAnimator.frame）
   React.useEffect(() => {
-    blipsRef.current = blips;
-    built.parts.setBlips(blips, (k) => built.blipColors[k]);
-  }, [built, blips]);
-
-  // 新異常：被點到的光點脈衝一次（減少動態效果：不脈衝）
-  const lastPulse = React.useRef(pulse?.id ?? 0);
-  React.useEffect(() => {
-    if (!pulse || pulse.id === lastPulse.current) return;
-    lastPulse.current = pulse.id;
-    if (latest.current.reduced) return;
-    const now = performance.now();
-    for (const machine of pulse.machines) {
-      const idx = blipsRef.current.findIndex((b) => b.machine === machine);
-      if (idx < 0 || idx >= MAX_BLIPS) continue;
-      const slot = built.pulseState.findIndex((s) => !s.active);
-      if (slot < 0) break;
-      const b = blipsRef.current[idx]!;
-      const p = blipLocal(b);
-      const ring = built.parts.radar.pulses[slot]!;
-      ring.ring.position.x = p.x;
-      ring.ring.position.z = p.z;
-      ring.mat.color.copy(built.blipColors[b.colorKey]);
-      ring.ring.visible = true;
-      built.pulseState[slot] = { start: now, active: true };
-    }
-  }, [built, pulse]);
+    built.anim.set(blips, alerts);
+  }, [built, blips, alerts]);
 
   React.useEffect(() => {
     const page = new THREE.Color(built.colors.page);
@@ -264,24 +236,11 @@ function HubScene({
     const { reduced: r } = latest.current;
     const t = clock.elapsedTime;
     // 雷達掃描線（逆時針，4 秒一圈；減少動態效果：停住）
-    built.parts.radar.sweep.rotation.y = r ? SWEEP_STILL : (t / SWEEP_PERIOD_S) * Math.PI * 2;
+    built.parts.radar.sweep.rotation.y = r ? SWEEP_STILL : t * SWEEP_OMEGA;
     // READY▮ 游標：切換可見性（不重傳貼圖）；減少動態效果：常亮
     if (built.cursor.parent) built.cursor.visible = built.keys[CURSOR_INDEX] !== "" && (r || Math.floor(t * 2) % 2 === 0);
-    // 脈衝環
-    const now = performance.now();
-    built.pulseState.forEach((s, i) => {
-      if (!s.active) return;
-      const x = (now - s.start) / PULSE_MS;
-      const ring = built.parts.radar.pulses[i]!;
-      if (x >= 1) {
-        s.active = false;
-        ring.ring.visible = false;
-        ring.mat.opacity = 0;
-        return;
-      }
-      ring.ring.scale.setScalar(PULSE_R0 + (PULSE_R1 - PULSE_R0) * x);
-      ring.mat.opacity = 1 - x;
-    });
+    // 光點餘暉、ping 環、鎖定框、警示外圈（只動顏色與不透明度）
+    built.anim.frame(t, r);
   });
   return null;
 }
@@ -569,7 +528,7 @@ export default function HubCanvas({
   channel,
   signals,
   blips,
-  pulse,
+  alerts,
   patrolling,
   boot,
   bootCounts,
@@ -609,7 +568,7 @@ export default function HubCanvas({
         gl={{ antialias: false, alpha: false, powerPreference: "high-performance" }}
         camera={{ fov: CAMERA_FOV, near: 0.1, far: 120, position: [restPose(16 / 9).position.x, restPose(16 / 9).position.y, restPose(16 / 9).position.z] }}
       >
-        <HubScene channel={channel} signals={signals} blips={blips} pulse={pulse} reduced={reduced} />
+        <HubScene channel={channel} signals={signals} blips={blips} alerts={alerts} reduced={reduced} />
         <Rig mode={mode} clock={clock} reduced={reduced} sway={!flags.has("nosway")} channel={channel} patrolling={patrolling} />
         <Pipeline reduced={reduced} bloom={!flags.has("nobloom")} level={level} boot={boot} bootCounts={bootCounts} clock={clock} />
         <Picker pickable={pickable} onPick={onPick} level={level} />
