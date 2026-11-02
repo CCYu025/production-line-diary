@@ -6,6 +6,7 @@ import {
   BLIP_TOKEN,
   computeBlips,
   blipLocalUnit,
+  DIM_BLIP_MIX,
   HASH_SEED_ANGLE,
   HASH_SEED_RADIUS,
   hashName,
@@ -82,7 +83,24 @@ describe("computeBlips", () => {
   it("沒資料＝沒有光點；token 對照", () => {
     expect(computeBlips(undefined, NOW)).toEqual([]);
     expect(computeBlips([], NOW)).toEqual([]);
-    expect(BLIP_TOKEN).toEqual({ good: "--good", warning: "--warning", serious: "--serious", critical: "--critical", dim: "--line-strong" });
+    expect(BLIP_TOKEN).toEqual({ good: "--good", warning: "--warning", serious: "--serious", critical: "--critical", dim: "--ink-muted" });
+  });
+});
+
+describe("已解決光點的顏色", () => {
+  const lum = (hex: string) => {
+    const n = parseInt(hex.slice(1), 16);
+    return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  };
+  const mix = (a: string, b: string, t: number) => lum(a) + (lum(b) - lum(a)) * t;
+  it("--ink-muted 往 --page 混 DIM_BLIP_MIX：亮度約為嚴重度色的 2/3（以 cyber 色票計）", () => {
+    const dim = mix("#070b11", "#8ba1b5", DIM_BLIP_MIX);
+    const sev = ["#3ddc84", "#ffd23f", "#ff8a3d", "#ff4d64"].map(lum);
+    const avg = sev.reduce((a, b) => a + b, 0) / sev.length;
+    expect(dim / avg).toBeGreaterThan(0.4);
+    expect(dim / avg).toBeLessThan(0.8);
+    // 比 --line-strong（舊值）亮很多：看得見
+    expect(dim).toBeGreaterThan(lum("#2c4054") * 1.3);
   });
 });
 

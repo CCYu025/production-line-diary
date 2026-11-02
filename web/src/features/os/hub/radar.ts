@@ -2,7 +2,7 @@
  * 雷達台光點（docs/os-mode-spec.md §4.3–4.4）：純函式。
  * - 光點：近 7 天（本機日期的今天往前 6 天，共 7 天）有未刪除紀錄的機台各一個。
  * - 顏色鍵：該機台（7 天內）最嚴重的「未解決」（狀態不是已解決）紀錄的嚴重度；全部已解決＝dim。
- *     輕微→good、一般→warning、嚴重→serious、重大→critical、dim→--line-strong（全部已解決：完整不透明、比嚴重度色安靜；呼叫端以 readToken 取色，不寫死色碼）。
+ *     輕微→good、一般→warning、嚴重→serious、重大→critical、dim→--ink-muted（全部已解決：呼叫端把它往 --page 混 DIM_BLIP_MIX 當作安靜但看得見的顏色；呼叫端以 readToken 取色，不寫死色碼）。
  * - 位置：機台名稱的穩定雜湊 → 角度 0..2π、半徑 0.35..0.9（占雷達半徑的比例），每次開啟位置相同。
  * - 新異常：進入 HUB 時看到的最大 id 為基準；之後出現、id 大於基準的未刪除紀錄。第一次載入不算。
  */
@@ -10,18 +10,20 @@ import { SEVERITY_ORDER, toISODate } from "@shared/aggregate";
 import type { DiaryRecord, Severity } from "@/lib/types";
 
 export const RADAR_WINDOW_DAYS = 7;
+/** 已解決光點的顏色＝--page 往 --ink-muted 混的比例：亮度約為嚴重度色的 2/3（40% 與 50% 在 CRT 掃描線與暗角下的 1px 細線實測仍太暗，故取 0.7） */
+export const DIM_BLIP_MIX = 0.7;
 export const RADAR_RADIUS_MIN = 0.35;
 export const RADAR_RADIUS_MAX = 0.9;
 
 export type BlipColorKey = "good" | "warning" | "serious" | "critical" | "dim";
 
-/** 顏色鍵 → Cyber token 名稱（--good／--warning／--serious／--critical／--line-strong）。 */
+/** 顏色鍵 → Cyber token 名稱（--good／--warning／--serious／--critical／--ink-muted）。 */
 export const BLIP_TOKEN: Record<BlipColorKey, string> = {
   good: "--good",
   warning: "--warning",
   serious: "--serious",
   critical: "--critical",
-  dim: "--line-strong",
+  dim: "--ink-muted",
 };
 
 const SEVERITY_KEY: Record<Severity, Exclude<BlipColorKey, "dim">> = {
