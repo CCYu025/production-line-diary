@@ -209,6 +209,16 @@ describe("report.css 的列印／窄版面規則（jsdom 不套 CSS，直接檢�
     expect(reportCss).toMatch(/#report-output\s*\{[^}]*container-type: inline-size;/);
   });
 
+  it("照片格一列最多 2 張：沒有 repeat(3，n2…n6 都是 repeat(2, minmax(0, 1fr))", () => {
+    const photoRules = reportCss.match(/[^{}]*\.rr-photos[^{}]*\{[^}]*\}/g) ?? [];
+    expect(photoRules.length).toBeGreaterThan(0);
+    for (const rule of photoRules) expect(rule).not.toMatch(/repeat\(3/);
+    expect(reportCss).toMatch(
+      /\.rr-photos\.n2,\s*\.rr-photos\.n3,\s*\.rr-photos\.n4,\s*\.rr-photos\.n5,\s*\.rr-photos\.n6\s*\{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
+    );
+    expect(reportCss).toMatch(/\.rr-photos\.n1\s*\{\s*grid-template-columns: minmax\(0, 400px\);/);
+  });
+
   it("紙張寬度 960 置中；列印時 max-width:none、無邊框", () => {
     expect(reportCss).toMatch(/#report-output\s*\{[^}]*max-width: 960px;[^}]*margin: 0 auto;/);
     expect(reportCss).toMatch(/@media print[\s\S]*?#report-output\s*\{[^}]*max-width: none;/);
