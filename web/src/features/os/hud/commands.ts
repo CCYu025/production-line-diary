@@ -3,12 +3,15 @@
  * 導覽結果只回傳路徑與標籤，由呼叫端走 router 的 navigate()（這樣 useBlocker 的離開確認照常生效）。
  */
 import { getChannel, type ChannelId } from "../channels";
+import { CRT_LABEL, CRT_LEVELS, isCrtLevel, type CrtLevel } from "../crt/settings";
 
 export type ParsedCommand =
   | { type: "nav"; path: string; label: string }
   | { type: "exit" }
   | { type: "export" }
   | { type: "help" }
+  /** CRT 強度（D7）：level 為 null＝只問目前強度（沒有給參數） */
+  | { type: "crt"; level: CrtLevel | null }
   | { type: "empty" }
   | { type: "error"; message: string };
 
@@ -34,6 +37,7 @@ export const COMMANDS: readonly CommandDef[] = [
   { name: "rep", usage: "rep", description: "報表", channel: "CH-05" },
   { name: "trash", usage: "trash", description: "回收桶", channel: "CH-06" },
   { name: "set", usage: "set", description: "設定", channel: "CH-07" },
+  { name: "crt", usage: "crt off|std|max", description: "CRT 強度：關／標準／濃（例如 crt max）" },
   { name: "export", usage: "export", description: "匯出 Excel（與側欄的「匯出 Excel」相同）", aliases: ["匯出"] },
   { name: "exit", usage: "exit", description: "離開 OS 模式，回到網頁模式" },
   { name: "help", usage: "help", description: "列出所有指令" },
@@ -76,6 +80,13 @@ export function parseCommand(text: string): ParsedCommand {
     return { type: "nav", path: `/records?open=${id}`, label: `${getChannel("CH-02").id} 紀錄 #${id}` };
   }
 
+  if (name === "crt") {
+    if (args.length === 0) return { type: "crt", level: null };
+    const arg = args[0]!.toLowerCase();
+    if (args.length > 1 || !isCrtLevel(arg)) return { type: "error", message: `crt 只接受 off、std 或 max（例如 crt max）` };
+    return { type: "crt", level: arg };
+  }
+
   const def = COMMANDS.find((c) => c.name === name || c.aliases?.includes(name));
   if (!def) return { type: "error", message: `未知指令：${parts[0]}（${HELP_HINT}）` };
   if (args.length > 0) return { type: "error", message: `${def.name} 不接受參數（${HELP_HINT}）` };
@@ -101,11 +112,18 @@ export function suggest(text: string): Suggestion[] {
     return COMMANDS.filter((c) => c.name.startsWith(lower) || c.aliases?.some((a) => a.startsWith(lower))).map((c) => ({
       command: c.usage,
       description: c.description,
-      insert: c.usage === "rec <id>" ? "rec " : c.usage,
+      insert: c.usage === "rec <id>" || c.name === "crt" ? `${c.name} ` : c.usage,
     }));
   }
 
   const [name, ...rest] = lower.trim().split(/\s+/);
+  if (name === "crt") {
+    const arg = rest.join(" ");
+    const options = CRT_LEVELS.filter((l) => l.startsWith(arg)).map((l) => ({ command: `crt ${l}`, description: `CRT 強度：${CRT_LABEL[l]}`, insert: `crt ${l}` }));
+    if (options.length > 0) return options;
+    const usage = COMMANDS.find((c) => c.name === "crt")!;
+    return [{ command: usage.usage, description: usage.description, insert: "crt " }];
+  }
   if (name !== "rec") return [];
   const arg = rest.join(" ");
   const usage = COMMANDS.find((c) => c.usage === "rec <id>")!;

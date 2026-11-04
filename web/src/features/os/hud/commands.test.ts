@@ -141,3 +141,37 @@ describe("export（匯出 Excel）", () => {
     expect(suggest("exp")[0]!.insert).toBe("export");
   });
 });
+
+describe("crt 指令（D7）", () => {
+  it("crt off|std|max → { type: crt, level }（不分大小寫、容忍空白）", () => {
+    expect(parseCommand("crt off")).toEqual({ type: "crt", level: "off" });
+    expect(parseCommand("crt std")).toEqual({ type: "crt", level: "std" });
+    expect(parseCommand("  CRT   MAX ")).toEqual({ type: "crt", level: "max" });
+  });
+  it("crt 不帶參數＝查詢目前強度（不是錯誤）", () => expect(parseCommand("crt")).toEqual({ type: "crt", level: null }));
+  it("無效參數、多個參數 → error，訊息列出可用值", () => {
+    for (const bad of ["crt high", "crt off std", "crt 1", "crt on"]) {
+      const r = parseCommand(bad);
+      expect(r.type, bad).toBe("error");
+      if (r.type === "error") expect(r.message).toMatch(/off.*std.*max/);
+    }
+  });
+  it("在指令表（help 會列出）", () => {
+    const def = COMMANDS.find((c) => c.name === "crt")!;
+    expect(def.usage).toBe("crt off|std|max");
+    expect(def.description.length).toBeGreaterThan(0);
+  });
+  it("Tab 補全：c 列出 cal 與 crt；crt 補成 'crt '；'crt ' 列出三個選項；前綴過濾", () => {
+    const names = (t: string) => suggest(t).map((s) => s.command);
+    expect(names("c")).toEqual(["cal", "crt off|std|max"]);
+    expect(suggest("cr")[0]!.insert).toBe("crt ");
+    expect(names("crt ")).toEqual(["crt off", "crt std", "crt max"]);
+    expect(names("crt o")).toEqual(["crt off"]);
+    expect(names("crt s")).toEqual(["crt std"]);
+    expect(suggest("crt m")[0]!.insert).toBe("crt max");
+    expect(names("crt zzz")).toEqual(["crt off|std|max"]);
+  });
+  it("補全出來的 insert 都能被 parseCommand 接受", () => {
+    for (const s of suggest("crt ")) expect(parseCommand(s.insert)).toMatchObject({ type: "crt" });
+  });
+});

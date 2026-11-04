@@ -8,6 +8,8 @@ export interface OsColors {
   lineStrong: string;
   accent: string;
   ink: string;
+  /** --ink-muted：安靜的文字色（已解決的雷達光點用它往 --page 混） */
+  inkMuted: string;
 }
 
 export function readToken(name: string): string {
@@ -21,6 +23,7 @@ export function readOsColors(): OsColors {
     lineStrong: readToken("--line-strong"),
     accent: readToken("--accent"),
     ink: readToken("--ink-1"),
+    inkMuted: readToken("--ink-muted"),
   };
 }
 

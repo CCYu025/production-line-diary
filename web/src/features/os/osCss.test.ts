@@ -66,4 +66,61 @@ describe("os.css", () => {
     expect(rule).toBeDefined();
     expect(splitTopLevel(rule!.declarations, ";").some((d) => /pointer-events:\s*none/.test(d))).toBe(true);
   });
+
+  describe("HUD 頻道按鈕一行排完（X2）", () => {
+    const narrow = rules.filter((r) => r.context.some((c) => /max-width: *1439/.test(c)));
+    it("< 1440px：按鈕不換行、完整文字隱藏、精簡文字顯示", () => {
+      const has = (sel: string, decl: RegExp) => narrow.some((r) => r.selectors.includes(`${OS_SCOPE} ${sel}`) && decl.test(r.declarations));
+      expect(has(".os-channels ul", /flex-wrap: *nowrap/)).toBe(true);
+      expect(has(".os-hud-full", /display: *none/)).toBe(true);
+      expect(has(".os-hud-compact", /display: *inline/)).toBe(true);
+    });
+    it("≥ 1440px：精簡文字預設隱藏", () => {
+      const base = rules.find((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} .os-hud-compact`));
+      expect(base?.declarations).toMatch(/display: *none/);
+    });
+  });
+
+  describe("B 區 CRT 疊層（X2）", () => {
+    const overlay = rules.filter((r) => r.selectors.some((sel) => /::after$/.test(sel) && /os-(statusbar|channels|frame-bar|frame)/.test(sel)));
+
+    it("只作用在 HUD 上下列與工作站外框（頂列＋外框環），不碰 <main>、螢幕與內容", () => {
+      const targets = new Set(overlay.flatMap((r) => r.selectors).filter((sel) => /::after$/.test(sel)).map((sel) => sel.replace(/^.*\s(\.os-[a-z-]+)::after$/, "$1")));
+      expect(Array.from(targets).sort()).toEqual([".os-channels", ".os-frame", ".os-frame-bar", ".os-statusbar"]);
+      for (const sel of overlay.flatMap((r) => r.selectors)) {
+        expect(sel).not.toMatch(/main|os-screen|#main/);
+      }
+    });
+
+    it("pointer-events: none，且用 data-crt 在「關」時不畫", () => {
+      const drawn = overlay.filter((r) => /background-image/.test(r.declarations));
+      expect(drawn.length).toBeGreaterThan(0);
+      for (const r of drawn) {
+        expect(splitTopLevel(r.declarations, ";").some((d) => /pointer-events:\s*none/.test(d))).toBe(true);
+        for (const sel of r.selectors) expect(sel).toContain(':not([data-crt="off"])');
+      }
+    });
+
+    it("條紋與掃描線週期取自變數（整數裝置像素換算），顏色取自 token", () => {
+      const drawn = overlay.find((r) => /background-image/.test(r.declarations))!;
+      expect(drawn.declarations).toContain("var(--os-crt-stripe");
+      expect(drawn.declarations).toContain("var(--os-crt-scan");
+      expect(drawn.declarations).toContain("var(--os-crt-stripe-a");
+    });
+
+    it("外框環用遮罩挖空內容區，沒有遮罩合成就不畫", () => {
+      const ring = css.slice(css.indexOf("@supports (mask-composite"));
+      expect(ring).toContain("mask-composite: exclude");
+      expect(ring).toContain("content-box");
+      const fallback = rules.find((r) => r.selectors.includes(':root[data-mode="os"] .os-root .os-frame::after') && r.context.length === 0);
+      expect(fallback?.declarations).toMatch(/display:\s*none/);
+    });
+
+    it("疊層比 Radix 浮層與 toast 低：只在 HUD／工作站的堆疊內（z-index 1），不設 50 以上", () => {
+      for (const r of overlay) {
+        const z = /z-index:\s*(\d+)/.exec(r.declarations);
+        if (z) expect(Number(z[1])).toBeLessThan(10);
+      }
+    });
+  });
 });

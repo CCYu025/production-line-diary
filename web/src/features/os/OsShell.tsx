@@ -14,6 +14,9 @@ import { setMode } from "@/lib/mode";
 import { applyTheme, getAppliedTheme, getThemePreference, subscribeTheme } from "@/lib/theme";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { channelByIndex, channelForPath, CHANNELS, getChannel, HUB_PATH, isHubPath, type ChannelId } from "./channels";
+import { useCrtLevel } from "./crt/settings";
+import { useDevicePixelRatio } from "./crt/useDevicePixelRatio";
+import { bZoneVars } from "./crt/zones";
 import { DeviceGate } from "./DeviceGate";
 import { installEscapeRule } from "./director/escapeRule";
 import { arrivalOf } from "./director/focusRule";
@@ -21,7 +24,12 @@ import { isDialogOpen, isInputTarget, isInteractiveTarget, resolveKey } from "./
 import { phaseOf, placeOf, stationChOf, transitionKindOf, type DirectorState } from "./director/reducer";
 import { useDirector } from "./director/useDirector";
 import { useInputGate } from "./director/useInputGate";
+import { usePatrol } from "./director/usePatrol";
 import HubCanvas, { type HubMode } from "./hub/HubCanvas";
+import { bootCounts } from "./hub/signals";
+import { acknowledgeForChannel, acknowledgeRecord, recIdFromPath } from "./hub/alerts";
+import { useHubAnomalies } from "./hub/useHubAnomalies";
+import { useHubData } from "./hub/useHubSignals";
 import { CommandPalette } from "./hud/CommandPalette";
 import { Hud, type HudHandle } from "./hud/Hud";
 import "./os.css";
@@ -188,6 +196,18 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
   useInputGate(gateActive && !suspended, skip);
 
   const phase = phaseOf(state);
+  const inHub = state.kind === "HUB";
+
+  // ---- 控制室資料（X2）：沿用現有的紀錄查詢快取；只在 HUB 且分頁可見時每 30 秒重抓 ----
+  const hubData = useHubData(inHub);
+  const anomalies = useHubAnomalies(inHub, hubData.records, hubData.settled, hubData.dataUpdatedAt);
+  const counts = React.useMemo(() => bootCounts(hubData.records), [hubData.records]);
+  // 待機巡視：只在 HUB（沒暫停、沒有減少動態效果）；任何輸入立刻結束，而且輸入不被吞掉（patrol.ts 只觀察）
+  const patrolling = usePatrol(inHub && !suspended && !reduced);
+  // CRT 強度（A 區著色器參數；B 區 CSS 疊層的變數）
+  const crtLevel = useCrtLevel();
+  const dpr = useDevicePixelRatio();
+  const bVars = React.useMemo(() => bZoneVars(crtLevel, dpr), [crtLevel, dpr]);
   const mainRef = React.useRef<HTMLElement>(null);
   const hudRef = React.useRef<HudHandle>(null);
 
@@ -201,10 +221,16 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
     if (stationCh) setSelected(stationCh);
   }
 
+  // 確認未確認的新異常警示：進入 CH-01／CH-02（其他頻道不算）；`rec <id>` 在下面的指令列處理
+  React.useEffect(() => {
+    acknowledgeForChannel(stationCh);
+  }, [stationCh]);
+
   // 事件處理用的最新值（監聽器只裝一次）
   const latest = React.useRef({ phase, selected, navigate, suspended });
   latest.current = { phase, selected, navigate, suspended };
 
+  /** HUD 按鈕、快速鍵與 3D 螢幕點選共用的路徑：選取＋進入 */
   const enterChannel = React.useCallback((id: ChannelId) => {
     setSelected(id);
     void latest.current.navigate(getChannel(id).path);
@@ -223,6 +249,17 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
   // 視窗縮小時關掉指令列（它掛在 body，不在被隱藏的子樹裡）
   React.useEffect(() => {
     if (suspended) setPaletteOpen(false);
+  }, [suspended]);
+
+  // 一掛載（開機的 B2 期間主執行緒最閒）就先載入工作站會用到的中文字型子集：
+  // 進入時第一次排版不必等字型，也不會在開機結束、控制室現身那一刻才處理字型（那一刻曾多出一個 ~80ms 的長工作）
+  React.useEffect(() => {
+    if (suspended || !document.fonts?.load) return;
+    const sample = CHANNELS.map((c) => c.name).join("") + "待處理今日本月機台設備異常嚴重狀態日期時間篩選匯出儲存取消確認刪除還原";
+    const t = window.setTimeout(() => {
+      for (const weight of [400, 500, 700]) void document.fonts.load(`${weight} 14px "Noto Sans TC"`, sample).catch(() => {});
+    }, 100);
+    return () => window.clearTimeout(t);
   }, [suspended]);
 
   // ---- 驗證用：目前階段 ----
@@ -326,18 +363,34 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
   const channel = getChannel(selected);
   const showStation = state.kind === "STATION" || state.kind === "ENTERING" || state.kind === "SWITCHING";
   const stationHidden = (state.kind === "ENTERING" || state.kind === "SWITCHING") && !state.handoff;
-  const hubVisible = state.kind === "HUB" || state.kind === "EXITING" || (state.kind === "ENTERING" && !state.handoff);
+  const hubVisible = state.kind === "HUB" || state.kind === "BOOT" || state.kind === "EXITING" || (state.kind === "ENTERING" && !state.handoff);
   const hudActive = state.kind === "HUB" || (state.kind === "EXITING" && state.handoff);
   const overlayKind = transitionKindOf(state);
   const cardCh = stationCh ? getChannel(stationCh) : channel;
   const stationInert = stationHidden ? { inert: "" } : undefined;
 
   return (
-    <div className="os-root" data-os="root">
+    <div className="os-root" data-os="root" data-crt={crtLevel} style={(bVars ?? undefined) as React.CSSProperties | undefined}>
       <div className="os-hub" data-os="hub" data-visible={hubVisible ? "true" : "false"}>
-        <HubCanvas running={hubVisible && !suspended} mode={hubMode(state)} clock={clock} reduced={reduced} channel={channel} onFailure={onWebglFailure} />
+        <HubCanvas
+          running={hubVisible && !suspended}
+          mode={hubMode(state)}
+          clock={clock}
+          reduced={reduced}
+          channel={channel}
+          signals={hubData.signals}
+          blips={anomalies.blips}
+          alerts={anomalies.alerts}
+          patrolling={patrolling}
+          boot={state.kind === "BOOT" ? (state.short ? "short" : "full") : null}
+          bootCounts={counts}
+          level={crtLevel}
+          pickable={hudActive && !suspended}
+          onPick={enterChannel}
+          onFailure={onWebglFailure}
+        />
       </div>
-      <Hud ref={hudRef} selected={selected} active={hudActive && !suspended} onEnter={enterChannel} onExit={onExitWeb} />
+      <Hud ref={hudRef} selected={selected} signals={hubData.signals} active={hudActive && !suspended} onEnter={enterChannel} onExit={onExitWeb} />
       {showStation ? (
         <div className="os-station" data-os="station" data-hidden={stationHidden ? "true" : "false"} {...(stationInert as object)}>
           <StationFrame tag={stationCh ?? ""} onBack={() => void navigate(HUB_PATH)} onSkipToMain={() => mainRef.current?.focus()}>
@@ -353,9 +406,17 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
         </div>
       ) : null}
       <TransitionOverlay kind={overlayKind} clock={clock} cardText={`${cardCh.id} ${cardCh.code}`} />
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onNavigate={(path) => void navigate(path)} onExit={onExitWeb} onExport={() => void runExport()} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onNavigate={(path) => {
+          const recId = recIdFromPath(path);
+          if (recId !== null) acknowledgeRecord(recId);
+          void navigate(path);
+        }} onExit={onExitWeb} onExport={() => void runExport()} />
       <div className="sr-only" role="status" aria-live="polite" data-os="live">
         {live}
+      </div>
+      {/* 新異常公告（雷達光點脈衝時）：專用的 polite 區域；不發聲。週期性的數字更新不會出現在任何 aria-live */}
+      <div className="sr-only" role="status" aria-live="polite" data-os="anomaly-live">
+        {anomalies.announcement}
       </div>
     </div>
   );

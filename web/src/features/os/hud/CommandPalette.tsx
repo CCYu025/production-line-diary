@@ -6,6 +6,7 @@
  */
 import * as Dialog from "@radix-ui/react-dialog";
 import * as React from "react";
+import { CRT_LABEL, getCrtLevel, setCrtLevel } from "../crt/settings";
 import { COMMANDS, parseCommand, suggest, type ParsedCommand } from "./commands";
 
 export interface CommandPaletteProps {
@@ -80,6 +81,17 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onExit, onExpor
         return;
       case "export":
         closeThen(onExport);
+        return;
+      case "crt":
+        if (cmd.level === null) {
+          // 只問目前強度：顯示說明，不關閉
+          setHelp(false);
+          setError(`目前 CRT 強度：${CRT_LABEL[getCrtLevel()]}（crt off｜std｜max 切換）`);
+          return;
+        }
+        // 立刻生效，不需要導覽；指令列關閉、焦點還給原來的元素
+        setCrtLevel(cmd.level);
+        closeThen(() => {});
         return;
       case "nav":
         closeThen(() => onNavigate(cmd.path));

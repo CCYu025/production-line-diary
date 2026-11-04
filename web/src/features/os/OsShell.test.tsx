@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider, useBlocker, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,12 +20,29 @@ vi.mock("./hub/HubCanvas", () => ({
   WebglFallback: () => null,
 }));
 
+// 開機（X2）：預設關閉，讓既有測試維持「直接進入控制室」；開機本身的測試用 bootMock.real 打開（見「開機」區塊）
+const bootMock = vi.hoisted(() => ({ real: false }));
+vi.mock("./director/boot", async (orig) => {
+  const actual = await orig<typeof import("./director/boot")>();
+  return { ...actual, decideBoot: (i: Parameters<typeof actual.decideBoot>[0]) => (bootMock.real ? actual.decideBoot(i) : null) };
+});
+
+// 控制室資料（X2）：紀錄查詢換成可控的替身（預設空清單）
+const apiMock = vi.hoisted(() => ({ list: vi.fn() }));
+vi.mock("@/lib/api", async (orig) => {
+  const actual = await orig<typeof import("@/lib/api")>();
+  return { ...actual, api: { ...actual.api, listRecords: apiMock.list } };
+});
+
 const exportMock = vi.hoisted(() => ({ run: vi.fn() }));
 vi.mock("@/app/useExportAction", () => ({ useExportAction: () => ({ run: exportMock.run, pending: false }) }));
 
 const webglMock = vi.hoisted(() => ({ available: vi.fn(() => true) }));
 vi.mock("./webgl", async (orig) => ({ ...(await orig<typeof import("./webgl")>()), webglAvailable: webglMock.available }));
 
+import { resetCrtForTest } from "./crt/settings";
+import { resetBootDoneForTest } from "./director/boot";
+import { COMMANDS } from "./hud/commands";
 import OsShell from "./OsShell";
 import { shouldKeepCyberOnExit, WEBGL_FALLBACK_TEXT } from "./webgl";
 
@@ -85,7 +103,12 @@ function mount(initial: string) {
     ],
     { initialEntries: [initial] },
   );
-  return render(<RouterProvider router={router} />);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
 }
 
 const phase = () => document.documentElement.dataset.osPhase;
@@ -132,6 +155,12 @@ beforeEach(() => {
   webglMock.available.mockReset();
   webglMock.available.mockReturnValue(true);
   hubMock.props = null;
+  apiMock.list.mockReset();
+  apiMock.list.mockResolvedValue([]);
+  window.localStorage.removeItem("pld.os.crt");
+  resetCrtForTest();
+  bootMock.real = false;
+  resetBootDoneForTest();
   exportMock.run.mockReset();
   Object.assign(window, { innerWidth: 1280, innerHeight: 800 });
 });
@@ -237,7 +266,7 @@ describe("OsShell：HUD", () => {
     expect(document.querySelector('[data-os="clock"]')!.textContent).toMatch(/^\d{2}:\d{2}:\d{2}$/);
     expect(document.querySelector('[data-os="exit"]')!.textContent).toBe("EXIT TO WEB");
     const buttons = [...document.querySelectorAll<HTMLButtonElement>('[data-os="hud-ch"]')];
-    expect(buttons.map((b) => b.textContent)).toEqual([
+    expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual([
       "CH-01 儀表板",
       "CH-02 紀錄",
       "CH-03 新增",
@@ -399,7 +428,7 @@ describe("OsShell：指令列", () => {
     expect(input()).toHaveAttribute("aria-expanded", "true");
     expect(input()).not.toHaveAttribute("aria-activedescendant");
     const options = within(list).getAllByRole("option");
-    expect(options.length).toBe(11);
+    expect(options.length).toBe(COMMANDS.length);
     key("ArrowDown", {}, input());
     expect(input()).toHaveAttribute("aria-activedescendant", options[0]!.id);
     expect(options[0]).toHaveAttribute("aria-selected", "true");
@@ -779,7 +808,11 @@ describe("OsShell：從工作站離開 OS 模式一定先經過 router（紅線 
       ],
       { initialEntries: ["/records", { pathname: "/os", state: { exitToWeb: { to: "/records" } } }, "/records"], initialIndex: 2 },
     );
-    render(<RouterProvider router={router} />);
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
     act(() => void router.navigate(-1));
     expect(loc.pathname).toBe("/os");
     expect(getMode()).toBe("os");
@@ -947,5 +980,74 @@ describe("OsShell：WebGL 後備（§7）", () => {
     expect(getMode()).toBe("web");
     expect(loc.pathname).toBe("/dashboard");
     expect(shouldKeepCyberOnExit()).toBe(true);
+  });
+});
+
+describe("OsShell：開機（X2）", () => {
+  it("直接載入控制室：先開機（phase=boot、HUD 未啟用）；播完（4s）進控制室並寫 pld.os.boot", () => {
+    bootMock.real = true;
+    mount("/os");
+    expect(phase()).toBe("boot");
+    expect(window.sessionStorage.getItem("pld.os.boot")).toBeNull();
+    advance(3899);
+    expect(phase()).toBe("boot");
+    advance(1);
+    expect(phase()).toBe("hub");
+    expect(window.sessionStorage.getItem("pld.os.boot")).toBe("1");
+    expect(document.activeElement).toBe(hudButton());
+  });
+
+  it("開機中第一次按鍵＝跳過：進控制室，那次按鍵不傳給下面", () => {
+    bootMock.real = true;
+    mount("/os");
+    const underneath = vi.fn();
+    document.addEventListener("keydown", underneath);
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "3", code: "Digit3", bubbles: true, cancelable: true }));
+    });
+    document.removeEventListener("keydown", underneath);
+    expect(phase()).toBe("hub");
+    expect(underneath).not.toHaveBeenCalled();
+    expect(loc.pathname).toBe("/os");
+    expect(window.sessionStorage.getItem("pld.os.boot")).toBe("1");
+  });
+
+  it("深層連結（直接載入工作站）：沒有開機、不寫 key；之後回控制室也不開機", () => {
+    bootMock.real = true;
+    mount("/records");
+    expect(phase()).toBe("station");
+    expect(window.sessionStorage.getItem("pld.os.boot")).toBeNull();
+    go("/os");
+    expect(phase()).toBe("exiting-pre");
+    settle();
+    expect(phase()).toBe("hub");
+  });
+
+  it("已開過機的分頁再掛載控制室：短開機（1s）", () => {
+    bootMock.real = true;
+    window.sessionStorage.setItem("pld.os.boot", "1");
+    mount("/os");
+    expect(phase()).toBe("boot");
+    advance(1000);
+    expect(phase()).toBe("hub");
+  });
+});
+
+describe("OsShell：crt 指令", () => {
+  it("crt max 立刻生效並寫入 pld.os.crt；crt（無參數）顯示目前強度", () => {
+    mount("/os");
+    key("k", { ctrlKey: true });
+    const input = () => screen.getByRole("combobox");
+    act(() => {
+      fireEvent.change(input(), { target: { value: "crt" } });
+    });
+    key("Enter", {}, input());
+    expect(screen.getByRole("alert").textContent).toContain("標準");
+    act(() => {
+      fireEvent.change(input(), { target: { value: "crt max" } });
+    });
+    key("Enter", {}, input());
+    expect(window.localStorage.getItem("pld.os.crt")).toBe("max");
+    window.localStorage.removeItem("pld.os.crt");
   });
 });

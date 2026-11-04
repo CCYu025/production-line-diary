@@ -133,14 +133,45 @@
 
 :root[data-mode="os"] .os-hud-button {
   min-height: 44px;
-  padding: 8px 16px;
+  padding: 8px 12px;
   border: 1px solid var(--line-strong);
   background: var(--page);
   color: var(--ink-2);
-  font: 500 14px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
-  letter-spacing: 0.06em;
+  font: 500 13px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
+  letter-spacing: 0.04em;
   white-space: nowrap;
   cursor: pointer;
+}
+
+/* 頻道按鈕一行排完（1024px 起）：< 1440px 顯示精簡文字 "CH-02 紀錄 3"、更緊的內距 */
+:root[data-mode="os"] .os-hud-compact {
+  display: none;
+}
+
+@media (max-width: 1439.98px) {
+  :root[data-mode="os"] .os-channels {
+    padding: 10px 8px 16px;
+  }
+
+  :root[data-mode="os"] .os-channels ul {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  :root[data-mode="os"] .os-hud-button {
+    min-width: 0;
+    padding: 8px 6px;
+    font-size: 12.5px;
+    letter-spacing: 0.02em;
+  }
+
+  :root[data-mode="os"] .os-hud-full {
+    display: none;
+  }
+
+  :root[data-mode="os"] .os-hud-compact {
+    display: inline;
+  }
 }
 
 :root[data-mode="os"] .os-hud-button:hover {
@@ -397,6 +428,99 @@
   display: block;
 }
 
+/* ---------- 狀態列的 CRT 強度三段切換（D7） ---------- */
+
+:root[data-mode="os"] .os-crt {
+  display: flex;
+  flex: none;
+}
+
+:root[data-mode="os"] .os-crt-button {
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--ink-2);
+  font: 500 13px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+:root[data-mode="os"] .os-crt-button + .os-crt-button {
+  margin-left: -1px;
+}
+
+:root[data-mode="os"] .os-crt-button:hover {
+  background: var(--accent-wash);
+  color: var(--ink-1);
+}
+
+:root[data-mode="os"] .os-crt-button[aria-pressed="true"] {
+  position: relative;
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+/* ---------- B 區 CRT 疊層（D7、§4.7）：Trinitron 直條＋掃描線 ----------
+ * 只蓋在 HUD 的上下列（狀態列、頻道清單）與工作站 CRT 外框的邊框（頂列與四周的外框環）；
+ * 絕不與 <main> 重疊（外框環用遮罩把內容區挖空；不支援遮罩合成的瀏覽器就不顯示環）。
+ * 條紋與掃描線的週期是整數「裝置像素」換算成的 CSS 像素（--os-crt-stripe／--os-crt-scan，由 OsShell 依 devicePixelRatio 設在 .os-root）；
+ * 強度「關」時 .os-root[data-crt="off"] 沒有這些變數，也不畫。pointer-events: none；在 HUD（z 20）與工作站（z 10）的堆疊內，Radix 浮層與 toast（z 50+）在它們之上。
+ * C 區（工作站內容）不受影響。 */
+
+:root[data-mode="os"] .os-statusbar,
+:root[data-mode="os"] .os-channels,
+:root[data-mode="os"] .os-frame-bar {
+  position: relative;
+}
+
+:root[data-mode="os"] .os-root:not([data-crt="off"]) .os-statusbar::after,
+:root[data-mode="os"] .os-root:not([data-crt="off"]) .os-channels::after,
+:root[data-mode="os"] .os-root:not([data-crt="off"]) .os-frame-bar::after,
+:root[data-mode="os"] .os-root:not([data-crt="off"]) .os-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--ink-1) calc(var(--os-crt-stripe-a, 0) * 100%), transparent) 0,
+      color-mix(in srgb, var(--ink-1) calc(var(--os-crt-stripe-a, 0) * 100%), transparent) calc(var(--os-crt-stripe, 3px) / 3),
+      transparent calc(var(--os-crt-stripe, 3px) / 3),
+      transparent var(--os-crt-stripe, 3px)
+    ),
+    repeating-linear-gradient(
+      0deg,
+      color-mix(in srgb, var(--page) calc(var(--os-crt-scan-a, 0) * 100%), transparent) 0,
+      color-mix(in srgb, var(--page) calc(var(--os-crt-scan-a, 0) * 100%), transparent) calc(var(--os-crt-scan, 4px) / 2),
+      transparent calc(var(--os-crt-scan, 4px) / 2),
+      transparent var(--os-crt-scan, 4px)
+    );
+}
+
+/* 外框環：只有 .os-frame 自己的內距那一圈（內容區＝頂列＋螢幕被遮罩挖空）。需要遮罩合成才安全，否則不畫。 */
+:root[data-mode="os"] .os-root .os-frame::after {
+  display: none;
+}
+
+@supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {
+  :root[data-mode="os"] .os-root:not([data-crt="off"]) .os-frame::after {
+    display: block;
+    padding: 8px 10px 10px;
+    box-sizing: border-box;
+    -webkit-mask-image: linear-gradient(black 0 0), linear-gradient(black 0 0);
+    -webkit-mask-clip: content-box, border-box;
+    -webkit-mask-composite: xor;
+    mask-image: linear-gradient(black 0 0), linear-gradient(black 0 0);
+    mask-clip: content-box, border-box;
+    mask-composite: exclude;
+  }
+}
+
 /* ---------- 列印：所有 OS 元素都不印，版面和標準淺色主題列印相同 ---------- */
 
 @media print {
@@ -410,7 +534,8 @@
   :root[data-mode="os"] #os-overlay,
   :root[data-mode="os"] .os-frame-bar,
   :root[data-mode="os"] .os-skip,
-  :root[data-mode="os"] [data-os-chrome] {
+  :root[data-mode="os"] [data-os-chrome],
+  :root[data-mode="os"] .os-root .os-frame::after {
     display: none !important;
   }
 
