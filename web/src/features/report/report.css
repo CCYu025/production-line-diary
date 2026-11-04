@@ -430,7 +430,8 @@
 .report-record .rr-block .txt.none {
   color: var(--ink-muted);
 }
-/* 照片依張數排成 1／2／3 欄的格子（n1…n6），圖說前面一律有「圖N」編號 */
+/* 照片依張數排格子（n1…n6）：1 張單欄、2 張以上一律 2 欄（列印時 3 欄太小）；
+   奇數張時最後一張維持半寬靠左，讓所有照片一樣大。圖說前面一律有「圖N」編號 */
 .rr-photos {
   display: grid;
   gap: 12px;
@@ -440,13 +441,11 @@
   grid-template-columns: minmax(0, 400px);
 }
 .rr-photos.n2,
-.rr-photos.n4 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
 .rr-photos.n3,
+.rr-photos.n4,
 .rr-photos.n5,
 .rr-photos.n6 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .rr-photos .rp-item {
   margin: 0;
@@ -503,11 +502,6 @@
   .report-record .rr-side .f {
     border-bottom: none;
     padding: 0;
-  }
-  .rr-photos.n3,
-  .rr-photos.n5,
-  .rr-photos.n6 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
