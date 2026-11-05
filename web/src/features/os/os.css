@@ -383,6 +383,11 @@
   opacity: 0;
 }
 
+:root[data-mode="os"] .os-station[data-hidden="true"][data-prep="true"] {
+  /* 進入轉場中段：預先畫好（樣式重算＋繪製記錄），仍然看不見（opacity 0）也不可互動（inert）；交接點只剩 opacity 與 inert 改變 */
+  visibility: visible;
+}
+
 :root[data-mode="os"] .os-frame {
   position: absolute;
   inset: 0;
