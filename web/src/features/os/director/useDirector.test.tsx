@@ -204,3 +204,67 @@ describe("A1：待機巡視", () => {
     expect(patrolling).toBe(true);
   });
 });
+
+describe("X3：執行中打開／關閉減少動態效果", () => {
+  it("進入交接點之前打開：立刻到 STATION，不吞輸入", () => {
+    markBootDone();
+    const r = mount(hub);
+    advance(BOOT_SHORT.total);
+    act(() => setPlace(station));
+    expect(phase()).toBe("entering-pre");
+    r.rerender(<Harness initial={hub} reduced />);
+    expect(phase()).toBe("station");
+    advance(2000);
+    expect(phase()).toBe("station");
+  });
+  it("進入交接點之後也立刻到 STATION（不等剩下的雜訊淡出）", () => {
+    markBootDone();
+    const r = mount(hub);
+    advance(BOOT_SHORT.total);
+    act(() => setPlace(station));
+    advance(900);
+    expect(phase()).toBe("entering-post");
+    r.rerender(<Harness initial={hub} reduced />);
+    expect(phase()).toBe("station");
+  });
+  it("離開（前或後）立刻到終點；之後的路由變化不再播轉場", () => {
+    markBootDone();
+    const r = mount(station);
+    act(() => setPlace(hub));
+    expect(phase()).toBe("exiting-pre");
+    r.rerender(<Harness initial={station} reduced />);
+    expect(phase()).toBe("hub");
+    act(() => setPlace(station));
+    expect(phase()).toBe("station");
+    act(() => setPlace({ kind: "channel", ch: "CH-04" }));
+    expect(phase()).toBe("station");
+  });
+  it("輸入閘跟著解除：轉場被取消後，下一次點擊直接傳到下面", () => {
+    markBootDone();
+    const r = mount(hub);
+    advance(BOOT_SHORT.total);
+    act(() => setPlace(station));
+    r.rerender(<Harness initial={hub} reduced />);
+    clickGesture(under());
+    expect(underneath).toHaveBeenCalledTimes(1);
+  });
+  it("連續快速進入→離開→進入（每 100ms，十次）：最後狀態與路由一致、沒有殘留轉場", () => {
+    markBootDone();
+    mount(hub);
+    advance(BOOT_SHORT.total);
+    for (let i = 0; i < 10; i++) {
+      act(() => setPlace(station));
+      advance(100);
+      act(() => setPlace(hub));
+      advance(100);
+    }
+    act(() => setPlace(station));
+    advance(100);
+    expect(phase()).toMatch(/^entering/);
+    advance(1300);
+    expect(phase()).toBe("station");
+    act(() => setPlace(hub));
+    advance(1000);
+    expect(phase()).toBe("hub");
+  });
+});
