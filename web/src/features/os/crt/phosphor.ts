@@ -10,6 +10,11 @@ import type { CrtLevel } from "./settings";
 /** 一幀（60Hz）的毫秒數；keep 是以這個長度為單位的殘留比例。 */
 export const FRAME_MS = 1000 / 60;
 export const PHOSPHOR_KEEP: Record<CrtLevel, number> = { off: 0, std: 0.85, max: 0.88 };
+/**
+ * 鏡頭推拉期間（進入 E1、離開 X4）的殘留比例：鏡頭在動時，標準 0.85 會在大字（TODAY／CH-02）後面拖出 8–10 份殘影（X3 驗證 r1），
+ * 所以推拉期間改用較快衰減的 keep（約 3–4 幀就看不到）；控制室靜止（含巡視、輕微晃動）仍用 PHOSPHOR_KEEP。
+ */
+export const PHOSPHOR_KEEP_MOVING: Record<CrtLevel, number> = { off: 0, std: 0.55, max: 0.6 };
 export const DT_MIN_MS = 1;
 export const DT_MAX_MS = 100;
 /** dt 超過這個值＝中間停過（分頁隱藏、迴圈暫停）：第一幀不拖影。 */
@@ -17,6 +22,11 @@ export const RESET_GAP_MS = 250;
 
 export function keepFor(level: CrtLevel): number {
   return PHOSPHOR_KEEP[level];
+}
+
+/** 鏡頭推拉中（moving）用較快衰減的 keep；其餘同 keepFor。 */
+export function keepForMotion(level: CrtLevel, moving: boolean): number {
+  return moving ? PHOSPHOR_KEEP_MOVING[level] : PHOSPHOR_KEEP[level];
 }
 
 /** 本幀留下的比例：keep^(dt/16.67ms)。keep <= 0（關）回傳 0；dt 不合法視為一幀。 */

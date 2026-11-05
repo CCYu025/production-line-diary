@@ -5,7 +5,9 @@ import {
   FRAME_MS,
   isPhosphorDegraded,
   keepFor,
+  keepForMotion,
   markPhosphorDegraded,
+  PHOSPHOR_KEEP_MOVING,
   needsReset,
   PhosphorGovernor,
   phosphorEnabled,
@@ -47,6 +49,30 @@ describe("磷光殘留比例", () => {
     expect(needsReset(NaN)).toBe(true);
     expect(needsReset(16.7)).toBe(false);
     expect(needsReset(100)).toBe(false);
+  });
+});
+
+describe("鏡頭推拉期間的殘留（X3 修正：縮短大字的殘影）", () => {
+  it("靜止時與 keepFor 相同；推拉中標準 0.55、濃 0.6；關永遠 0", () => {
+    for (const l of ["off", "std", "max"] as const) expect(keepForMotion(l, false)).toBe(keepFor(l));
+    expect(keepForMotion("std", true)).toBe(0.55);
+    expect(keepForMotion("max", true)).toBe(0.6);
+    expect(keepForMotion("off", true)).toBe(0);
+  });
+  it("推拉中的 keep 一定比靜止小（衰減更快）、仍在 (0, 1) 內", () => {
+    for (const l of ["std", "max"] as const) {
+      expect(PHOSPHOR_KEEP_MOVING[l]).toBeGreaterThan(0);
+      expect(PHOSPHOR_KEEP_MOVING[l]).toBeLessThan(keepFor(l));
+    }
+  });
+  it("標準：推拉中 5 幀後殘留 < 6%（原 0.85 要 17 幀才低於 6%），3 幀 < 20%", () => {
+    expect(decayFactor(keepForMotion("std", true), FRAME_MS * 5)).toBeLessThan(0.06);
+    expect(decayFactor(keepForMotion("std", true), FRAME_MS * 3)).toBeLessThan(0.2);
+    expect(decayFactor(keepFor("std"), FRAME_MS * 5)).toBeGreaterThan(0.4);
+  });
+  it("依 dt 換算：與 fps 無關", () => {
+    const k = keepForMotion("std", true);
+    expect(decayFactor(k, 8) * decayFactor(k, 8)).toBeCloseTo(decayFactor(k, 16), 8);
   });
 });
 

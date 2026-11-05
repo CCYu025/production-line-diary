@@ -10,7 +10,7 @@
  */
 import * as THREE from "three";
 import type { CrtLevel } from "./settings";
-import { decayFactor, keepFor, needsReset } from "./phosphor";
+import { decayFactor, keepFor, keepForMotion, needsReset } from "./phosphor";
 import { BLUR_FRAG, CRT_FRAG, FULLSCREEN_VERT, PHOSPHOR_FRAG } from "./shaders";
 import { A_ZONE, lowWidthFor } from "./zones";
 
@@ -199,8 +199,9 @@ export class CrtPipeline {
 
   /**
    * dtMs：距上一幀的毫秒（磷光殘影依它換算，與 fps 無關）；省略或 > 250ms＝剛恢復繪製，這一幀不拖影。
+   * moving：鏡頭正在推拉（進入 E1／離開 X4）：用較快衰減的 keep（phosphor.ts 的 PHOSPHOR_KEEP_MOVING），避免大字拖出長殘影。
    */
-  render(gl: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, aspect: number, time: number, dtMs?: number) {
+  render(gl: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, aspect: number, time: number, dtMs?: number, moving = false) {
     this.syncSize(aspect);
     if (camera.aspect !== aspect) {
       camera.aspect = aspect;
@@ -221,7 +222,7 @@ export class CrtPipeline {
       if (this.bootActive || this.overlayOn) {
         this.resetNext = true;
       } else {
-        const keep = this.resetNext || needsReset(dtMs) ? 0 : decayFactor(keepFor(this.level), dtMs ?? 0);
+        const keep = this.resetNext || needsReset(dtMs) ? 0 : decayFactor(keepForMotion(this.level, moving), dtMs ?? 0);
         const next = 1 - this.accCur;
         this.phosphorMat.uniforms.tScene!.value = this.sceneRT.texture;
         this.phosphorMat.uniforms.tPrev!.value = this.acc[this.accCur]!.texture;

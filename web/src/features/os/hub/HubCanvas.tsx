@@ -468,7 +468,7 @@ function Pipeline({
       pipeline.setOverlay(null);
       if (bios.current) releaseBios();
     }
-    pipeline.render(gl, scene, camera, aspect, three.elapsedTime, delta * 1000);
+    pipeline.render(gl, scene, camera, aspect, three.elapsedTime, delta * 1000, m === "entering" || m === "exiting");
     const low = pipeline.lowSize;
     if (!pipelineInfo || pipelineInfo.level !== level || pipelineInfo.lowWidth !== low.width || pipelineInfo.phosphor !== pipeline.hasPhosphor) pipelineInfo = { level, lowWidth: low.width, lowHeight: low.height, phosphor: pipeline.hasPhosphor };
     // Line2 的線寬以離屏緩衝的像素計；尺寸改變時才更新
