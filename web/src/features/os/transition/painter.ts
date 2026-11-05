@@ -244,7 +244,7 @@ export class OverlayPainter {
   }
 
   private next(): void {
-    if (this.stopped) return;
+    if (this.stopped || this.cleaned) return;
     const t = this.o.clock.start == null ? 0 : this.now() - this.o.clock.start;
     if (t >= this.total) return;
     this.raf = this.schedule((ts) => {
@@ -285,11 +285,11 @@ export class OverlayPainter {
     this.covered = true;
   }
 
+  /** 乾淨尾段：清空疊層與台標層一次，之後不再畫（rAF 也不再排）。 */
   private cleanOnce(dt: number): void {
-    if (!this.cleaned) {
-      this.clearAll();
-      this.cleaned = true;
-    }
+    if (this.cleaned) return;
+    this.clearAll();
+    this.cleaned = true;
     dbgOverlayFrame(dt, true);
   }
 
