@@ -178,3 +178,45 @@ describe("RadarAnimator（只動顏色與不透明度）", () => {
     expect(parts.radar.locks.filter((l) => l.obj.visible).length).toBeLessThanOrEqual(LOCK_POOL);
   });
 });
+
+describe("警示閃爍中途切換減少動態效果（X3 補驗 X2 未測項）", () => {
+  it("閃爍與 ping 進行到一半，下一幀 reduced＝true 立刻是穩態：光點常亮、鎖定框常亮加粗、外圈 0.9、ping 環消失", () => {
+    const alerts: ActiveAlert[] = [{ id: 1, machine: "A", severity: "嚴重" }];
+    const { parts, anim } = setup([blip("A", "serious", 1), blip("B", "good", 2)], alerts);
+    const tAt = (a: number) => a / SWEEP_OMEGA;
+    anim.frame(tAt(0.9), false);
+    anim.frame(tAt(1.05), false); // 掃過 A：產生 ping 環
+    expect(parts.radar.pulses.some((p) => p.ring.visible)).toBe(true);
+    const lock = parts.radar.locks.find((l) => l.obj.visible || l.mat.linewidth >= 2)!;
+    const mid = tAt(1.05) + 0.12;
+    const seen = new Set<number>();
+    for (let i = 0; i < 12; i++) {
+      anim.frame(mid + i * 0.021, false);
+      seen.add(Math.round(vertexRed(parts, 0) * 1000));
+    }
+    expect(seen.size).toBeGreaterThan(1); // 還在閃
+    // 切換：下一幀就是穩態（不需要等 ping／閃爍的週期走完）
+    anim.frame(mid + 0.3, true);
+    expect(vertexRed(parts, 0)).toBeCloseTo(palette.serious.r);
+    expect(vertexRed(parts, 1)).toBeCloseTo(palette.good.r);
+    expect(parts.radar.pulses.every((p) => !p.ring.visible)).toBe(true);
+    expect(lock.obj.visible).toBe(true);
+    expect(lock.mat.opacity).toBe(1);
+    expect(lock.mat.linewidth).toBeGreaterThan(2);
+    expect(parts.radar.alertRing.mat.opacity).toBeCloseTo(0.9);
+    // 穩態之後每一幀都不變（不再閃）
+    const a = vertexRed(parts, 0);
+    for (let i = 0; i < 10; i++) {
+      anim.frame(mid + 0.4 + i * 0.037, true);
+      expect(vertexRed(parts, 0)).toBe(a);
+      expect(parts.radar.alertRing.mat.opacity).toBeCloseTo(0.9);
+    }
+    // 再切回動態：回到閃爍（不卡在穩態）
+    const seen2 = new Set<number>();
+    for (let i = 0; i < 20; i++) {
+      anim.frame(20 + i * 0.021, false);
+      seen2.add(Math.round(parts.radar.alertRing.mat.opacity * 1000));
+    }
+    expect(seen2.size).toBeGreaterThan(1);
+  });
+});

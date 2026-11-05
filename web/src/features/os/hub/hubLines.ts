@@ -128,6 +128,8 @@ function outlineGeometry(): THREE.BufferGeometry {
 export interface MonitorParts {
   index: number;
   group: THREE.Group;
+  /** 每台自己的外殼材質（X3：兩側螢幕滑開時各自淡入霧；顏色往 --page 混，不使用透明度） */
+  housingMat: THREE.LineBasicMaterial;
   outline: THREE.LineSegments;
   outlineMat: THREE.LineBasicMaterial;
   screen: THREE.Mesh;
@@ -136,13 +138,13 @@ export interface MonitorParts {
 
 function buildMonitors(colors: HubLineColors): MonitorParts[] {
   const housingGeo = housingGeometry();
-  const housingMat = basic(colors.housing, true);
   const outlineGeo = outlineGeometry();
   const screenGeo = new THREE.PlaneGeometry(SCREEN_SIZE.width, SCREEN_SIZE.height);
   return monitorPoses().map((pose) => {
     const group = new THREE.Group();
     group.position.set(pose.position.x, pose.position.y, pose.position.z);
     group.rotation.y = pose.yaw;
+    const housingMat = basic(colors.housing, true);
     const housing = new THREE.LineSegments(housingGeo, housingMat);
     group.add(housing);
     const outlineMat = basic(colors.outline, true);
@@ -155,7 +157,7 @@ function buildMonitors(colors: HubLineColors): MonitorParts[] {
     screen.position.set(0, SCREEN_LOCAL.y, SCREEN_LOCAL.z);
     screen.renderOrder = 1;
     group.add(screen);
-    return { index: pose.index, group, outline, outlineMat, screen, screenMat };
+    return { index: pose.index, group, housingMat, outline, outlineMat, screen, screenMat };
   });
 }
 
@@ -334,6 +336,8 @@ export interface HubParts {
   radar: RadarParts;
   /** 選中第 index 台：外框變選中色、四角框移過去、其餘外框回到一般色；不碰貼圖。亮度由 setBrightness 負責。 */
   select(index: number): void;
+  /** 第 index 台融進霧色的程度 0..1（X3，E1／X4 的兩側螢幕）：外殼與外框的顏色往 --page 混；0＝原色。不碰貼圖與亮度。 */
+  fade(index: number, amount: number): void;
   /** 填入光點（最多 MAX_BLIPS）；回傳實際畫出的數量 */
   setBlips(blips: readonly Blip[], colorOf: (k: BlipColorKey) => THREE.Color): number;
   dispose(): void;
@@ -364,11 +368,27 @@ export function buildHubLines(colors: HubLineColors): HubParts {
 
   const accent = new THREE.Color(colors.accent);
   const normal = new THREE.Color(colors.outline);
+  const housingBase = new THREE.Color(colors.housing);
+  const pageColor = new THREE.Color(colors.page);
+  const fades: number[] = Array.from({ length: MONITOR_COUNT }, () => 0);
+  let selectedIndex = Math.floor(MONITOR_COUNT / 2);
+  const paint = (m: MonitorParts) => {
+    const f = fades[m.index]!;
+    m.housingMat.color.copy(housingBase).lerp(pageColor, f);
+    m.outlineMat.color.copy(m.index === selectedIndex ? accent : normal).lerp(pageColor, f);
+  };
   const select = (index: number) => {
-    for (const m of monitors) m.outlineMat.color.copy(m.index === index ? accent : normal);
+    selectedIndex = index;
+    for (const m of monitors) paint(m);
     monitors[index]?.group.add(bracket);
   };
-  select(Math.floor(MONITOR_COUNT / 2));
+  select(selectedIndex);
+  const fade = (index: number, amount: number) => {
+    const m = monitors[index];
+    if (!m || fades[index] === amount) return;
+    fades[index] = amount;
+    paint(m);
+  };
 
   const setBlips = (blips: readonly Blip[], colorOf: (k: BlipColorKey) => THREE.Color) => {
     const pos = radar.blips.geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -421,5 +441,5 @@ export function buildHubLines(colors: HubLineColors): HubParts {
     kill(bracket.material as THREE.Material);
   };
 
-  return { group, segments, monitors, bracket, radar, select, setBlips, dispose };
+  return { group, segments, monitors, bracket, radar, select, fade, setBlips, dispose };
 }
