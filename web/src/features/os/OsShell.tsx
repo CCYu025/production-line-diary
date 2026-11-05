@@ -109,7 +109,9 @@ export function cutAnnouncement(before: DirectorState, after: DirectorState): { 
 /** 直接切換時，開始宣告與完成宣告之間隔多久（毫秒）：讓讀屏分成兩句唸，不會被合併。 */
 export const CUT_DONE_DELAY_MS = 150;
 /** 進入轉場開始後多久，把（仍隱藏的）工作站預先「畫好」（visibility 改回 visible、opacity 維持 0）：交接點那一幀只剩 opacity 與 inert。 */
-export const STATION_PREP_MS = 350;
+export const STATION_PREP_MS = 60;
+/** 抵達後焦點重試的幀數上限（約 500ms） */
+export const FOCUS_RETRY_FRAMES = 30;
 
 export default function OsShell() {
   const title = useRouteTitle();
@@ -366,12 +368,21 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
     if (!arrival) return;
     // 轉場進行中切換減少動態效果：同一個 commit 同時改了工作站的隱藏／inert 與 HUD 的 inert，瀏覽器可能還沒讓目的地可以聚焦，
     // 焦點會掉到 <body>。下一幀如果焦點仍在 body（沒有人移走它），就再套用一次抵達規則；焦點已經在別處（使用者自己移走的）不動。
-    const raf = window.requestAnimationFrame(() => {
+    // 目的地可能還要幾十到幾百毫秒才可聚焦（驗證 r2：工作站在轉場中途仍是 visibility:hidden），所以有上限地逐幀重試：
+    // 焦點到了目標就停；焦點被移到別的真實元素（使用者自己移的）就停；最多 FOCUS_RETRY_FRAMES 幀。
+    let raf = 0;
+    let n = 0;
+    const retry = () => {
       const a = document.activeElement;
-      if (a && a !== document.body && a !== document.documentElement) return;
+      const target = arrival === "station" ? mainRef.current : null;
+      if (arrival === "station" && a === target) return;
+      if (a && a !== document.body && a !== document.documentElement && (arrival === "station" || !a.matches?.('[data-os="hud-ch"]'))) return;
+      if (arrival === "hub" && a && a.matches?.('[data-os="hud-ch"][aria-current="true"]')) return;
       if (arrival === "station") focusMain();
       else hudRef.current?.focusSelected();
-    });
+      if (++n < FOCUS_RETRY_FRAMES) raf = window.requestAnimationFrame(retry);
+    };
+    raf = window.requestAnimationFrame(retry);
     return () => window.cancelAnimationFrame(raf);
   }, [state, pathname]);
 
@@ -406,9 +417,18 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
   const showStation = showStationNow && (deferredShow || !stationHidden);
   // 進入轉場進行到一半時，把隱藏的工作站「預先畫好」：visibility 改 visible（opacity 仍是 0、inert 仍在），
   // 整棵子樹的樣式重算與繪製記錄在 E1 中段完成，交接點那一幀只剩 opacity 與 inert 的改變。
-  const enterPre = state.kind === "ENTERING" && !state.handoff;
+  // 預先畫好從進入轉場開始後 STATION_PREP_MS 起，一直維持到進入轉場結束（交接點之後 data-prep 仍在：工作站維持自己的合成層，
+  // 交接點只剩 opacity／inert；rule 的 visibility 只在 hidden 時才生效）。
+  const enterPre = state.kind === "ENTERING";
   const enterGen = state.gen;
+  const stationRef = React.useRef<HTMLDivElement>(null);
   const [prep, setPrep] = React.useState(false);
+  React.useEffect(() => {
+    if (!prep) return;
+    // 在隱藏狀態下於 E1 就讓第一次排版完成（單純讀一次高度，放在 rAF，避免和 commit 同一個工作）
+    const raf = window.requestAnimationFrame(() => void stationRef.current?.offsetHeight);
+    return () => window.cancelAnimationFrame(raf);
+  }, [prep]);
   React.useEffect(() => {
     if (!enterPre) {
       setPrep(false);
@@ -446,7 +466,7 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
       </div>
       <Hud ref={hudRef} selected={selected} signals={hubData.signals} active={hudActive && !suspended} onEnter={enterChannel} onExit={onExitWeb} />
       {showStation ? (
-        <div className="os-station" data-os="station" data-hidden={stationHidden ? "true" : "false"} data-prep={stationHidden && prep ? "true" : "false"} {...(stationInert as object)}>
+        <div ref={stationRef} className="os-station" data-os="station" data-hidden={stationHidden ? "true" : "false"} data-prep={enterPre && prep ? "true" : "false"} {...(stationInert as object)}>
           <StationFrame tag={stationCh ?? ""} onBack={() => void navigate(HUB_PATH)} onSkipToMain={() => mainRef.current?.focus()}>
             <main
               id="main"

@@ -388,6 +388,11 @@
   visibility: visible;
 }
 
+/* 預先畫好期間自己一個合成層：點陣化在交接點之前完成，交接點只改 opacity */
+:root[data-mode="os"] .os-station[data-prep="true"] {
+  will-change: opacity;
+}
+
 :root[data-mode="os"] .os-frame {
   position: absolute;
   inset: 0;

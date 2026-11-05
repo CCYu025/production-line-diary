@@ -45,7 +45,7 @@ vi.mock("./webgl", async (orig) => ({ ...(await orig<typeof import("./webgl")>()
 import { resetCrtForTest } from "./crt/settings";
 import { resetBootDoneForTest } from "./director/boot";
 import { COMMANDS } from "./hud/commands";
-import OsShell, { CUT_DONE_DELAY_MS, cutAnnouncement, STATION_PREP_MS } from "./OsShell";
+import OsShell, { CUT_DONE_DELAY_MS, cutAnnouncement, FOCUS_RETRY_FRAMES, STATION_PREP_MS } from "./OsShell";
 import { shouldKeepCyberOnExit, WEBGL_FALLBACK_TEXT } from "./webgl";
 
 let nav: ReturnType<typeof useNavigate>;
@@ -854,11 +854,14 @@ describe("OsShell：進入時工作站的掛載與預先畫好（X3 修正）", 
     expect(st.getAttribute("data-prep")).toBe("true");
     expect(st.getAttribute("data-hidden")).toBe("true");
     expect(st.hasAttribute("inert")).toBe(true);
-    advance(600);
+    advance(830);
     expect(phase()).toBe("entering-post");
     expect(st.getAttribute("data-hidden")).toBe("false");
-    expect(st.getAttribute("data-prep")).toBe("false");
+    expect(st.getAttribute("data-prep")).toBe("true"); // 合成層維持到進入轉場結束
     expect(st.hasAttribute("inert")).toBe(false);
+    advance(400);
+    expect(phase()).toBe("station");
+    expect(st.getAttribute("data-prep")).toBe("false");
   });
   it("預先畫好之前被輸入跳到終點：旗標不會殘留", () => {
     mount("/os");
@@ -907,6 +910,42 @@ describe("OsShell：抵達後焦點若掉到 body 會在下一幀補上（X3 修
     advance(20);
     expect(document.activeElement).toBe(outside);
     outside.remove();
+  });
+  it("目的地過幾幀才可聚焦（模擬 visibility:hidden 一陣子）：逐幀重試，直到焦點真的在 main#main", () => {
+    const setReduced = controllableReducedMotion();
+    mount("/os");
+    click(hudButton());
+    advance(100);
+    const main = document.querySelector("main#main") as HTMLElement;
+    const real = main.focus.bind(main);
+    let hiddenFrames = 6;
+    vi.spyOn(main, "focus").mockImplementation((o) => {
+      if (hiddenFrames > 0) return; // 瀏覽器：hidden 的元素不能聚焦，focus() 默默失敗
+      real(o);
+    });
+    const tick = () => {
+      hiddenFrames--;
+      advance(17);
+    };
+    (document.activeElement as HTMLElement | null)?.blur(); // 真實瀏覽器：HUD 變 inert 時焦點掉到 body
+    setReduced(true);
+    expect(document.activeElement).toBe(document.body);
+    for (let i = 0; i < 4; i++) tick();
+    expect(document.activeElement).toBe(document.body);
+    for (let i = 0; i < 6; i++) tick();
+    expect(document.activeElement).toBe(main);
+  });
+  it("重試有上限（永遠不可聚焦就停，不無限排 rAF）", () => {
+    const setReduced = controllableReducedMotion();
+    mount("/os");
+    click(hudButton());
+    advance(100);
+    const main = document.querySelector("main#main") as HTMLElement;
+    const spy = vi.spyOn(main, "focus").mockImplementation(() => {});
+    (document.activeElement as HTMLElement | null)?.blur();
+    setReduced(true);
+    advance(17 * 100);
+    expect(spy.mock.calls.length).toBeLessThanOrEqual(FOCUS_RETRY_FRAMES + 2);
   });
   it("離開交接點：焦點掉到 body → 下一幀回到選中的頻道按鈕", () => {
     mount("/records");
