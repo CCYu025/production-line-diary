@@ -11,7 +11,8 @@ import * as React from "react";
 import * as THREE from "three";
 import { CHANNELS, channelIndex, type Channel, type ChannelId } from "../channels";
 import { readOsColors, readToken } from "../colors";
-import { CrtPipeline } from "../crt/pipeline";
+import { isPhosphorDegraded, markPhosphorDegraded, phosphorEnabled, PhosphorGovernor } from "../crt/phosphor";
+import { CrtPipeline, liveRenderTargets } from "../crt/pipeline";
 import type { CrtLevel } from "../crt/settings";
 import { A_ZONE } from "../crt/zones";
 import type { BootKind } from "../director/boot";
@@ -291,8 +292,12 @@ interface PipelineInfo {
   level: CrtLevel;
   lowWidth: number;
   lowHeight: number;
+  phosphor: boolean;
 }
 let pipelineInfo: PipelineInfo | null = null;
+
+/** 自動降級每隔幾幀評估一次（中位數要排序，不必每幀做）。 */
+const DEGRADE_CHECK_EVERY = 30;
 
 function Pipeline({
   reduced,
@@ -301,10 +306,14 @@ function Pipeline({
   boot,
   bootCounts,
   clock,
-}: Pick<HubCanvasProps, "reduced" | "level" | "boot" | "bootCounts" | "clock"> & { bloom: boolean }) {
+  mode,
+}: Pick<HubCanvasProps, "reduced" | "level" | "boot" | "bootCounts" | "clock" | "mode"> & { bloom: boolean }) {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
+  // 本分頁的磷光降級旗標（記憶體）；變成 true 時重建管線（dispose 回饋緩衝）
+  const [degraded, setDegraded] = React.useState(isPhosphorDegraded);
+  const phosphor = phosphorEnabled(level, reduced) && !degraded;
   const pipeline = React.useMemo(() => {
     const c = readOsColors();
     return new CrtPipeline({
@@ -313,14 +322,23 @@ function Pipeline({
       level,
       bloom,
       flicker: !reduced,
+      phosphor,
     });
-  }, [level, bloom, reduced]);
+  }, [level, bloom, reduced, phosphor]);
   // 強度切換＝丟掉舊管線（dispose 全部離屏緩衝）；__osGl 的資源計數可以驗證沒有洩漏
   React.useEffect(() => () => pipeline.dispose(), [pipeline]);
 
   const lineRes = React.useRef({ w: 0, h: 0 });
-  const live = React.useRef({ boot, bootCounts });
-  live.current = { boot, bootCounts };
+  const live = React.useRef({ boot, bootCounts, mode });
+  live.current = { boot, bootCounts, mode };
+  // 自動降級：只在 HUB（非開機、文件可見）量測；狀態或可見性變化就重新累積
+  const governor = React.useMemo(() => new PhosphorGovernor(), []);
+  const gov = React.useRef({ frames: 0 });
+  React.useEffect(() => {
+    const onVis = () => governor.reset();
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [governor]);
   const bios = React.useRef<{ canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; key: string; w: number; h: number } | null>(null);
   const releaseBios = React.useCallback(() => {
     bios.current?.tex.dispose();
@@ -335,10 +353,23 @@ function Pipeline({
   );
 
   // priority > 0：接手繪製（fiber 不再自動 render）
-  useFrame(({ clock: three, size }) => {
+  useFrame(({ clock: three, size }, delta) => {
     const aspect = size.width / Math.max(1, size.height);
     pipeline.syncSize(aspect);
-    const { boot: b, bootCounts: counts } = live.current;
+    const { boot: b, bootCounts: counts, mode: m } = live.current;
+    if (phosphor) {
+      const measuring = m === "hub" && !b && document.visibilityState === "visible";
+      if (!measuring) {
+        governor.reset();
+        gov.current.frames = 0;
+      } else {
+        governor.push(delta * 1000);
+        if (++gov.current.frames % DEGRADE_CHECK_EVERY === 0 && governor.shouldDegrade()) {
+          markPhosphorDegraded(governor.medianFps() ?? undefined);
+          setDegraded(true);
+        }
+      }
+    }
     const bs = clock.bootStart;
     if (b && bs != null) {
       const f = bootFrame(b, performance.now() - bs, 5);
@@ -373,9 +404,9 @@ function Pipeline({
       pipeline.setOverlay(null);
       if (bios.current) releaseBios();
     }
-    pipeline.render(gl, scene, camera, aspect, three.elapsedTime);
+    pipeline.render(gl, scene, camera, aspect, three.elapsedTime, delta * 1000);
     const low = pipeline.lowSize;
-    if (!pipelineInfo || pipelineInfo.level !== level || pipelineInfo.lowWidth !== low.width) pipelineInfo = { level, lowWidth: low.width, lowHeight: low.height };
+    if (!pipelineInfo || pipelineInfo.level !== level || pipelineInfo.lowWidth !== low.width || pipelineInfo.phosphor !== pipeline.hasPhosphor) pipelineInfo = { level, lowWidth: low.width, lowHeight: low.height, phosphor: pipeline.hasPhosphor };
     // Line2 的線寬以離屏緩衝的像素計；尺寸改變時才更新
     if (lineRes.current.w !== low.width || lineRes.current.h !== low.height) {
       lineRes.current = { w: low.width, h: low.height };
@@ -469,6 +500,10 @@ interface OsGlStats {
   level?: CrtLevel;
   lowWidth?: number;
   lowHeight?: number;
+  /** 磷光回饋緩衝是否存在（減少動態效果、強度關、被自動降級時為 false） */
+  phosphor?: boolean;
+  /** 存活的離屏 render target 數（強度來回切換不得增長） */
+  renderTargets?: number;
 }
 declare global {
   interface Window {
@@ -504,6 +539,7 @@ function GlLifecycle({ onFailure, debug }: { onFailure: () => void; debug: boole
         programs: gl.info.programs?.length ?? 0,
         calls: gl.info.render.calls,
         ...(pipelineInfo ?? {}),
+        renderTargets: liveRenderTargets(),
       });
     }
     return () => {
@@ -570,7 +606,7 @@ export default function HubCanvas({
       >
         <HubScene channel={channel} signals={signals} blips={blips} alerts={alerts} reduced={reduced} />
         <Rig mode={mode} clock={clock} reduced={reduced} sway={!flags.has("nosway")} channel={channel} patrolling={patrolling} />
-        <Pipeline reduced={reduced} bloom={!flags.has("nobloom")} level={level} boot={boot} bootCounts={bootCounts} clock={clock} />
+        <Pipeline reduced={reduced} bloom={!flags.has("nobloom")} level={level} boot={boot} bootCounts={bootCounts} clock={clock} mode={mode} />
         <Picker pickable={pickable} onPick={onPick} level={level} />
         <GlLifecycle onFailure={notifyFailure} debug={debugGl} />
       </Canvas>
