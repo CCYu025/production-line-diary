@@ -17,11 +17,11 @@ describe("短轉場的雜訊時間（§5.4）", () => {
     }
   });
 
-  it("150–300ms 線性淡出，300ms 起沒有雜訊", () => {
+  it("150–240ms 線性淡出（與顆粒強度一起），最後 60ms（240–300ms）完全沒有雜訊", () => {
     expect(switchNoiseAlpha(SWITCH.lock[0])).toBeCloseTo(0.85, 5);
-    expect(switchNoiseAlpha(225)).toBeCloseTo(0.425, 5);
-    expect(switchNoiseAlpha(SWITCH.total - 1)).toBeLessThan(0.01);
-    expect(switchNoiseAlpha(SWITCH.total)).toBe(0);
+    expect(switchNoiseAlpha(195)).toBeCloseTo(0.425, 5);
+    expect(switchNoiseAlpha(239)).toBeLessThan(0.01);
+    for (let t = SWITCH.total - 60; t <= SWITCH.total; t++) expect(switchNoiseAlpha(t)).toBe(0);
     expect(switchNoiseAlpha(1000)).toBe(0);
     expect(switchNoiseAlpha(-5)).toBe(0);
   });

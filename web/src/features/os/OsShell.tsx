@@ -21,7 +21,7 @@ import { DeviceGate } from "./DeviceGate";
 import { installEscapeRule } from "./director/escapeRule";
 import { arrivalOf } from "./director/focusRule";
 import { isDialogOpen, isInputTarget, isInteractiveTarget, resolveKey } from "./director/keymap";
-import { phaseOf, placeOf, stationChOf, transitionKindOf, type DirectorState } from "./director/reducer";
+import { isTransition, phaseOf, placeOf, stationChOf, transitionKindOf, type DirectorState } from "./director/reducer";
 import { useDirector } from "./director/useDirector";
 import { useInputGate } from "./director/useInputGate";
 import { usePatrol } from "./director/usePatrol";
@@ -405,7 +405,15 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
           </StationFrame>
         </div>
       ) : null}
-      <TransitionOverlay kind={overlayKind} clock={clock} cardText={`${cardCh.id} ${cardCh.code}`} />
+      <TransitionOverlay
+        kind={overlayKind}
+        gen={isTransition(state) ? state.gen : -1}
+        clock={clock}
+        cardText={`${cardCh.id} ${cardCh.code}`}
+        channel={channel.id}
+        level={crtLevel}
+        reduced={reduced}
+      />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onNavigate={(path) => {
           const recId = recIdFromPath(path);
           if (recId !== null) acknowledgeRecord(recId);

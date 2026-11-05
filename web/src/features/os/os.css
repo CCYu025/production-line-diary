@@ -4,7 +4,8 @@
  *   1. 每條規則的每個選擇器都以 :root[data-mode="os"] 開頭（網頁模式的 <html> 沒有這個屬性，整份都不會套用）。
  *   2. 不寫死色碼：顏色一律取自 Cyber token（var(--…)）。
  *   3. 檔尾是 @media print：隱藏所有 OS 元素、讓列印和標準淺色主題列印一模一樣。
- * 圖層（由下到上）：控制室 3D（0）→ 工作站（10）→ HUD（20，互動層；工作站顯示時 HUD 隱藏）→ 轉場疊層（40）→ 指令列與 Radix 浮層（50+）、toast。
+ * 圖層（由下到上）：控制室 3D（0）→ 工作站（10）→ HUD（20，互動層；工作站顯示時 HUD 隱藏）→ 轉場疊層（40）→ 台標層（41）→ 指令列與 Radix 浮層（50+）、toast。
+ * 轉場疊層必須在 HUD 之上（離開轉場的交接點之後 HUD 已顯示，疊層上還有亮點在淡出，不可被 HUD 列蓋住或切掉）。
  */
 
 :root[data-mode="os"],
@@ -471,6 +472,21 @@
   display: block;
 }
 
+/* 台標層（裝置解析度的頻道小標）：在主疊層之上、HUD 與 Radix 浮層之下；永遠不接收點擊 */
+:root[data-mode="os"] #os-overlay-tag {
+  position: fixed;
+  inset: 0;
+  z-index: 41;
+  display: none;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+:root[data-mode="os"] #os-overlay-tag[data-active="true"] {
+  display: block;
+}
+
 /* ---------- 狀態列的 CRT 強度三段切換（D7） ---------- */
 
 :root[data-mode="os"] .os-crt {
@@ -575,6 +591,7 @@
   :root[data-mode="os"] .os-palette,
   :root[data-mode="os"] .os-palette-overlay,
   :root[data-mode="os"] #os-overlay,
+  :root[data-mode="os"] #os-overlay-tag,
   :root[data-mode="os"] .os-frame-bar,
   :root[data-mode="os"] .os-skip,
   :root[data-mode="os"] [data-os-chrome],
