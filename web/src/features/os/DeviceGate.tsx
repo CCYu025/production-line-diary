@@ -47,12 +47,24 @@ export function DeviceGate({ onUseWeb, children }: DeviceGateProps) {
       ) : null}
       {ok ? null : (
         <div className="os-gate" data-os="device-gate">
-          <h1 className="os-gate-title">PLD/OS</h1>
-          <p>&gt; PLD/OS 需要桌面終端機（≥1024×600）</p>
-          <p>&gt; 放大視窗後會自動進入；也可以改用網頁模式。</p>
-          <button type="button" className="os-gate-button" data-os="device-gate-web" onClick={onUseWeb}>
-            改用網頁模式
-          </button>
+          <div className="os-gate-term">
+            <div className="os-gate-bar" aria-hidden="true">
+              PLD/OS 1995 — TERMINAL
+            </div>
+            <div className="os-gate-body">
+              <h1 className="os-gate-title">PLD/OS</h1>
+              <p>&gt; PLD/OS 需要桌面終端機（≥1024×600）</p>
+              <p>
+                &gt; 放大視窗後會自動進入；也可以改用網頁模式。
+                <span className="os-gate-cursor" aria-hidden="true">
+                  ▮
+                </span>
+              </p>
+              <button type="button" className="os-gate-button" data-os="device-gate-web" onClick={onUseWeb}>
+                改用網頁模式
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </>

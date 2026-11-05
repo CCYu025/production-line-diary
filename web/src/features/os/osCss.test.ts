@@ -123,4 +123,19 @@ describe("os.css", () => {
       }
     });
   });
+
+  describe("裝置門檻終端機畫面（X3）", () => {
+    it("游標預設閃爍，減少動態效果時 animation: none", () => {
+      const base = rules.find((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} .os-gate-cursor`));
+      expect(base?.declarations).toMatch(/animation:[^;]*os-gate-blink/);
+      const reduced = rules.find((r) => r.context.some((c) => /prefers-reduced-motion:\s*reduce/.test(c)) && r.selectors.includes(`${OS_SCOPE} .os-gate-cursor`));
+      expect(reduced?.declarations).toMatch(/animation:\s*none/);
+    });
+    it("等寬字與邊框", () => {
+      const gate = rules.find((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} .os-gate`));
+      expect(gate?.declarations).toMatch(/monospace/);
+      const term = rules.find((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} .os-gate-term`));
+      expect(term?.declarations).toMatch(/border:\s*1px solid/);
+    });
+  });
 });
