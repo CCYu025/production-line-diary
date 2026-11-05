@@ -14,7 +14,7 @@ import type { TransitionClock } from "../director/useDirector";
 import { faceRectAt } from "../hub/faceRect";
 import { switchNoise, type Rect } from "./choreo";
 import { dbgEnd, transitionDebugEnabled } from "./debug";
-import { getNoiseBuf, measureTagRatio, OVERLAY_H, OVERLAY_W, OverlayPainter, type OverlayKind, type OverlayPalette } from "./painter";
+import { getNoiseBuf, measureTagRatio, OVERLAY_H, OVERLAY_W, OverlayPainter, runWarmFrame, type OverlayKind, type OverlayPalette } from "./painter";
 import { SWITCH } from "./timing";
 
 export { OVERLAY_H, OVERLAY_W };
@@ -89,28 +89,51 @@ export function TransitionOverlay({ kind, gen, clock, cardText, channel, level, 
     transitionDebugEnabled();
   }, []);
 
-  // 控制室閒置時預熱：雜訊緩衝、台標層畫布（裝置解析度）與台標字型量測；進入轉場開始那一刻不建立任何東西
+  // 控制室閒置時預熱：雜訊緩衝（含亂數池）、台標層畫布（裝置解析度）、台標字型量測，再用真正的繪製路徑在兩個畫布上各畫幾個代表幀
+  // （runWarmFrame：配置 2D 畫布後端、熱 JIT 與字型），每個閒置回呼只畫一幀；進入轉場開始那一刻不建立、不第一次執行任何東西。
+  // 減少動態效果時疊層永遠不畫，不預熱。
   React.useEffect(() => {
-    if (kind) return;
-    const warm = () => {
+    if (kind || reduced) return;
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (h: number) => void };
+    const hasIdle = typeof w.requestIdleCallback === "function";
+    let handle = 0;
+    let cancelled = false;
+    let i = 0;
+    const schedule = (fn: () => void) => {
+      if (hasIdle) handle = w.requestIdleCallback!(fn, { timeout: 1500 });
+      else handle = window.setTimeout(fn, 200);
+    };
+    const step = () => {
+      if (cancelled) return;
+      let done = true;
       try {
-        getNoiseBuf();
-        const tc = prepareTagCanvas(tagRef.current, window.innerWidth, window.innerHeight);
-        if (tc) measureTagRatio(tc, latest.current.cardText.split(" ")[0] ?? "");
-        void document.fonts?.load?.('600 14px "IBM Plex Mono"').catch(() => {});
-        void document.fonts?.load?.('700 30px "IBM Plex Mono"').catch(() => {});
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const { cardText: text, level: lv } = latest.current;
+        const [tag = "", ...rest] = text.split(" ");
+        if (i === 0) {
+          void document.fonts?.load?.('600 14px "IBM Plex Mono"').catch(() => {});
+          void document.fonts?.load?.('700 30px "IBM Plex Mono"').catch(() => {});
+          getNoiseBuf();
+        }
+        const tc = prepareTagCanvas(tagRef.current, vw, vh);
+        if (i === 0 && tc) measureTagRatio(tc, tag);
+        const ctx = ref.current?.getContext("2d") ?? null;
+        done = ctx ? runWarmFrame(i, { ctx, tagCtx: tc, level: lv, palette: readPalette(), tag, code: rest.join(" "), viewport: { w: vw, h: vh } }) : true;
+        i++;
       } catch {
         /* 沒有 2D canvas（測試環境）：進入轉場開始時再建 */
+        done = true;
       }
+      if (!done) schedule(step);
     };
-    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (h: number) => void };
-    if (w.requestIdleCallback) {
-      const h = w.requestIdleCallback(warm, { timeout: 1500 });
-      return () => w.cancelIdleCallback?.(h);
-    }
-    const t = window.setTimeout(warm, 200);
-    return () => window.clearTimeout(t);
-  }, [kind, cardText]);
+    schedule(step);
+    return () => {
+      cancelled = true;
+      if (hasIdle) w.cancelIdleCallback?.(handle);
+      else window.clearTimeout(handle);
+    };
+  }, [kind, reduced, cardText]);
 
   React.useLayoutEffect(() => {
     const canvas = ref.current;

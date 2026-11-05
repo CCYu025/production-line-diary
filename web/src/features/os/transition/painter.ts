@@ -72,6 +72,29 @@ interface NoiseBuf {
   img: ImageData;
   d32: Uint32Array;
   lut: Uint32Array;
+  /** 預先產生的亂數位元組池（閒置時一次產生）；每幀只從池裡隨機位移處讀，不再逐像素跑亂數產生器 */
+  pool: Uint8Array;
+}
+
+/** 雜訊池的長度＝畫面像素數的幾倍（每幀的起點在 [0, 池長 − 像素數] 之間隨機，所以幀與幀之間不會重複同一份顆粒）。 */
+export const NOISE_POOL_FRAMES = 2;
+
+/** xorshift32 產生 len 個位元組（決定性：同一個 seed 永遠同一串）。 */
+export function makeNoisePool(len: number, seed = 0x9e3779b9): Uint8Array {
+  const out = new Uint8Array(len);
+  let x = seed | 1;
+  for (let i = 0; i < len; i++) {
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    out[i] = (x >>> 24) & 255;
+  }
+  return out;
+}
+
+/** 把池裡 [offset, offset + dst.length) 的位元組經顏色表寫進 dst（每像素一次讀取＋一次查表）。 */
+export function fillNoise(dst: Uint32Array, lut: Uint32Array, pool: Uint8Array, offset: number): void {
+  for (let i = 0; i < dst.length; i++) dst[i] = lut[pool[offset + i]!]!;
 }
 let noiseBuf: NoiseBuf | null = null;
 const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
@@ -85,7 +108,7 @@ export function getNoiseBuf(): NoiseBuf | null {
   const tctx = tmp.getContext("2d");
   if (!tctx) return null;
   const img = tctx.createImageData(OVERLAY_W, OVERLAY_H);
-  noiseBuf = { tmp, tctx, img, d32: new Uint32Array(img.data.buffer), lut: new Uint32Array(256) };
+  noiseBuf = { tmp, tctx, img, d32: new Uint32Array(img.data.buffer), lut: new Uint32Array(256), pool: makeNoisePool(OVERLAY_W * OVERLAY_H * NOISE_POOL_FRAMES) };
   return noiseBuf;
 }
 
@@ -93,7 +116,7 @@ const byte = (x: number) => (x < 0 ? 0 : x > 255 ? 255 : Math.round(x));
 const pack = (r: number, g: number, b: number, a: number) => (LITTLE_ENDIAN ? ((a << 24) | (b << 16) | (g << 8) | r) >>> 0 : ((r << 24) | (g << 16) | (b << 8) | a) >>> 0);
 
 /**
- * 雜訊：xorshift32 逐像素取 8 位元亂數、查 256 項顏色表（顏色表每幀重建，只有 256 項）。
+ * 雜訊：從預先產生的亂數位元組池（隨機起點）查 256 項顏色表（顏色表每幀重建，只有 256 項）；每幀只有查表與一次 putImageData。
  * opacity＝整層不透明度；grain＝顆粒強度（顏色表的對比；0＝只剩一層 --page 色）。兩者由 choreo 的排程一起淡到 0。
  */
 export function drawNoise(ctx: CanvasRenderingContext2D, p: OverlayPalette, tint: Rgb, opacity: number, grain: number): void {
@@ -105,15 +128,7 @@ export function drawNoise(ctx: CanvasRenderingContext2D, p: OverlayPalette, tint
     const t = v * v * 2.2 * grain;
     nb.lut[k] = pack(byte(p.page[0] + (tint[0] - p.page[0]) * t), byte(p.page[1] + (tint[1] - p.page[1]) * t), byte(p.page[2] + (tint[2] - p.page[2]) * t), a);
   }
-  const d = nb.d32;
-  const lut = nb.lut;
-  let x = (Math.random() * 0xffffffff) | 1;
-  for (let i = 0; i < d.length; i++) {
-    x ^= x << 13;
-    x ^= x >>> 17;
-    x ^= x << 5;
-    d[i] = lut[(x >>> 24) & 255]!;
-  }
+  fillNoise(nb.d32, nb.lut, nb.pool, Math.floor(Math.random() * (nb.pool.length - nb.d32.length + 1)));
   nb.tctx.putImageData(nb.img, 0, 0);
   ctx.drawImage(nb.tmp, 0, 0);
 }
@@ -163,6 +178,8 @@ export interface PainterOptions {
   faceRect: Rect | null;
   /** 交接點讀一次真實台標的矩形（CSS 像素）；讀不到回傳 null（用右上角的預設位置） */
   readTagRect: () => Rect | null;
+  /** 預熱用：不寫驗證掛鉤的計數（dbg*），避免污染量測 */
+  silent?: boolean;
   now?: () => number;
   raf?: (cb: (t: number) => void) => number;
   caf?: (h: number) => void;
@@ -183,7 +200,7 @@ export class OverlayPainter {
   private covered = false;
   private handedOff = false;
   /** 驗證旗標（?osdebug=transition）：沒開時不產生任何除錯用的物件 */
-  private readonly dbg = transitionDebugEnabled();
+  private readonly dbg: boolean;
   private tagTarget: Rect | null = null;
   private tagStart: Rect;
   private tagKey = "";
@@ -208,6 +225,7 @@ export class OverlayPainter {
     private readonly tagCtx: CanvasRenderingContext2D | null,
     private readonly o: PainterOptions,
   ) {
+    this.dbg = !o.silent && transitionDebugEnabled();
     this.now = o.now ?? (() => performance.now());
     this.schedule = o.raf ?? ((cb) => requestAnimationFrame(cb));
     this.cancel = o.caf ?? ((h) => cancelAnimationFrame(h));
@@ -232,7 +250,7 @@ export class OverlayPainter {
 
   /** 同步畫第一幀（在瀏覽器繪製之前：離開時 0–300ms 要是不透明的 --page，不能有空白幀露出舊畫面），然後交給 rAF。 */
   start(): void {
-    dbgBegin(this.o.kind);
+    if (this.dbg) dbgBegin(this.o.kind);
     this.frame(this.now());
     this.next();
   }
@@ -262,11 +280,14 @@ export class OverlayPainter {
   /** 畫一幀（now＝rAF 時間戳或 performance.now()）。 */
   frame(now: number): void {
     if (this.stopped) return;
-    const t = this.o.clock.start == null ? 0 : now - this.o.clock.start;
+    // rAF 的時間戳是「這一幀開始」的時間，可能比時鐘起點（commit 時的 performance.now）早幾毫秒：t 夾在 0，
+    // 否則第一個 rAF 幀（t 為負）會沒有雜訊與台標，只剩一張光禿禿的卡片（短轉場最明顯）。
+    const t = this.o.clock.start == null ? 0 : Math.max(0, now - this.o.clock.start);
     const first = this.lastNow === null;
     const dt = first ? 16.67 : Math.max(0, now - this.lastNow!);
     this.lastNow = now;
-    dbgTime(t);
+    if (first) this.tagKey = ""; // 台標層第一幀一定重畫（不信任畫布上現有的內容）
+    if (this.dbg) dbgTime(t);
     if (this.o.kind === "enter") this.paintEnter(t, dt);
     else if (this.o.kind === "switch") this.paintSwitch(t, dt);
     else this.paintExit(t, dt);
@@ -290,7 +311,7 @@ export class OverlayPainter {
     if (this.cleaned) return;
     this.clearAll();
     this.cleaned = true;
-    dbgOverlayFrame(dt, true);
+    if (this.dbg) dbgOverlayFrame(dt, true);
   }
 
   private drawPanel(r: Rect, withDeco = true): void {
@@ -472,7 +493,7 @@ export class OverlayPainter {
     }
     this.drawOsd(t);
     this.paintTag(t);
-    dbgOverlayFrame(dt, false);
+    if (this.dbg) dbgOverlayFrame(dt, false);
   }
 
   /* ----- 短轉場 ----- */
@@ -499,7 +520,7 @@ export class OverlayPainter {
     }
     this.drawOsd(t);
     this.paintTag(t);
-    dbgOverlayFrame(dt, false);
+    if (this.dbg) dbgOverlayFrame(dt, false);
   }
 
   /* ----- 離開 ----- */
@@ -528,6 +549,60 @@ export class OverlayPainter {
       ctx.fillStyle = rgbCss(mixRgb(WHITE, p.accent, 0.15), g.alpha);
       ctx.fillRect(g.x, g.y, g.w, g.h);
     }
-    dbgOverlayFrame(dt, false);
+    if (this.dbg) dbgOverlayFrame(dt, false);
   }
+}
+
+/* ---------- 閒置預熱（控制室待機時；轉場開始那一刻不再有「第一次」） ---------- */
+
+/** 預熱的代表幀：每個閒置回呼只畫一幀（約 1–3ms），不會在控制室的 3D 迴圈裡造成一個長幀。 */
+export const WARM_FRAMES: ReadonlyArray<{ kind: OverlayKind; t: number }> = [
+  { kind: "enter", t: 620 },
+  { kind: "enter", t: 800 },
+  { kind: "enter", t: 900 },
+  { kind: "enter", t: 1100 },
+  { kind: "switch", t: 10 },
+  { kind: "switch", t: 100 },
+  { kind: "exit", t: 50 },
+  { kind: "exit", t: 200 },
+  { kind: "exit", t: 350 },
+];
+
+export interface WarmTargets {
+  ctx: CanvasRenderingContext2D;
+  tagCtx: CanvasRenderingContext2D | null;
+  level: CrtLevel;
+  palette: OverlayPalette;
+  tag: string;
+  code: string;
+  viewport: { w: number; h: number };
+}
+
+/**
+ * 預熱第 i 個代表幀：用和轉場完全相同的繪製路徑（包含雜訊緩衝、2D 畫布的後端配置、文字字型、台標層）在真正的疊層畫布上畫一幀，
+ * 然後 stop() 清空（畫布的後端記憶體與 JIT 都已經熱了，畫面上什麼都沒留下；兩個畫布此刻都是 display:none）。
+ * 回傳是否已經是最後一幀。不寫驗證掛鉤、不排 rAF、不讀任何網頁元素。
+ */
+export function runWarmFrame(i: number, w: WarmTargets): boolean {
+  const f = WARM_FRAMES[i];
+  if (!f) return true;
+  getNoiseBuf();
+  const painter = new OverlayPainter(w.ctx, w.tagCtx, {
+    kind: f.kind,
+    level: w.level,
+    palette: w.palette,
+    tag: w.tag,
+    code: w.code,
+    clock: { start: 0 },
+    viewport: w.viewport,
+    faceRect: null,
+    readTagRect: () => null,
+    silent: true,
+    now: () => 0,
+    raf: () => 0,
+    caf: () => {},
+  });
+  painter.frame(f.t);
+  painter.stop();
+  return i >= WARM_FRAMES.length - 1;
 }

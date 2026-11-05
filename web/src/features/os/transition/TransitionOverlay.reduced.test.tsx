@@ -11,7 +11,7 @@ interface Rec {
 }
 const recs = new Map<string, Rec[]>();
 function fakeCtx(id: string): CanvasRenderingContext2D {
-  const list: Rec[] = [];
+  const list: Rec[] = recs.get(id) ?? [];
   recs.set(id, list);
   const state: Record<string, unknown> = {};
   return new Proxy({} as object, {
@@ -130,6 +130,49 @@ describe("連續快速操作（進入→離開→進入）", () => {
       const el = document.getElementById(id)!;
       expect(el.getAttribute("aria-hidden")).toBe("true");
       expect(el.tabIndex).toBe(-1);
+    }
+  });
+});
+
+describe("閒置預熱（控制室待機）", () => {
+  it("沒有轉場時，每個閒置回呼畫一個代表幀，最後都清空；不排 rAF、不顯示畫布", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const r = render(<TransitionOverlay {...base({ kind: null, gen: -1 })} />);
+      expect(draws()).toEqual([]);
+      vi.advanceTimersByTime(200);
+      const afterOne = draws().length;
+      expect(afterOne).toBeGreaterThan(0);
+      expect(draws()[draws().length - 1]!.fn).toBe("clearRect");
+      vi.advanceTimersByTime(200 * 20);
+      expect(draws().length).toBeGreaterThan(afterOne);
+      const settled = draws().length;
+      vi.advanceTimersByTime(5000);
+      expect(draws().length).toBe(settled); // 預熱做完就停
+      expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+      expect(overlay().getAttribute("data-active")).toBe("false");
+      r.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("轉場一開始就取消尚未跑的預熱；減少動態效果不預熱", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const r = render(<TransitionOverlay {...base({ kind: null, gen: -1, reduced: true })} />);
+      vi.advanceTimersByTime(5000);
+      expect(draws()).toEqual([]);
+      r.unmount();
+      recs.clear();
+      const r2 = render(<TransitionOverlay {...base({ kind: null, gen: -1 })} />);
+      vi.advanceTimersByTime(200);
+      r2.rerender(<TransitionOverlay {...base({ kind: "exit", gen: 1, clock: { start: performance.now(), bootStart: null } })} />);
+      const n = draws().length;
+      vi.advanceTimersByTime(2000);
+      expect(draws().length).toBe(n); // 轉場中沒有預熱幀再插進來（只有 rAF 排的繪製，而 rAF 是假的）
+      r2.unmount();
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

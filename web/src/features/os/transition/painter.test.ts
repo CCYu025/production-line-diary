@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CARD_FRAME_FULL, exitBlockRect, type Rect } from "./choreo";
-import { resetTransitionDebugForTest } from "./debug";
-import { OverlayPainter, OVERLAY_H, OVERLAY_W, type OverlayKind, type OverlayPalette } from "./painter";
+import { resetTransitionDebugForTest, transitionDebugEnabled } from "./debug";
+import { fillNoise, makeNoisePool, NOISE_POOL_FRAMES, OverlayPainter, OVERLAY_H, OVERLAY_W, runWarmFrame, WARM_FRAMES, type OverlayKind, type OverlayPalette } from "./painter";
 import { ENTER, EXIT, SWITCH } from "./timing";
 import type { CrtLevel } from "../crt/settings";
 
@@ -324,5 +324,97 @@ describe("清理", () => {
     expect(main.calls.length).toBeGreaterThan(0);
     expect(raf).toHaveBeenCalledTimes(1);
     p.stop();
+  });
+});
+
+describe("第一個 rAF 幀的時間戳早於時鐘起點（t 為負）：夾在 0，雜訊與台標從第一幀就在", () => {
+  it("短轉場：t=-8ms 的幀畫出卡片、台標文字與 signal lock，和 t=0 一樣", () => {
+    const early = make("switch");
+    early.at(-8);
+    const zero = make("switch");
+    zero.at(0);
+    expect(early.tag.calls.filter((c) => c.fn === "fillText").length).toBe(1);
+    expect(early.main.calls.map((c) => c.fn)).toEqual(zero.main.calls.map((c) => c.fn));
+    expect(early.tag.calls.map((c) => c.fn)).toEqual(zero.tag.calls.map((c) => c.fn));
+  });
+  it("進入：t 為負不會進到任何階段（等同 E1，不畫）", () => {
+    const m = make("enter");
+    m.at(-20);
+    expect(m.main.calls).toEqual([]);
+    expect(m.tag.calls).toEqual([]);
+  });
+});
+
+describe("雜訊池（每幀不再逐像素跑亂數產生器）", () => {
+  it("makeNoisePool 決定性：同一個 seed 同一串位元組，不同 seed 不同", () => {
+    const a = makeNoisePool(4096, 7);
+    const b = makeNoisePool(4096, 7);
+    const c = makeNoisePool(4096, 8);
+    expect(Array.from(a)).toEqual(Array.from(b));
+    expect(Array.from(a)).not.toEqual(Array.from(c));
+    expect(NOISE_POOL_FRAMES).toBeGreaterThanOrEqual(2);
+  });
+  it("位元組大致均勻（256 個值都出現、沒有偏向）", () => {
+    const pool = makeNoisePool(256 * 400);
+    const hist = new Array<number>(256).fill(0);
+    for (const v of pool) hist[v]!++;
+    expect(Math.min(...hist)).toBeGreaterThan(250);
+    expect(Math.max(...hist)).toBeLessThan(560);
+  });
+  it("fillNoise：dst[i] = lut[pool[offset + i]]；不同起點得到不同的顆粒", () => {
+    const pool = makeNoisePool(2000, 3);
+    const lut = new Uint32Array(256).map((_, i) => i * 1000 + 1);
+    const a = new Uint32Array(1000);
+    const b = new Uint32Array(1000);
+    fillNoise(a, lut, pool, 0);
+    fillNoise(b, lut, pool, 777);
+    for (let i = 0; i < 1000; i += 97) {
+      expect(a[i]).toBe(lut[pool[i]!]);
+      expect(b[i]).toBe(lut[pool[777 + i]!]);
+    }
+    expect(Array.from(a)).not.toEqual(Array.from(b));
+  });
+  it("池長 ≥ 兩倍畫面像素：起點範圍 [0, 池長 − 像素數] 內永遠不會讀超出池", () => {
+    const len = OVERLAY_W * OVERLAY_H * NOISE_POOL_FRAMES;
+    const maxOffset = len - OVERLAY_W * OVERLAY_H;
+    expect(maxOffset).toBeGreaterThan(OVERLAY_W * OVERLAY_H - 1);
+  });
+});
+
+describe("閒置預熱（runWarmFrame）", () => {
+  const targets = () => {
+    const main = fakeCtx(OVERLAY_W, OVERLAY_H);
+    const tag = fakeCtx(1920, 1080);
+    return {
+      main,
+      tag,
+      w: { ctx: main.ctx, tagCtx: tag.ctx, level: "std" as CrtLevel, palette, tag: "CH-02", code: "RECORDS", viewport: { w: 1920, h: 1080 } },
+    };
+  };
+  it("代表幀涵蓋進入／短轉場／離開，每個閒置回呼只畫一幀；最後一幀回傳 done", () => {
+    expect(new Set(WARM_FRAMES.map((f) => f.kind))).toEqual(new Set(["enter", "switch", "exit"]));
+    const t = targets();
+    const dones = WARM_FRAMES.map((_, i) => runWarmFrame(i, t.w));
+    expect(dones.slice(0, -1).every((d) => !d)).toBe(true);
+    expect(dones[dones.length - 1]).toBe(true);
+    expect(runWarmFrame(WARM_FRAMES.length, t.w)).toBe(true);
+  });
+  it("每一幀結束都 stop() 清空兩個畫布（畫面上什麼都不會留下）", () => {
+    const t = targets();
+    runWarmFrame(0, t.w);
+    expect(t.main.calls[t.main.calls.length - 1]!.fn).toBe("clearRect");
+    expect(t.tag.calls[t.tag.calls.length - 1]!.fn).toBe("clearRect");
+  });
+  it("不寫驗證掛鉤的計數、不讀台標矩形、不排 rAF", () => {
+    window.history.replaceState({}, "", "/?osdebug=transition");
+    resetTransitionDebugForTest();
+    expect(transitionDebugEnabled()).toBe(true);
+    const raf = vi.spyOn(window, "requestAnimationFrame");
+    const t = targets();
+    for (let i = 0; i < WARM_FRAMES.length; i++) runWarmFrame(i, t.w);
+    expect(raf).not.toHaveBeenCalled();
+    const snap = window.__osTransition?.();
+    expect(snap?.overlayFrames).toBe(0);
+    expect(snap?.overlayFrameTimes).toEqual([]);
   });
 });
