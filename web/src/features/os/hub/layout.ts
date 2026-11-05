@@ -17,8 +17,15 @@ export const MONITOR_BOX = { width: 2.34, height: 2.0, depth: 2.4 } as const;
 export const SCREEN_SIZE = { width: 2.0, height: 1.5 } as const;
 /** 螢幕面在單台螢幕局部座標的位置（與 hubLines 的 SCREEN 一致：x=0、y=1.55、z=0.69） */
 export const SCREEN_LOCAL = { y: 1.55, z: 0.69 } as const;
-/** 進入推近時鏡頭離螢幕面的距離 */
-export const CLOSE_DISTANCE = 1.25;
+/** 垂直視角（度） */
+export const CAMERA_FOV = 45;
+/**
+ * 進入推近到位（E1 結束，600ms）時，螢幕面的高度占視窗高度的比例。X3：螢幕面在這一刻的投影矩形就是台標卡外框的起點，
+ * 所以不能再超出畫面（X0–X2 的 1.25 會讓螢幕面比視窗還大約 45%，卡片出現時才「縮」一下）。
+ */
+export const FACE_FILL_FRAC = 0.84;
+/** 進入推近時鏡頭離螢幕面的距離：由 FACE_FILL_FRAC 與垂直視角算出 */
+export const CLOSE_DISTANCE = SCREEN_SIZE.height / (FACE_FILL_FRAC * 2 * Math.tan((CAMERA_FOV * Math.PI) / 360));
 /** 選取時鏡頭轉向的上限（度）與到位時間（毫秒）；不擋輸入 */
 export const SELECT_YAW_MAX_DEG = 3;
 export const SELECT_YAW_MS = 250;
@@ -137,8 +144,6 @@ export function casingCorners(pose: MonitorPose): Vec3[] {
 
 /* ---------- 鏡頭投影（純數學；休息位置與驗證共用） ---------- */
 
-/** 垂直視角（度） */
-export const CAMERA_FOV = 45;
 /** 休息鏡頭的高度與牆的目標比例（1920×1080 時：整面牆約占寬度 78%、螢幕面中心在畫面高度 45%） */
 export const REST_CAM_Y = 7;
 export const REST_WALL_WIDTH_FRAC = 0.78;

@@ -29,3 +29,24 @@ export function applyTrail(ctx: CanvasRenderingContext2D, page: Rgb, level: CrtL
   ctx.fillRect(0, 0, w, h);
   ctx.globalAlpha = prev;
 }
+
+/**
+ * 透明疊層版的拖尾：用 destination-out 把上一幀的不透明度乘上 keep^(dt/16.67ms)，向「透明」衰減（下層的畫面照常透出來）。
+ * 用在疊層下面有東西要露出來的階段（離開的亮點淡出、進入交接點之後的雜訊）；CRT「關」或 first＝全清。
+ * 注意：applyTrail 向 --page 色衰減，只適合疊層本來就是不透明 --page 的階段。
+ */
+export function applyAlphaTrail(ctx: CanvasRenderingContext2D, level: CrtLevel, dtMs: number, w: number, h: number, first = false): void {
+  const a = first ? 1 : trailCoverAlpha(level, dtMs);
+  if (a >= 1) {
+    ctx.clearRect(0, 0, w, h);
+    return;
+  }
+  const prevOp = ctx.globalCompositeOperation;
+  const prevA = ctx.globalAlpha;
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.globalAlpha = a;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, w, h);
+  ctx.globalCompositeOperation = prevOp;
+  ctx.globalAlpha = prevA;
+}
