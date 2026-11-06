@@ -114,3 +114,29 @@ describe("hubLines（X2：7 台螢幕＋雷達台）", () => {
     expect(() => parts.dispose()).not.toThrow();
   });
 });
+
+describe("兩側螢幕淡入霧（X3 E1／X4）", () => {
+  it("fade(i, 0)＝原色；fade(i, 1)＝--page；選中的外框保持 accent 但 fade 時往 page 混；沒變時不重算", () => {
+    const parts = buildHubLines(colors);
+    const page = new THREE.Color(colors.page);
+    const housing = new THREE.Color(colors.housing);
+    parts.fade(1, 1);
+    const near = (a: THREE.Color, b: THREE.Color) => Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b) < 1e-6;
+    expect(near(parts.monitors[1]!.housingMat.color, page)).toBe(true);
+    expect(near(parts.monitors[1]!.outlineMat.color, page)).toBe(true);
+    parts.fade(1, 0);
+    expect(near(parts.monitors[1]!.housingMat.color, housing)).toBe(true);
+    parts.fade(2, 0.5);
+    expect(parts.monitors[2]!.housingMat.color.r).toBeCloseTo((housing.r + page.r) / 2, 6);
+    // 外殼材質每台各自一份（才能各自淡出）
+    const mats = new Set(parts.monitors.map((m) => m.housingMat));
+    expect(mats.size).toBe(MONITOR_COUNT);
+    // select 之後仍尊重目前的淡出量
+    parts.select(2);
+    expect(parts.monitors[2]!.outlineMat.color.r).toBeGreaterThan(new THREE.Color(colors.page).r);
+    parts.fade(2, 0);
+    expect(near(parts.monitors[2]!.outlineMat.color, new THREE.Color(colors.accent))).toBe(true);
+    // 線段預算不變
+    expect(parts.segments).toBeLessThanOrEqual(HUB_SEGMENT_CAP);
+  });
+});

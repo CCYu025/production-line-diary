@@ -11,14 +11,18 @@ import * as React from "react";
 import * as THREE from "three";
 import { CHANNELS, channelIndex, type Channel, type ChannelId } from "../channels";
 import { readOsColors, readToken } from "../colors";
-import { CrtPipeline } from "../crt/pipeline";
+import { isPhosphorDegraded, markPhosphorDegraded, phosphorEnabled, PhosphorGovernor } from "../crt/phosphor";
+import { CrtPipeline, liveRenderTargets } from "../crt/pipeline";
 import type { CrtLevel } from "../crt/settings";
 import { A_ZONE } from "../crt/zones";
 import type { BootKind } from "../director/boot";
 import type { TransitionClock } from "../director/useDirector";
 import { webglAvailable } from "../webgl";
 import { biosKey, bootFrame, drawBios, type BootCounts } from "./bootVisual";
+import { dbgHubFrame, dbgSet, dbgTime, transitionDebugEnabled } from "../transition/debug";
 import { cameraProgress, CAMERA_FOV, poseAt, restPose, stepRig, type HubMode, type RigState } from "./camera";
+import { faceRectAt } from "./faceRect";
+import { sideFade, slidePose, type SlidePose } from "./slide";
 import { createContextGuard } from "./contextGuard";
 import { buildHubLines, type HubParts } from "./hubLines";
 import { RadarAnimator } from "./radarAnim";
@@ -86,7 +90,13 @@ function readBlipColors(): Record<BlipColorKey, THREE.Color> {
   return out;
 }
 
+/** Rig 每幀把鏡頭進度交給場景，場景據此移動／淡出兩側螢幕（E1／X4）。 */
+interface Motion {
+  apply(p: number, selected: number): void;
+}
+
 interface Built {
+  accentColor: THREE.Color;
   colors: ReturnType<typeof readOsColors>;
   parts: HubParts;
   canvases: HTMLCanvasElement[];
@@ -116,7 +126,8 @@ function HubScene({
   blips,
   alerts,
   reduced,
-}: Pick<HubCanvasProps, "channel" | "signals" | "blips" | "alerts" | "reduced">) {
+  motion,
+}: Pick<HubCanvasProps, "channel" | "signals" | "blips" | "alerts" | "reduced"> & { motion: React.MutableRefObject<Motion | null> }) {
   const scene = useThree((s) => s.scene);
   const latest = React.useRef({ channel, signals, reduced });
   latest.current = { channel, signals, reduced };
@@ -156,6 +167,7 @@ function HubScene({
     parts.monitors[CURSOR_INDEX]?.group.add(cursor);
     const blipColors = readBlipColors();
     return {
+      accentColor: new THREE.Color(colors.accent),
       colors,
       parts,
       canvases,
@@ -211,6 +223,31 @@ function HubScene({
     built.cursorMat.color.set(built.colors.accent).multiplyScalar(selectedIndex === CURSOR_INDEX ? 1 : UNSELECTED_BRIGHTNESS);
   }, [built, selectedIndex]);
 
+  // E1／X4：兩側螢幕沿弧線滑開並融進霧色（只改群組位置／朝向與顏色亮度；不配置物件）。p＝0 時完全回到原位與原亮度。
+  React.useEffect(() => {
+    const tmp: SlidePose = { x: 0, z: 0, yaw: 0 };
+    motion.current = {
+      apply(p, sel) {
+        const ms = built.parts.monitors;
+        for (let i = 0; i < ms.length; i++) {
+          const m = ms[i]!;
+          slidePose(i, sel, p, tmp);
+          m.group.position.x = tmp.x;
+          m.group.position.z = tmp.z;
+          m.group.rotation.y = tmp.yaw;
+          const f = sideFade(i, sel, p);
+          built.parts.fade(i, f);
+          const base = i === sel ? 1 : UNSELECTED_BRIGHTNESS;
+          m.screenMat.color.setScalar(base * (1 - f));
+          if (i === CURSOR_INDEX) built.cursorMat.color.copy(built.accentColor).multiplyScalar(base * (1 - f));
+        }
+      },
+    };
+    return () => {
+      motion.current = null;
+    };
+  }, [built, motion]);
+
   // 光點與警示：改變時才寫入（位置、鎖定框、外圈顏色）；每幀只改顏色／不透明度（RadarAnimator.frame）
   React.useEffect(() => {
     built.anim.set(blips, alerts);
@@ -252,21 +289,33 @@ function Rig({
   sway,
   channel,
   patrolling,
-}: Pick<HubCanvasProps, "mode" | "clock" | "reduced" | "channel" | "patrolling"> & { sway: boolean }) {
+  level,
+  motion,
+}: Pick<HubCanvasProps, "mode" | "clock" | "reduced" | "channel" | "patrolling" | "level"> & { sway: boolean; motion: React.MutableRefObject<Motion | null> }) {
   const live = React.useRef({ mode, channel, patrolling });
   live.current = { mode, channel, patrolling };
   const rig = React.useRef<RigState>({ selectYaw: 0, patrolW: 0 });
   const last = React.useRef(0);
   const inited = React.useRef(false);
+  // 進入／離開期間鎖住目標螢幕：離開後半段使用者可以改選頻道，鏡頭與側邊螢幕不能因此跳位置
+  const pinned = React.useRef<{ mode: HubMode; ch: ChannelId } | null>(null);
+  const applied = React.useRef<{ p: number; sel: number; m: Motion | null }>({ p: -1, sel: -1, m: null });
+  const debug = React.useMemo(transitionDebugEnabled, []);
   useFrame(({ camera, size, clock: three }) => {
     const { mode: m, channel: ch, patrolling: pat } = live.current;
     const now = performance.now();
     const dtMs = last.current === 0 ? 16 : Math.min(100, now - last.current);
+    const rawDt = last.current === 0 ? 0 : now - last.current;
     last.current = now;
     const elapsed = clock.start == null ? 0 : now - clock.start;
+    // 減少動態效果：不跑鏡頭動畫，直接在終點（進入／工作站＝推到位，其餘＝原位）；執行中切換也立即生效
     const p = reduced ? (m === "station" || m === "entering" ? 1 : 0) : cameraProgress(m, elapsed);
     const aspect = size.width / Math.max(1, size.height);
-    const pose = poseAt(aspect, ch.id, p);
+    if (m === "entering" || m === "exiting") {
+      if (!pinned.current || pinned.current.mode !== m) pinned.current = { mode: m, ch: ch.id };
+    } else pinned.current = null;
+    const target = pinned.current?.ch ?? ch.id;
+    const pose = poseAt(aspect, target, p);
     if (!inited.current) {
       // 第一幀：選取偏航直接到位（不從 0 緩動）
       inited.current = true;
@@ -283,6 +332,22 @@ function Rig({
       camera.rotateY(THREE.MathUtils.degToRad(0.3) * a);
       camera.rotateX(THREE.MathUtils.degToRad(0.2) * Math.sin((three.elapsedTime * Math.PI * 2) / 8 + 1.1));
     }
+    // 兩側螢幕的滑開／淡出（E1／X4）：只在進度或目標改變時寫入
+    const sel = channelIndex(target);
+    if (applied.current.p !== p || applied.current.sel !== sel || applied.current.m !== motion.current) {
+      applied.current.p = p;
+      applied.current.sel = sel;
+      applied.current.m = motion.current;
+      motion.current?.apply(p, sel);
+    }
+    if (debug) {
+      if (m === "entering" || m === "exiting") dbgHubFrame(rawDt);
+      dbgTime(elapsed);
+      dbgSet({
+        camera: { position: [pose.position.x, pose.position.y, pose.position.z], lookAt: [pose.lookAt.x, pose.lookAt.y, pose.lookAt.z], progress: p },
+        faceRect: faceRectAt(aspect, target, p, A_ZONE[level].effects ? A_ZONE[level].barrel : 0),
+      });
+    }
   });
   return null;
 }
@@ -291,8 +356,12 @@ interface PipelineInfo {
   level: CrtLevel;
   lowWidth: number;
   lowHeight: number;
+  phosphor: boolean;
 }
 let pipelineInfo: PipelineInfo | null = null;
+
+/** 自動降級每隔幾幀評估一次（中位數要排序，不必每幀做）。 */
+const DEGRADE_CHECK_EVERY = 30;
 
 function Pipeline({
   reduced,
@@ -301,10 +370,14 @@ function Pipeline({
   boot,
   bootCounts,
   clock,
-}: Pick<HubCanvasProps, "reduced" | "level" | "boot" | "bootCounts" | "clock"> & { bloom: boolean }) {
+  mode,
+}: Pick<HubCanvasProps, "reduced" | "level" | "boot" | "bootCounts" | "clock" | "mode"> & { bloom: boolean }) {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
+  // 本分頁的磷光降級旗標（記憶體）；變成 true 時重建管線（dispose 回饋緩衝）
+  const [degraded, setDegraded] = React.useState(isPhosphorDegraded);
+  const phosphor = phosphorEnabled(level, reduced) && !degraded;
   const pipeline = React.useMemo(() => {
     const c = readOsColors();
     return new CrtPipeline({
@@ -313,14 +386,23 @@ function Pipeline({
       level,
       bloom,
       flicker: !reduced,
+      phosphor,
     });
-  }, [level, bloom, reduced]);
+  }, [level, bloom, reduced, phosphor]);
   // 強度切換＝丟掉舊管線（dispose 全部離屏緩衝）；__osGl 的資源計數可以驗證沒有洩漏
   React.useEffect(() => () => pipeline.dispose(), [pipeline]);
 
   const lineRes = React.useRef({ w: 0, h: 0 });
-  const live = React.useRef({ boot, bootCounts });
-  live.current = { boot, bootCounts };
+  const live = React.useRef({ boot, bootCounts, mode });
+  live.current = { boot, bootCounts, mode };
+  // 自動降級：只在 HUB（非開機、文件可見）量測；狀態或可見性變化就重新累積
+  const governor = React.useMemo(() => new PhosphorGovernor(), []);
+  const gov = React.useRef({ frames: 0 });
+  React.useEffect(() => {
+    const onVis = () => governor.reset();
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [governor]);
   const bios = React.useRef<{ canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; key: string; w: number; h: number } | null>(null);
   const releaseBios = React.useCallback(() => {
     bios.current?.tex.dispose();
@@ -335,10 +417,23 @@ function Pipeline({
   );
 
   // priority > 0：接手繪製（fiber 不再自動 render）
-  useFrame(({ clock: three, size }) => {
+  useFrame(({ clock: three, size }, delta) => {
     const aspect = size.width / Math.max(1, size.height);
     pipeline.syncSize(aspect);
-    const { boot: b, bootCounts: counts } = live.current;
+    const { boot: b, bootCounts: counts, mode: m } = live.current;
+    if (phosphor) {
+      const measuring = m === "hub" && !b && document.visibilityState === "visible";
+      if (!measuring) {
+        governor.reset();
+        gov.current.frames = 0;
+      } else {
+        governor.push(delta * 1000);
+        if (++gov.current.frames % DEGRADE_CHECK_EVERY === 0 && governor.shouldDegrade()) {
+          markPhosphorDegraded(governor.medianFps() ?? undefined);
+          setDegraded(true);
+        }
+      }
+    }
     const bs = clock.bootStart;
     if (b && bs != null) {
       const f = bootFrame(b, performance.now() - bs, 5);
@@ -373,9 +468,9 @@ function Pipeline({
       pipeline.setOverlay(null);
       if (bios.current) releaseBios();
     }
-    pipeline.render(gl, scene, camera, aspect, three.elapsedTime);
+    pipeline.render(gl, scene, camera, aspect, three.elapsedTime, delta * 1000, m === "entering" || m === "exiting");
     const low = pipeline.lowSize;
-    if (!pipelineInfo || pipelineInfo.level !== level || pipelineInfo.lowWidth !== low.width) pipelineInfo = { level, lowWidth: low.width, lowHeight: low.height };
+    if (!pipelineInfo || pipelineInfo.level !== level || pipelineInfo.lowWidth !== low.width || pipelineInfo.phosphor !== pipeline.hasPhosphor) pipelineInfo = { level, lowWidth: low.width, lowHeight: low.height, phosphor: pipeline.hasPhosphor };
     // Line2 的線寬以離屏緩衝的像素計；尺寸改變時才更新
     if (lineRes.current.w !== low.width || lineRes.current.h !== low.height) {
       lineRes.current = { w: low.width, h: low.height };
@@ -469,6 +564,10 @@ interface OsGlStats {
   level?: CrtLevel;
   lowWidth?: number;
   lowHeight?: number;
+  /** 磷光回饋緩衝是否存在（減少動態效果、強度關、被自動降級時為 false） */
+  phosphor?: boolean;
+  /** 存活的離屏 render target 數（強度來回切換不得增長） */
+  renderTargets?: number;
 }
 declare global {
   interface Window {
@@ -504,6 +603,7 @@ function GlLifecycle({ onFailure, debug }: { onFailure: () => void; debug: boole
         programs: gl.info.programs?.length ?? 0,
         calls: gl.info.render.calls,
         ...(pipelineInfo ?? {}),
+        renderTargets: liveRenderTargets(),
       });
     }
     return () => {
@@ -538,6 +638,7 @@ export default function HubCanvas({
   onFailure,
 }: HubCanvasProps) {
   const flags = React.useMemo(debugFlags, []);
+  const motion = React.useRef<Motion | null>(null);
   const supported = React.useMemo(webglAvailable, []);
   // 直接載入工作站時不必建立 WebGL context；第一次需要控制室才掛上
   const [mounted, setMounted] = React.useState(running);
@@ -568,9 +669,9 @@ export default function HubCanvas({
         gl={{ antialias: false, alpha: false, powerPreference: "high-performance" }}
         camera={{ fov: CAMERA_FOV, near: 0.1, far: 120, position: [restPose(16 / 9).position.x, restPose(16 / 9).position.y, restPose(16 / 9).position.z] }}
       >
-        <HubScene channel={channel} signals={signals} blips={blips} alerts={alerts} reduced={reduced} />
-        <Rig mode={mode} clock={clock} reduced={reduced} sway={!flags.has("nosway")} channel={channel} patrolling={patrolling} />
-        <Pipeline reduced={reduced} bloom={!flags.has("nobloom")} level={level} boot={boot} bootCounts={bootCounts} clock={clock} />
+        <HubScene channel={channel} signals={signals} blips={blips} alerts={alerts} reduced={reduced} motion={motion} />
+        <Rig mode={mode} clock={clock} reduced={reduced} sway={!flags.has("nosway")} channel={channel} patrolling={patrolling} level={level} motion={motion} />
+        <Pipeline reduced={reduced} bloom={!flags.has("nobloom")} level={level} boot={boot} bootCounts={bootCounts} clock={clock} mode={mode} />
         <Picker pickable={pickable} onPick={onPick} level={level} />
         <GlLifecycle onFailure={notifyFailure} debug={debugGl} />
       </Canvas>

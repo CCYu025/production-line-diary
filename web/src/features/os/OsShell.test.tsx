@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider, useBlocker, useLocation, useNavigate } from "react-router-dom";
@@ -43,7 +45,7 @@ vi.mock("./webgl", async (orig) => ({ ...(await orig<typeof import("./webgl")>()
 import { resetCrtForTest } from "./crt/settings";
 import { resetBootDoneForTest } from "./director/boot";
 import { COMMANDS } from "./hud/commands";
-import OsShell from "./OsShell";
+import OsShell, { CUT_DONE_DELAY_MS, cutAnnouncement, FOCUS_RETRY_FRAMES, STATION_PREP_MS } from "./OsShell";
 import { shouldKeepCyberOnExit, WEBGL_FALLBACK_TEXT } from "./webgl";
 
 let nav: ReturnType<typeof useNavigate>;
@@ -693,6 +695,289 @@ describe("OsShell：轉場", () => {
     expect(document.activeElement).toBe(document.querySelector("main#main"));
     go("/os");
     expect(phase()).toBe("hub");
+    expect(document.activeElement).toBe(hudButton());
+  });
+});
+
+/** 可在測試中途切換的 prefers-reduced-motion（只有 reduce 這個 query 會變） */
+function controllableReducedMotion() {
+  let reduced = false;
+  const listeners = new Set<() => void>();
+  vi.spyOn(window, "matchMedia").mockImplementation(
+    (q: string) =>
+      ({
+        get matches() {
+          return q.includes("reduce") ? reduced : false;
+        },
+        media: q,
+        addEventListener: (_t: string, l: () => void) => {
+          if (q.includes("reduce")) listeners.add(l);
+        },
+        removeEventListener: (_t: string, l: () => void) => void listeners.delete(l),
+      }) as unknown as MediaQueryList,
+  );
+  return (on: boolean) =>
+    act(() => {
+      reduced = on;
+      listeners.forEach((l) => l());
+    });
+}
+
+describe("OsShell：轉場進行中切換減少動態效果（X3 修正）", () => {
+  it("進入：交接點之前切換 → 直接到 station，焦點移到 main#main（與一般交接點相同的規則）", () => {
+    const setReduced = controllableReducedMotion();
+    mount("/os");
+    click(hudButton());
+    advance(150);
+    expect(phase()).toBe("entering-pre");
+    setReduced(true);
+    expect(phase()).toBe("station");
+    advance(0);
+    expect(document.activeElement).toBe(document.querySelector("main#main"));
+  });
+
+  it("切換（短轉場）：交接點之前切換 → 焦點移到 main#main", () => {
+    const setReduced = controllableReducedMotion();
+    mount("/records");
+    go("/calendar");
+    expect(phase()).toBe("switching-pre");
+    setReduced(true);
+    expect(phase()).toBe("station");
+    expect(document.activeElement).toBe(document.querySelector("main#main"));
+  });
+
+  it("離開：交接點之前切換 → 直接到 hub，焦點在選中的頻道按鈕", () => {
+    const setReduced = controllableReducedMotion();
+    mount("/records");
+    go("/os");
+    expect(phase()).toBe("exiting-pre");
+    advance(100);
+    setReduced(true);
+    expect(phase()).toBe("hub");
+    expect(document.activeElement).toBe(hudButton());
+  });
+
+  it("交接點之後切換：焦點維持在 main#main", () => {
+    const setReduced = controllableReducedMotion();
+    mount("/os");
+    click(hudButton());
+    advance(1000);
+    expect(phase()).toBe("entering-post");
+    setReduced(true);
+    expect(phase()).toBe("station");
+    expect(document.activeElement).toBe(document.querySelector("main#main"));
+  });
+});
+
+describe("OsShell：減少動態效果的直接切換也要宣告（§6.5）", () => {
+  const reducedFromStart = () => {
+    vi.spyOn(window, "matchMedia").mockImplementation(
+      (q: string) => ({ matches: q.includes("reduce"), media: q, addEventListener() {}, removeEventListener() {} }) as unknown as MediaQueryList,
+    );
+  };
+  it("進入：開始「進入紀錄」，稍後「已進入紀錄」", () => {
+    reducedFromStart();
+    mount("/os");
+    expect(live()).toBe("");
+    click(hudButton());
+    expect(phase()).toBe("station");
+    expect(live()).toBe("進入紀錄");
+    advance(CUT_DONE_DELAY_MS + 1);
+    expect(live()).toBe("已進入紀錄");
+  });
+  it("離開：「回到控制室」→「已回到控制室」", () => {
+    reducedFromStart();
+    mount("/records");
+    expect(live()).toBe("");
+    go("/os");
+    expect(phase()).toBe("hub");
+    expect(live()).toBe("回到控制室");
+    advance(CUT_DONE_DELAY_MS + 1);
+    expect(live()).toBe("已回到控制室");
+  });
+  it("頻道之間切換：「切換到行事曆」→「已切換到行事曆」", () => {
+    reducedFromStart();
+    mount("/records");
+    go("/calendar");
+    expect(live()).toBe("切換到日曆");
+    advance(CUT_DONE_DELAY_MS + 1);
+    expect(live()).toBe("已切換到日曆");
+  });
+  it("連續操作：舊的完成宣告不會蓋掉新的開始宣告", () => {
+    reducedFromStart();
+    mount("/os");
+    click(hudButton());
+    advance(50);
+    go("/os");
+    expect(live()).toBe("回到控制室");
+    advance(CUT_DONE_DELAY_MS + 1);
+    expect(live()).toBe("已回到控制室");
+  });
+  it("cutAnnouncement：只有 HUB／STATION 之間與換頻道才有；開機結束、轉場狀態、沒有變化都沒有", () => {
+    const hub = { kind: "HUB", gen: 0 } as const;
+    const st = (ch: "CH-02" | "CH-03") => ({ kind: "STATION", ch, gen: 0 }) as const;
+    expect(cutAnnouncement(hub, st("CH-02"))).toEqual({ start: "進入紀錄", done: "已進入紀錄" });
+    expect(cutAnnouncement(st("CH-02"), hub)).toEqual({ start: "回到控制室", done: "已回到控制室" });
+    expect(cutAnnouncement(st("CH-02"), st("CH-03"))?.start).toMatch(/^切換到/);
+    expect(cutAnnouncement(st("CH-02"), st("CH-02"))).toBeNull();
+    expect(cutAnnouncement(hub, hub)).toBeNull();
+    expect(cutAnnouncement({ kind: "BOOT", dest: { kind: "hub" }, short: false, gen: 0 } as never, hub)).toBeNull();
+    expect(cutAnnouncement(hub, { kind: "ENTERING", ch: "CH-02", handoff: false, gen: 1 })).toBeNull();
+  });
+  it("有轉場時的宣告不受影響（開始、完成各一次）", () => {
+    mount("/os");
+    click(hudButton());
+    expect(live()).toBe("進入紀錄");
+    settle();
+    expect(live()).toBe("已進入紀錄");
+  });
+});
+
+describe("OsShell：進入時工作站的掛載與預先畫好（X3 修正）", () => {
+  it("點擊後工作站仍是隱藏＋inert 地掛上（與先前相同的可觀察行為）；沒有預先畫好的旗標", () => {
+    mount("/os");
+    click(hudButton());
+    const st = station()!;
+    expect(st).not.toBeNull();
+    expect(st.getAttribute("data-hidden")).toBe("true");
+    expect(st.hasAttribute("inert")).toBe(true);
+    expect(st.getAttribute("data-prep")).toBe("false");
+    expect(document.querySelector("main#main")).not.toBeNull();
+  });
+  it(`${STATION_PREP_MS}ms 後預先畫好（data-prep=true，仍然 hidden＋inert）；交接點後旗標消失、inert 移除`, () => {
+    mount("/os");
+    click(hudButton());
+    const st = station()!;
+    advance(STATION_PREP_MS - 1);
+    expect(st.getAttribute("data-prep")).toBe("false");
+    advance(2);
+    expect(st.getAttribute("data-prep")).toBe("true");
+    expect(st.getAttribute("data-hidden")).toBe("true");
+    expect(st.hasAttribute("inert")).toBe(true);
+    advance(830);
+    expect(phase()).toBe("entering-post");
+    expect(st.getAttribute("data-hidden")).toBe("false");
+    expect(st.getAttribute("data-prep")).toBe("true"); // 合成層維持到進入轉場結束
+    expect(st.hasAttribute("inert")).toBe(false);
+    advance(400);
+    expect(phase()).toBe("station");
+    expect(st.getAttribute("data-prep")).toBe("false");
+  });
+  it("預先畫好之前被輸入跳到終點：旗標不會殘留", () => {
+    mount("/os");
+    click(hudButton());
+    advance(100);
+    act(() => {
+      fireEvent.pointerDown(document.body);
+      fireEvent.click(document.body);
+    });
+    advance(STATION_PREP_MS + 50);
+    expect(station()!.getAttribute("data-prep")).toBe("false");
+    expect(station()!.getAttribute("data-hidden")).toBe("false");
+  });
+  it("短轉場與離開不經過預先畫好", () => {
+    mount("/records");
+    go("/calendar");
+    advance(60);
+    expect(station()!.getAttribute("data-prep")).toBe("false");
+  });
+  it("os.css：預先畫好的規則只在 hidden＋prep 同時成立時才把 visibility 設回 visible，opacity 仍由 hidden 規則維持 0", () => {
+    const css = fs.readFileSync(path.join(__dirname, "os.css"), "utf8");
+    expect(css).toMatch(/\.os-station\[data-hidden="true"\]\[data-prep="true"\]\s*\{[^}]*visibility:\s*visible/);
+    expect(css).toMatch(/\.os-station\[data-hidden="true"\]\s*\{[^}]*opacity:\s*0/);
+    expect(css).not.toMatch(/\.os-station\[data-hidden="true"\]\[data-prep="true"\]\s*\{[^}]*opacity:\s*[1-9]/);
+  });
+});
+
+describe("OsShell：抵達後焦點若掉到 body 會在下一幀補上（X3 修正）", () => {
+  it("進入交接點：焦點被別人（模擬瀏覽器還沒讓目的地可聚焦）弄到 body → 下一幀移到 main#main", () => {
+    mount("/os");
+    click(hudButton());
+    advance(876);
+    expect(document.activeElement).toBe(document.querySelector("main#main"));
+    (document.activeElement as HTMLElement).blur();
+    expect(document.activeElement).toBe(document.body);
+    advance(20);
+    expect(document.activeElement).toBe(document.querySelector("main#main"));
+  });
+  it("焦點已被使用者移到別處就不搶", () => {
+    mount("/os");
+    click(hudButton());
+    advance(876);
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+    outside.focus();
+    advance(20);
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+  it("目的地過幾幀才可聚焦（模擬 visibility:hidden 一陣子）：逐幀重試，直到焦點真的在 main#main", () => {
+    const setReduced = controllableReducedMotion();
+    mount("/os");
+    click(hudButton());
+    advance(100);
+    const main = document.querySelector("main#main") as HTMLElement;
+    const real = main.focus.bind(main);
+    let hiddenFrames = 6;
+    vi.spyOn(main, "focus").mockImplementation((o) => {
+      if (hiddenFrames > 0) return; // 瀏覽器：hidden 的元素不能聚焦，focus() 默默失敗
+      real(o);
+    });
+    const tick = () => {
+      hiddenFrames--;
+      advance(17);
+    };
+    (document.activeElement as HTMLElement | null)?.blur(); // 真實瀏覽器：HUD 變 inert 時焦點掉到 body
+    setReduced(true);
+    expect(document.activeElement).toBe(document.body);
+    for (let i = 0; i < 4; i++) tick();
+    expect(document.activeElement).toBe(document.body);
+    for (let i = 0; i < 6; i++) tick();
+    expect(document.activeElement).toBe(main);
+  });
+  it("頻道之間切換：交接點（抵達 station）之後幾毫秒又被跳到 STATION（沒有抵達事件），重試不會被 effect cleanup 取消（r4）", () => {
+    const setReduced = controllableReducedMotion();
+    mount("/records");
+    go("/calendar");
+    advance(74);
+    expect(phase()).toBe("switching-pre");
+    const main = document.querySelector("main#main") as HTMLElement;
+    const real = main.focus.bind(main);
+    let hiddenFrames = 8;
+    vi.spyOn(main, "focus").mockImplementation((o) => {
+      if (hiddenFrames > 0) return; // 交接那一刻 main 仍 hidden，focus() 默默失敗
+      real(o);
+    });
+    (document.activeElement as HTMLElement | null)?.blur();
+    advance(2); // 交接點：抵達 station，排好逐幀重試
+    expect(phase()).toBe("switching-post");
+    setReduced(true); // 重試的第一幀之前，被跳到終點 STATION（此次沒有抵達事件）
+    expect(phase()).toBe("station");
+    for (let i = 0; i < 14; i++) {
+      hiddenFrames--;
+      advance(17);
+    }
+    expect(document.activeElement).toBe(main);
+  });
+  it("重試有上限（永遠不可聚焦就停，不無限排 rAF）", () => {
+    const setReduced = controllableReducedMotion();
+    mount("/os");
+    click(hudButton());
+    advance(100);
+    const main = document.querySelector("main#main") as HTMLElement;
+    const spy = vi.spyOn(main, "focus").mockImplementation(() => {});
+    (document.activeElement as HTMLElement | null)?.blur();
+    setReduced(true);
+    advance(17 * 100);
+    expect(spy.mock.calls.length).toBeLessThanOrEqual(FOCUS_RETRY_FRAMES + 2);
+  });
+  it("離開交接點：焦點掉到 body → 下一幀回到選中的頻道按鈕", () => {
+    mount("/records");
+    go("/os");
+    advance(301);
+    expect(document.activeElement).toBe(hudButton());
+    (document.activeElement as HTMLElement).blur();
+    advance(20);
     expect(document.activeElement).toBe(hudButton());
   });
 });

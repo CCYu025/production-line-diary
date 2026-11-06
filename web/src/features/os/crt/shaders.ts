@@ -3,7 +3,7 @@
  * uEffects＝1 時依序：桶狀弧面 → 色偏 → 掃描線 → 映像管（Trinitron 直條，以裝置像素計算）→ 螢光暈開 → 暗角 → 閃爍。
  * uEffects＝0（強度「關」）：只有低解析度放大，直接輸出，沒有任何著色器效果。
  * 開機（§5.5，X2）：B3 亮線展開（uBand）與 B4 線框由中心向外描繪（uReveal）是這個 pass 的 uniform，不是疊層。
- * 沒有磷光殘影（X3）。
+ * 磷光殘影（X3）不在這個 pass：PHOSPHOR_FRAG 先把場景與上一幀合成，這個 pass 只是讀合成結果。
  */
 
 export const FULLSCREEN_VERT = /* glsl */ `
@@ -11,6 +11,26 @@ varying vec2 vUv;
 void main() {
   vUv = uv;
   gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+
+/**
+ * 磷光回饋（X3）：本幀場景與「上一幀的合成結果 × uKeep」逐通道取離 --page 較遠的那一個（與背景明暗無關）。
+ * 移動的線留下以 uKeep 指數衰減的尾巴，靜止的線不變亮。uKeep＝0（第一幀、暫停後、開機中）＝只取場景。
+ * 8 位元緩衝上 x*keep 會卡在非零值，所以每幀多扣 1.5/255，殘影最後會收斂回 --page。
+ */
+export const PHOSPHOR_FRAG = /* glsl */ `
+uniform sampler2D tScene;
+uniform sampler2D tPrev;
+uniform vec3 uPage;
+uniform float uKeep;
+varying vec2 vUv;
+void main() {
+  vec3 ds = texture2D(tScene, vUv).rgb - uPage;
+  vec3 dp = (texture2D(tPrev, vUv).rgb - uPage) * uKeep;
+  dp -= sign(dp) * min(abs(dp), vec3(1.5 / 255.0));
+  vec3 pick = step(abs(dp), abs(ds));
+  gl_FragColor = vec4(uPage + mix(dp, ds, pick), 1.0);
 }
 `;
 

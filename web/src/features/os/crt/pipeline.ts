@@ -1,14 +1,17 @@
 /*
  * CRT 管線（docs/os-mode-spec.md §4.2、§4.7）：場景先畫進低解析度離屏緩衝（最近鄰），
  * 兩次模糊（水平、垂直）做螢光暈開，最後一個全螢幕四邊形用自製片段著色器在裝置解析度合成。
- * 不使用後處理套件、沒有磷光殘影。
+ * 不使用後處理套件。
+ * 磷光殘影（X3，phosphor.ts）：場景緩衝與上一幀的合成結果在 PHOSPHOR_FRAG 合成進一組乒乓緩衝（accA／accB），CRT pass 讀合成結果；
+ * 強度「關」、減少動態效果、本分頁被自動降級時不建這組緩衝；開機中（setBoot／setOverlay）與第一幀、暫停後一律不拖影。
  * 強度（X2，zones.ts 的 A_ZONE）：關＝640×360、不做任何效果；標準＝640×360 ＋ 全部效果；濃＝426×240 ＋ 暈開／暗角／弧面約 1.5 倍。
  * 管線以強度為建構參數：切換強度＝丟掉舊管線（dispose 全部離屏緩衝）、建新的，不留舊的 render target。
  * 開機（§5.5）：setBoot 設定 B3 亮線與 B4 揭曉；setOverlay 把 BIOS 文字貼圖畫進場景緩衝（所以也會經過 CRT 效果）。
  */
 import * as THREE from "three";
 import type { CrtLevel } from "./settings";
-import { BLUR_FRAG, CRT_FRAG, FULLSCREEN_VERT } from "./shaders";
+import { decayFactor, keepFor, keepForMotion, needsReset } from "./phosphor";
+import { BLUR_FRAG, CRT_FRAG, FULLSCREEN_VERT, PHOSPHOR_FRAG } from "./shaders";
 import { A_ZONE, lowWidthFor } from "./zones";
 
 // 向量線框的顏色直接用 CSS token 的 sRGB 值，不做色彩管理轉換（輸出到離屏緩衝再由 CRT 著色器合成）
@@ -22,6 +25,18 @@ export interface CrtOptions {
   /** 驗證用降級開關（?osdebug=nobloom）：false＝不做暈開 */
   bloom?: boolean;
   flicker: boolean;
+  /** 磷光殘影：false＝不建回饋緩衝（減少動態效果、被自動降級）。預設 true；強度「關」永遠沒有。 */
+  phosphor?: boolean;
+}
+
+let liveTargets = 0;
+/** 目前存活的離屏 render target 數（?osdebug=gldebug 驗證強度切換不洩漏用）。 */
+export function liveRenderTargets(): number {
+  return liveTargets;
+}
+function makeRT(w: number, h: number, opts: ConstructorParameters<typeof THREE.WebGLRenderTarget>[2]): THREE.WebGLRenderTarget {
+  liveTargets++;
+  return new THREE.WebGLRenderTarget(w, h, opts);
 }
 
 export interface BootUniforms {
@@ -54,6 +69,12 @@ export class CrtPipeline {
   private lowW: number;
   private readonly lowH: number;
   private bloomPass: boolean;
+  private acc: [THREE.WebGLRenderTarget, THREE.WebGLRenderTarget] | null = null;
+  private accCur = 0;
+  private phosphorMat: THREE.ShaderMaterial | null = null;
+  private bootActive = false;
+  private resetNext = true;
+  private disposed = false;
 
   constructor(opts: CrtOptions) {
     this.level = opts.level;
@@ -68,9 +89,25 @@ export class CrtPipeline {
       stencilBuffer: false,
       generateMipmaps: false,
     });
-    this.sceneRT = new THREE.WebGLRenderTarget(this.lowW, this.lowH, rtOpts(THREE.NearestFilter));
-    this.rtA = new THREE.WebGLRenderTarget(this.lowW, this.lowH, rtOpts(THREE.LinearFilter));
-    this.rtB = new THREE.WebGLRenderTarget(this.lowW, this.lowH, rtOpts(THREE.LinearFilter));
+    this.sceneRT = makeRT(this.lowW, this.lowH, rtOpts(THREE.NearestFilter));
+    this.rtA = makeRT(this.lowW, this.lowH, rtOpts(THREE.LinearFilter));
+    this.rtB = makeRT(this.lowW, this.lowH, rtOpts(THREE.LinearFilter));
+
+    if (opts.phosphor !== false && keepFor(opts.level) > 0) {
+      this.acc = [makeRT(this.lowW, this.lowH, rtOpts(THREE.NearestFilter)), makeRT(this.lowW, this.lowH, rtOpts(THREE.NearestFilter))];
+      this.phosphorMat = new THREE.ShaderMaterial({
+        vertexShader: FULLSCREEN_VERT,
+        fragmentShader: PHOSPHOR_FRAG,
+        uniforms: {
+          tScene: { value: null },
+          tPrev: { value: null },
+          uPage: { value: new THREE.Vector3(opts.pageColor.r, opts.pageColor.g, opts.pageColor.b) },
+          uKeep: { value: 0 },
+        },
+        depthTest: false,
+        depthWrite: false,
+      });
+    }
 
     this.blurMat = new THREE.ShaderMaterial({
       vertexShader: FULLSCREEN_VERT,
@@ -127,11 +164,18 @@ export class CrtPipeline {
     this.sceneRT.setSize(w, this.lowH);
     this.rtA.setSize(w, this.lowH);
     this.rtB.setSize(w, this.lowH);
+    if (this.acc) {
+      this.acc[0].setSize(w, this.lowH);
+      this.acc[1].setSize(w, this.lowH);
+      this.resetNext = true; // 縮放清掉了緩衝內容
+    }
     (this.crtMat.uniforms.uLow!.value as THREE.Vector2).set(w, this.lowH);
   }
 
   /** 開機參數；null＝不在開機中（全部關閉）。 */
   setBoot(b: BootUniforms | null) {
+    if (this.bootActive && !b) this.resetNext = true;
+    this.bootActive = b !== null;
     const u = this.crtMat.uniforms;
     u.uReveal!.value = b ? b.reveal : 1;
     u.uBand!.value = b ? b.band : -1;
@@ -142,12 +186,22 @@ export class CrtPipeline {
 
   /** 蓋滿整個場景緩衝的貼圖（BIOS 文字）；null＝不畫。貼圖由呼叫端擁有與釋放。 */
   setOverlay(tex: THREE.Texture | null) {
+    if (this.overlayOn && !tex) this.resetNext = true;
     this.overlayOn = tex !== null;
     this.overlayMat.map = tex;
     this.overlayMat.needsUpdate = true;
   }
 
-  render(gl: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, aspect: number, time: number) {
+  /** 是否有回饋緩衝（除錯與測試用）。 */
+  get hasPhosphor(): boolean {
+    return this.acc !== null;
+  }
+
+  /**
+   * dtMs：距上一幀的毫秒（磷光殘影依它換算，與 fps 無關）；省略或 > 250ms＝剛恢復繪製，這一幀不拖影。
+   * moving：鏡頭正在推拉（進入 E1／離開 X4）：用較快衰減的 keep（phosphor.ts 的 PHOSPHOR_KEEP_MOVING），避免大字拖出長殘影。
+   */
+  render(gl: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, aspect: number, time: number, dtMs?: number, moving = false) {
     this.syncSize(aspect);
     if (camera.aspect !== aspect) {
       camera.aspect = aspect;
@@ -162,10 +216,31 @@ export class CrtPipeline {
       gl.autoClear = prev;
     }
 
+    // 磷光殘影：場景與上一幀的合成結果合成進另一張緩衝；開機中不做（BIOS 文字與亮線要乾淨）
+    let sceneTex = this.sceneRT.texture;
+    if (this.acc && this.phosphorMat) {
+      if (this.bootActive || this.overlayOn) {
+        this.resetNext = true;
+      } else {
+        const keep = this.resetNext || needsReset(dtMs) ? 0 : decayFactor(keepForMotion(this.level, moving), dtMs ?? 0);
+        const next = 1 - this.accCur;
+        this.phosphorMat.uniforms.tScene!.value = this.sceneRT.texture;
+        this.phosphorMat.uniforms.tPrev!.value = this.acc[this.accCur]!.texture;
+        this.phosphorMat.uniforms.uKeep!.value = keep;
+        this.quad.material = this.phosphorMat;
+        gl.setRenderTarget(this.acc[next]!);
+        gl.render(this.quadScene, this.quadCam);
+        this.accCur = next;
+        this.resetNext = false;
+        sceneTex = this.acc[next]!.texture;
+      }
+    }
+    this.crtMat.uniforms.tScene!.value = sceneTex;
+
     // 螢光暈開：兩次模糊（水平 → 垂直）
     if (this.bloomPass) {
       this.quad.material = this.blurMat;
-      this.blurMat.uniforms.tSource!.value = this.sceneRT.texture;
+      this.blurMat.uniforms.tSource!.value = sceneTex;
       (this.blurMat.uniforms.uDir!.value as THREE.Vector2).set(1 / this.lowW, 0);
       gl.setRenderTarget(this.rtA);
       gl.render(this.quadScene, this.quadCam);
@@ -182,9 +257,13 @@ export class CrtPipeline {
   }
 
   dispose() {
-    this.sceneRT.dispose();
-    this.rtA.dispose();
-    this.rtB.dispose();
+    if (this.disposed) return;
+    this.disposed = true;
+    const rts = [this.sceneRT, this.rtA, this.rtB, ...(this.acc ?? [])];
+    for (const rt of rts) rt.dispose();
+    liveTargets -= rts.length;
+    this.acc = null;
+    this.phosphorMat?.dispose();
     this.blurMat.dispose();
     this.crtMat.dispose();
     this.quad.geometry.dispose();

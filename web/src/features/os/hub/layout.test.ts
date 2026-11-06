@@ -74,10 +74,10 @@ describe("進入推近的目標是選中的螢幕", () => {
     }
     expect(seen.size).toBe(7);
   });
-  it("中間那台與 X1 的推近目標一致（x=0，z=0.69+1.25）", () => {
+  it("中間那台推近目標在螢幕面正前方（x=0，z=0.69+CLOSE_DISTANCE）", () => {
     const t = dollyTarget(monitorPose(3));
     expect(t.position.x).toBeCloseTo(0);
-    expect(t.position.z).toBeCloseTo(0.69 + 1.25);
+    expect(t.position.z).toBeCloseTo(0.69 + CLOSE_DISTANCE);
     expect(t.lookAt.y).toBeCloseTo(1.55);
   });
 });

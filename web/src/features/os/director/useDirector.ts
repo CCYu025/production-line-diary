@@ -111,6 +111,13 @@ export function useDirector(place: Place, instant: boolean) {
     if (instant && state.kind === "BOOT") setState((s) => reduce(s, { type: "INPUT" }));
   }, [instant, state.kind]);
 
+  // 轉場進行中打開「減少動態效果」：立刻跳到終點（疊層取消、鏡頭到終點位置、焦點與宣告走既有的抵達規則）。
+  // 不經過輸入閘，也不吞任何輸入（不是使用者輸入）。交接點之後也要跳：swallowed 讓它無視交接旗標。
+  const inTransition = isTransition(state);
+  React.useEffect(() => {
+    if (instant && inTransition) setState((s) => reduce(s, { type: "INPUT", swallowed: true }));
+  }, [instant, inTransition]);
+
   const skip = React.useCallback(() => setState((s) => reduce(s, { type: "INPUT", swallowed: true })), []);
   return { state, dispatch, skip, clock, gateActive: isGateActive(state) };
 }

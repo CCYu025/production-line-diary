@@ -22,7 +22,8 @@ export function StationFrame({ tag, onBack, onSkipToMain, children }: StationFra
         <button type="button" className="os-back" data-os="back" onClick={onBack}>
           ◀ HUB
         </button>
-        <span className="os-tag" aria-hidden="true">
+        {/* data-os="tag"：進入／短轉場的台標在交接點讀這個元素的矩形（getBoundingClientRect 一次），縮到這個位置 */}
+        <span className="os-tag" data-os="tag" aria-hidden="true">
           {tag}
         </span>
       </div>

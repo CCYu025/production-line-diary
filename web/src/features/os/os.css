@@ -4,7 +4,8 @@
  *   1. 每條規則的每個選擇器都以 :root[data-mode="os"] 開頭（網頁模式的 <html> 沒有這個屬性，整份都不會套用）。
  *   2. 不寫死色碼：顏色一律取自 Cyber token（var(--…)）。
  *   3. 檔尾是 @media print：隱藏所有 OS 元素、讓列印和標準淺色主題列印一模一樣。
- * 圖層（由下到上）：控制室 3D（0）→ 工作站（10）→ HUD（20，互動層；工作站顯示時 HUD 隱藏）→ 轉場疊層（40）→ 指令列與 Radix 浮層（50+）、toast。
+ * 圖層（由下到上）：控制室 3D（0）→ 工作站（10）→ HUD（20，互動層；工作站顯示時 HUD 隱藏）→ 轉場疊層（40）→ 台標層（41）→ 指令列與 Radix 浮層（50+）、toast。
+ * 轉場疊層必須在 HUD 之上（離開轉場的交接點之後 HUD 已顯示，疊層上還有亮點在淡出，不可被 HUD 列蓋住或切掉）。
  */
 
 :root[data-mode="os"],
@@ -193,14 +194,37 @@
   inset: 0;
   z-index: 20;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 24px max(24px, 8vw);
+  padding: 24px;
   background: var(--page);
   color: var(--accent-text);
   font: 400 16px/1.6 "IBM Plex Mono", "Noto Sans TC", monospace;
+}
+
+/* 終端機視窗：等寬字、邊框、標題列 */
+:root[data-mode="os"] .os-gate-term {
+  width: min(560px, 100%);
+  border: 1px solid var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--page), 0 0 0 2px var(--line-strong);
+}
+
+:root[data-mode="os"] .os-gate-bar {
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--accent);
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+}
+
+:root[data-mode="os"] .os-gate-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 20px 24px 24px;
 }
 
 :root[data-mode="os"] .os-gate p,
@@ -212,6 +236,26 @@
   color: var(--ink-1);
   font-size: 22px;
   letter-spacing: 0.16em;
+}
+
+/* 閃爍游標；減少動態效果時不閃（常亮） */
+:root[data-mode="os"] .os-gate-cursor {
+  display: inline-block;
+  margin-left: 6px;
+  color: var(--accent);
+  animation: os-gate-blink 1.06s steps(1, end) infinite;
+}
+
+@keyframes os-gate-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mode="os"] .os-gate-cursor {
+    animation: none;
+  }
 }
 
 :root[data-mode="os"] .os-gate-button {
@@ -339,6 +383,16 @@
   opacity: 0;
 }
 
+:root[data-mode="os"] .os-station[data-hidden="true"][data-prep="true"] {
+  /* 進入轉場中段：預先畫好（樣式重算＋繪製記錄），仍然看不見（opacity 0）也不可互動（inert）；交接點只剩 opacity 與 inert 改變 */
+  visibility: visible;
+}
+
+/* 預先畫好期間自己一個合成層：點陣化在交接點之前完成，交接點只改 opacity */
+:root[data-mode="os"] .os-station[data-prep="true"] {
+  will-change: opacity;
+}
+
 :root[data-mode="os"] .os-frame {
   position: absolute;
   inset: 0;
@@ -425,6 +479,21 @@
 }
 
 :root[data-mode="os"] #os-overlay[data-active="true"] {
+  display: block;
+}
+
+/* 台標層（裝置解析度的頻道小標）：在主疊層之上、HUD 與 Radix 浮層之下；永遠不接收點擊 */
+:root[data-mode="os"] #os-overlay-tag {
+  position: fixed;
+  inset: 0;
+  z-index: 41;
+  display: none;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+:root[data-mode="os"] #os-overlay-tag[data-active="true"] {
   display: block;
 }
 
@@ -532,6 +601,7 @@
   :root[data-mode="os"] .os-palette,
   :root[data-mode="os"] .os-palette-overlay,
   :root[data-mode="os"] #os-overlay,
+  :root[data-mode="os"] #os-overlay-tag,
   :root[data-mode="os"] .os-frame-bar,
   :root[data-mode="os"] .os-skip,
   :root[data-mode="os"] [data-os-chrome],

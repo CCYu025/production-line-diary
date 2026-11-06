@@ -21,7 +21,7 @@ import { DeviceGate } from "./DeviceGate";
 import { installEscapeRule } from "./director/escapeRule";
 import { arrivalOf } from "./director/focusRule";
 import { isDialogOpen, isInputTarget, isInteractiveTarget, resolveKey } from "./director/keymap";
-import { phaseOf, placeOf, stationChOf, transitionKindOf, type DirectorState } from "./director/reducer";
+import { isTransition, phaseOf, placeOf, stationChOf, transitionKindOf, type DirectorState } from "./director/reducer";
 import { useDirector } from "./director/useDirector";
 import { useInputGate } from "./director/useInputGate";
 import { usePatrol } from "./director/usePatrol";
@@ -93,6 +93,25 @@ function doneAnnouncement(s: DirectorState): string {
       return "";
   }
 }
+
+/**
+ * 減少動態效果的直接切換（沒有轉場狀態）：HUB／STATION 之間、或 STATION 換頻道。回傳開始與完成兩段宣告（與有轉場時同樣的字串），
+ * 其他情況（含開機結束、沒有變化）回傳 null。
+ */
+export function cutAnnouncement(before: DirectorState, after: DirectorState): { start: string; done: string } | null {
+  if (before === after) return null;
+  if (before.kind === "HUB" && after.kind === "STATION") return { start: `進入${nameOf(after.ch)}`, done: `已進入${nameOf(after.ch)}` };
+  if (before.kind === "STATION" && after.kind === "HUB") return { start: "回到控制室", done: "已回到控制室" };
+  if (before.kind === "STATION" && after.kind === "STATION" && before.ch !== after.ch) return { start: `切換到${nameOf(after.ch)}`, done: `已切換到${nameOf(after.ch)}` };
+  return null;
+}
+
+/** 直接切換時，開始宣告與完成宣告之間隔多久（毫秒）：讓讀屏分成兩句唸，不會被合併。 */
+export const CUT_DONE_DELAY_MS = 150;
+/** 進入轉場開始後多久，把（仍隱藏的）工作站預先「畫好」（visibility 改回 visible、opacity 維持 0）：交接點那一幀只剩 opacity 與 inert。 */
+export const STATION_PREP_MS = 60;
+/** 抵達後焦點重試的幀數上限（約 500ms） */
+export const FOCUS_RETRY_FRAMES = 30;
 
 export default function OsShell() {
   const title = useRouteTitle();
@@ -338,13 +357,54 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
   // 交接點：焦點移到目的地（工作站的主內容／控制室選中的頻道按鈕）。
   // 不是轉場的換頁（同一頻道內、例如 /records → /records/63/edit）：焦點移到 #main（第一次載入不搶焦點）。
   const prev = React.useRef({ state, pathname });
+  const focusRetry = React.useRef<{ raf: number; arrival: "station" | "hub" } | null>(null);
+  React.useEffect(
+    () => () => {
+      if (focusRetry.current) window.cancelAnimationFrame(focusRetry.current.raf);
+    },
+    [],
+  );
   React.useEffect(() => {
     const before = prev.current;
     prev.current = { state, pathname };
     const arrival = arrivalOf(before.state, state);
-    if (arrival === "station") mainRef.current?.focus({ preventScroll: true });
+    const focusMain = () => mainRef.current?.focus({ preventScroll: true });
+    if (arrival === "station") focusMain();
     else if (arrival === "hub") hudRef.current?.focusSelected();
-    else if (pathname !== before.pathname && state === before.state && state.kind === "STATION") mainRef.current?.focus({ preventScroll: true });
+    else if (pathname !== before.pathname && state === before.state && state.kind === "STATION") focusMain();
+    // 轉場進行中切換減少動態效果：同一個 commit 同時改了工作站的隱藏／inert 與 HUD 的 inert，瀏覽器可能還沒讓目的地可以聚焦，
+    // 焦點會掉到 <body>。目的地可能還要幾十到幾百毫秒才可聚焦（驗證 r2：工作站在轉場中途仍是 visibility:hidden），所以有上限地逐幀重試：
+    // 焦點到了目標就停；焦點被移到別的真實元素（使用者自己移的）就停；最多 FOCUS_RETRY_FRAMES 幀。
+    // 重試迴圈不綁在這個 effect 的 cleanup 上（驗證 r4：交接點後約 6ms 狀態又變成 STATION，那一次沒有抵達事件，cleanup 會把剛排好的重試取消，
+    // 焦點就永遠留在 body）。只有「新的抵達」「去了和重試目的地無關的狀態」「卸載」才取消。
+    const pending = focusRetry.current;
+    if (arrival) {
+      if (pending) window.cancelAnimationFrame(pending.raf);
+      const job = { raf: 0, arrival };
+      focusRetry.current = job;
+      let n = 0;
+      const done = () => {
+        if (focusRetry.current === job) focusRetry.current = null;
+      };
+      const retry = () => {
+        const a = document.activeElement;
+        const target = arrival === "station" ? mainRef.current : null;
+        if (arrival === "station" && a === target) return done();
+        if (a && a !== document.body && a !== document.documentElement && (arrival === "station" || !a.matches?.('[data-os="hud-ch"]'))) return done();
+        if (arrival === "hub" && a && a.matches?.('[data-os="hud-ch"][aria-current="true"]')) return done();
+        if (arrival === "station") focusMain();
+        else hudRef.current?.focusSelected();
+        if (++n < FOCUS_RETRY_FRAMES) job.raf = window.requestAnimationFrame(retry);
+        else done();
+      };
+      job.raf = window.requestAnimationFrame(retry);
+    } else if (pending) {
+      const toward = pending.arrival === "station" ? state.kind === "STATION" || state.kind === "ENTERING" || state.kind === "SWITCHING" : state.kind === "HUB" || state.kind === "EXITING";
+      if (!toward) {
+        window.cancelAnimationFrame(pending.raf);
+        focusRetry.current = null;
+      }
+    }
   }, [state, pathname]);
 
   // ---- 即時宣告：轉場開始＋完成（第一次掛載不宣告） ----
@@ -356,13 +416,48 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
     prevForLive.current = state;
     if (transitionKindOf(state)) setDoneText("");
     else if (transitionKindOf(before)) setDoneText(doneAnnouncement(before));
+    else {
+      // 減少動態效果的直接切換：沒有轉場狀態，仍要宣告開始與完成（§6.5）
+      const cut = cutAnnouncement(before, state);
+      if (!cut) return;
+      setDoneText(cut.start);
+      const t = window.setTimeout(() => setDoneText(cut.done), CUT_DONE_DELAY_MS);
+      return () => window.clearTimeout(t);
+    }
   }, [state]);
   const live = startText || doneText;
 
   // ---- 畫面 ----
   const channel = getChannel(selected);
-  const showStation = state.kind === "STATION" || state.kind === "ENTERING" || state.kind === "SWITCHING";
+  const showStationNow = state.kind === "STATION" || state.kind === "ENTERING" || state.kind === "SWITCHING";
   const stationHidden = (state.kind === "ENTERING" || state.kind === "SWITCHING") && !state.handoff;
+  // 進入轉場開始時工作站是「隱藏地先掛上」（頁面一開始載入）：第一次掛整頁（冷的 JS、整棵樹的 render）若和點擊同一幀做完，
+  // 會讓那一幀 > 60ms。用 useDeferredValue 把這次掛載交給 React 的時間切片（每 5ms 讓出給瀏覽器），點擊那一幀只做控制室與疊層的事。
+  // 一旦不再隱藏（交接點、被跳到終點、STATION）一律立刻掛上，不等延後的那次 render。
+  const deferredShow = React.useDeferredValue(showStationNow);
+  const showStation = showStationNow && (deferredShow || !stationHidden);
+  // 進入轉場進行到一半時，把隱藏的工作站「預先畫好」：visibility 改 visible（opacity 仍是 0、inert 仍在），
+  // 整棵子樹的樣式重算與繪製記錄在 E1 中段完成，交接點那一幀只剩 opacity 與 inert 的改變。
+  // 預先畫好從進入轉場開始後 STATION_PREP_MS 起，一直維持到進入轉場結束（交接點之後 data-prep 仍在：工作站維持自己的合成層，
+  // 交接點只剩 opacity／inert；rule 的 visibility 只在 hidden 時才生效）。
+  const enterPre = state.kind === "ENTERING";
+  const enterGen = state.gen;
+  const stationRef = React.useRef<HTMLDivElement>(null);
+  const [prep, setPrep] = React.useState(false);
+  React.useEffect(() => {
+    if (!prep) return;
+    // 在隱藏狀態下於 E1 就讓第一次排版完成（單純讀一次高度，放在 rAF，避免和 commit 同一個工作）
+    const raf = window.requestAnimationFrame(() => void stationRef.current?.offsetHeight);
+    return () => window.cancelAnimationFrame(raf);
+  }, [prep]);
+  React.useEffect(() => {
+    if (!enterPre) {
+      setPrep(false);
+      return;
+    }
+    const t = window.setTimeout(() => setPrep(true), STATION_PREP_MS);
+    return () => window.clearTimeout(t);
+  }, [enterPre, enterGen]);
   const hubVisible = state.kind === "HUB" || state.kind === "BOOT" || state.kind === "EXITING" || (state.kind === "ENTERING" && !state.handoff);
   const hudActive = state.kind === "HUB" || (state.kind === "EXITING" && state.handoff);
   const overlayKind = transitionKindOf(state);
@@ -392,7 +487,7 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
       </div>
       <Hud ref={hudRef} selected={selected} signals={hubData.signals} active={hudActive && !suspended} onEnter={enterChannel} onExit={onExitWeb} />
       {showStation ? (
-        <div className="os-station" data-os="station" data-hidden={stationHidden ? "true" : "false"} {...(stationInert as object)}>
+        <div ref={stationRef} className="os-station" data-os="station" data-hidden={stationHidden ? "true" : "false"} data-prep={enterPre && prep ? "true" : "false"} {...(stationInert as object)}>
           <StationFrame tag={stationCh ?? ""} onBack={() => void navigate(HUB_PATH)} onSkipToMain={() => mainRef.current?.focus()}>
             <main
               id="main"
@@ -405,7 +500,15 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
           </StationFrame>
         </div>
       ) : null}
-      <TransitionOverlay kind={overlayKind} clock={clock} cardText={`${cardCh.id} ${cardCh.code}`} />
+      <TransitionOverlay
+        kind={overlayKind}
+        gen={isTransition(state) ? state.gen : -1}
+        clock={clock}
+        cardText={`${cardCh.id} ${cardCh.code}`}
+        channel={channel.id}
+        level={crtLevel}
+        reduced={reduced}
+      />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onNavigate={(path) => {
           const recId = recIdFromPath(path);
           if (recId !== null) acknowledgeRecord(recId);

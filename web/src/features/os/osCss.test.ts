@@ -123,4 +123,49 @@ describe("os.css", () => {
       }
     });
   });
+
+  describe("裝置門檻終端機畫面（X3）", () => {
+    it("游標預設閃爍，減少動態效果時 animation: none", () => {
+      const base = rules.find((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} .os-gate-cursor`));
+      expect(base?.declarations).toMatch(/animation:[^;]*os-gate-blink/);
+      const reduced = rules.find((r) => r.context.some((c) => /prefers-reduced-motion:\s*reduce/.test(c)) && r.selectors.includes(`${OS_SCOPE} .os-gate-cursor`));
+      expect(reduced?.declarations).toMatch(/animation:\s*none/);
+    });
+    it("等寬字與邊框", () => {
+      const gate = rules.find((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} .os-gate`));
+      expect(gate?.declarations).toMatch(/monospace/);
+      const term = rules.find((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} .os-gate-term`));
+      expect(term?.declarations).toMatch(/border:\s*1px solid/);
+    });
+  });
+
+  describe("轉場疊層的圖層（X3；修 X1 遺留：離開時的疊層內容不可被 HUD 列蓋住或切掉）", () => {
+    const base = (sel: string) => rules.find((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} ${sel}`));
+    const z = (sel: string) => Number(/z-index:\s*(\d+)/.exec(base(sel)?.declarations ?? "")?.[1]);
+    it("疊層高於 HUD 與工作站，台標層高於疊層，Radix 浮層（指令列 50）高於兩者", () => {
+      expect(z("#os-overlay")).toBeGreaterThan(z(".os-hud"));
+      expect(z("#os-overlay")).toBeGreaterThan(z(".os-station"));
+      expect(z("#os-overlay-tag")).toBeGreaterThan(z("#os-overlay"));
+      expect(z("#os-overlay-tag")).toBeLessThan(z(".os-palette-overlay"));
+    });
+    it("兩個疊層畫布都是 fixed 滿版、永遠 pointer-events: none（elementFromPoint 不會落在疊層上）", () => {
+      for (const sel of ["#os-overlay", "#os-overlay-tag"]) {
+        const d = base(sel)!.declarations;
+        expect(d, sel).toMatch(/position:\s*fixed/);
+        expect(d, sel).toMatch(/inset:\s*0/);
+        expect(d, sel).toMatch(/pointer-events:\s*none/);
+      }
+    });
+    it("疊層的祖先（.os-root）沒有 overflow／clip／contain／transform／filter：疊層不會被切掉", () => {
+      const decls = rules
+        .filter((r) => r.context.length === 0 && r.selectors.some((sel) => sel === `${OS_SCOPE} .os-root`))
+        .map((r) => r.declarations)
+        .join(";");
+      expect(decls).not.toMatch(/overflow|clip|contain|transform|filter|perspective/);
+    });
+    it("兩個疊層列印時都隱藏", () => {
+      const hidden = rules.filter((r) => r.context.some((c) => /^@media\s+print\b/.test(c)) && /display:\s*none/.test(r.declarations)).flatMap((r) => r.selectors);
+      expect(hidden).toContain(`${OS_SCOPE} #os-overlay-tag`);
+    });
+  });
 });
