@@ -6,6 +6,7 @@
  */
 import * as Dialog from "@radix-ui/react-dialog";
 import * as React from "react";
+import { getSoundPref, setSoundPref } from "../audio/settings";
 import { CRT_LABEL, getCrtLevel, setCrtLevel } from "../crt/settings";
 import { COMMANDS, parseCommand, suggest, type ParsedCommand } from "./commands";
 
@@ -17,9 +18,11 @@ export interface CommandPaletteProps {
   onExit: () => void;
   /** 匯出 Excel（與側欄相同的動作） */
   onExport: () => void;
+  /** 指令錯誤（解析失敗）時呼叫一次：低音嗶（X4） */
+  onError?: () => void;
 }
 
-export function CommandPalette({ open, onOpenChange, onNavigate, onExit, onExport }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpenChange, onNavigate, onExit, onExport, onError }: CommandPaletteProps) {
   const uid = React.useId();
   const listId = `${uid}-list`;
   const errorId = `${uid}-error`;
@@ -71,6 +74,7 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onExit, onExpor
       case "error":
         setError(cmd.message);
         setHelp(false);
+        onError?.();
         return;
       case "help":
         setError(null);
@@ -91,6 +95,16 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onExit, onExpor
         }
         // 立刻生效，不需要導覽；指令列關閉、焦點還給原來的元素
         setCrtLevel(cmd.level);
+        closeThen(() => {});
+        return;
+      case "sound":
+        if (cmd.pref === null) {
+          // 只問目前狀態：顯示說明，不關閉
+          setHelp(false);
+          setError(`目前音效：${getSoundPref() === "on" ? "開" : "關"}（sound on｜off 切換）`);
+          return;
+        }
+        setSoundPref(cmd.pref);
         closeThen(() => {});
         return;
       case "nav":

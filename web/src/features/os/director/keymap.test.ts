@@ -50,9 +50,21 @@ describe("resolveKey：控制室快速鍵", () => {
     expect(resolveKey(k("/"), ctx())).toEqual({ type: "open-palette" });
     expect(resolveKey(k("/", { shiftKey: true }), ctx())).toEqual({ type: "open-palette" });
   });
-  it("M 是 X4，不作用；其他鍵不作用", () => {
-    expect(resolveKey(k("m"), ctx())).toBeNull();
-    expect(resolveKey(k("M"), ctx())).toBeNull();
+  it("M（不分大小寫）切換音效；Shift+M、按住不放不作用", () => {
+    expect(resolveKey(k("m"), ctx())).toEqual({ type: "toggle-sound" });
+    expect(resolveKey(k("M"), ctx())).toEqual({ type: "toggle-sound" });
+    expect(resolveKey(k("M", { shiftKey: true }), ctx())).toBeNull();
+    expect(resolveKey(k("m", { repeat: true }), ctx())).toBeNull();
+  });
+  it("M：輸入元件內、對話框開著、帶修飾鍵、組字中、工作站與轉場中都不作用；exiting-post 作用", () => {
+    expect(resolveKey(k("m"), ctx({ targetIsInput: true }))).toBeNull();
+    expect(resolveKey(k("m"), ctx({ overlayOpen: true }))).toBeNull();
+    for (const mod of ["ctrlKey", "metaKey", "altKey"] as const) expect(resolveKey(k("m", { [mod]: true }), ctx())).toBeNull();
+    expect(resolveKey(k("m", { isComposing: true }), ctx())).toBeNull();
+    for (const phase of ["boot", "station", "entering-pre", "entering-post", "exiting-pre", "switching-pre", "switching-post"] as Phase[]) expect(resolveKey(k("m"), ctx({ phase })), phase).toBeNull();
+    expect(resolveKey(k("m"), ctx({ phase: "exiting-post" }))).toEqual({ type: "toggle-sound" });
+  });
+  it("其他鍵不作用", () => {
     expect(resolveKey(k("Escape"), ctx())).toBeNull();
     expect(resolveKey(k("a"), ctx())).toBeNull();
     expect(resolveKey(k(" "), ctx())).toBeNull();
@@ -66,15 +78,15 @@ describe("resolveKey：控制室快速鍵", () => {
 describe("resolveKey：不作用的條件", () => {
   it("焦點在輸入元件：全部不作用", () => {
     const c = ctx({ targetIsInput: true });
-    for (const key of ["ArrowLeft", "ArrowRight", "Enter", "1", "n", "/"]) expect(resolveKey(k(key), c), key).toBeNull();
+    for (const key of ["ArrowLeft", "ArrowRight", "Enter", "1", "n", "m", "/"]) expect(resolveKey(k(key), c), key).toBeNull();
   });
   it("有對話框／指令列開著：全部不作用", () => {
     const c = ctx({ overlayOpen: true });
-    for (const key of ["ArrowLeft", "ArrowRight", "Enter", "1", "n", "/"]) expect(resolveKey(k(key), c), key).toBeNull();
+    for (const key of ["ArrowLeft", "ArrowRight", "Enter", "1", "n", "m", "/"]) expect(resolveKey(k(key), c), key).toBeNull();
   });
   it("帶 Ctrl／Meta／Alt：不作用", () => {
     for (const mod of ["ctrlKey", "metaKey", "altKey"] as const) {
-      for (const key of ["ArrowLeft", "Enter", "1", "n", "/"]) expect(resolveKey(k(key, { [mod]: true }), ctx()), `${mod} ${key}`).toBeNull();
+      for (const key of ["ArrowLeft", "Enter", "1", "n", "m", "/"]) expect(resolveKey(k(key, { [mod]: true }), ctx()), `${mod} ${key}`).toBeNull();
     }
   });
   it("輸入法組字中：不作用", () => {
@@ -84,7 +96,7 @@ describe("resolveKey：不作用的條件", () => {
   it("工作站與轉場中（除 exiting-post）：單一字元快速鍵都不作用", () => {
     const phases: Phase[] = ["boot", "station", "entering-pre", "entering-post", "exiting-pre", "switching-pre", "switching-post"];
     for (const phase of phases) {
-      for (const key of ["ArrowLeft", "ArrowRight", "Enter", "1", "n", "/"]) expect(resolveKey(k(key), ctx({ phase })), `${phase} ${key}`).toBeNull();
+      for (const key of ["ArrowLeft", "ArrowRight", "Enter", "1", "n", "m", "/"]) expect(resolveKey(k(key), ctx({ phase })), `${phase} ${key}`).toBeNull();
     }
   });
   it("exiting-post（交接點後，輸入交給 HUD）：作用", () => {

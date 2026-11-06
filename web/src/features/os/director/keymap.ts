@@ -10,7 +10,7 @@
  * - Shift 只容許在 `/`（部分鍵盤配置要用 Shift 打）；字母 N 不分大小寫但不接受 Shift（CapsLock 開著時 key 是 "N"，仍算）。
  * - Enter 在事件目標本身是 button／連結時不作用（原生啟用會處理，避免 HUD 按鈕或 EXIT 按鈕雙重觸發）。
  * - 按住不放（repeat）時只有 ←／→ 會重複作用。
- * `M`（靜音）是 X4，這裡不處理。
+ * `M`（音效開關，X4）：和 N 同一組規則（只在控制室、焦點不在輸入元件、無 Ctrl／Meta／Alt／Shift、不重複）。
  */
 import type { Phase } from "./reducer";
 
@@ -20,7 +20,9 @@ export type KeyAction =
   | { type: "enter-selected" }
   | { type: "enter-index"; index: number }
   | { type: "enter-new" }
-  | { type: "open-palette" };
+  | { type: "open-palette" }
+  /** M（X4）：音效開關 */
+  | { type: "toggle-sound" };
 
 /** KeyboardEvent 中用得到的欄位（測試可以用純物件）。 */
 export interface KeyEventLike {
@@ -86,6 +88,9 @@ export function resolveKey(e: KeyEventLike, ctx: KeyContext): KeyAction | null {
     case "n":
     case "N":
       return { type: "enter-new" };
+    case "m":
+    case "M":
+      return { type: "toggle-sound" };
   }
   if (/^[1-9]$/.test(key)) {
     const index = Number(key) - 1;

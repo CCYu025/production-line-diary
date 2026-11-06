@@ -1,12 +1,14 @@
 /*
  * HUD（docs/os-mode-spec.md §4.5）：疊在控制室 3D 上的真實操作層。
- * 上方狀態列：PLD/OS 1995、時鐘（只在 HUD 作用中時每秒更新，不用 rAF）、CRT 強度三段切換、EXIT TO WEB。
+ * 上方狀態列：PLD/OS 1995、時鐘（只在 HUD 作用中時每秒更新，不用 rAF）、CRT 強度三段切換、音效按鈕（X4）、EXIT TO WEB。
  * 下方頻道清單：7 個真實的 <button>（roving tabindex：選中的是 tab stop）；←/→ 的選擇由 OsShell 的全域快速鍵處理，
  * 這裡負責「焦點在清單內時，焦點跟著選中的按鈕走」。
  * 按鈕文字與 accessible name 取自即時訊號的 name（例如 "CH-02 紀錄 · 今日 3"；資料還沒載入只有 "CH-02 紀錄"）。
  * 數字是週期性更新的，所以按鈕不是 aria-live；新異常的公告由 OsShell 的專用 aria-live 區域負責。
  */
 import * as React from "react";
+import { toggleSound } from "../audio/settings";
+import { useSoundButton } from "../audio/useAudio";
 import { CHANNELS, type ChannelId } from "../channels";
 import { CRT_LABEL, CRT_LEVELS, setCrtLevel, useCrtLevel } from "../crt/settings";
 import type { HubSignals } from "../hub/signals";
@@ -43,6 +45,16 @@ export function CrtToggle() {
         </button>
       ))}
     </div>
+  );
+}
+
+/** 音效按鈕（X4）：SND ON／SND OFF／SND …（待啟用：還沒有第一次手勢）／SND N/A（不支援）；真正的按鈕，aria-pressed 標示是否開啟。 */
+export function SoundButton() {
+  const s = useSoundButton();
+  return (
+    <button type="button" className="os-sound" data-os="sound" aria-pressed={s.pressed} aria-label={s.name} disabled={s.disabled} onClick={toggleSound}>
+      {s.label}
+    </button>
   );
 }
 
@@ -88,6 +100,7 @@ export const Hud = React.forwardRef<HudHandle, HudProps>(function Hud({ selected
         <span className="os-statusbar-title">PLD/OS 1995</span>
         <Clock active={active} />
         <CrtToggle />
+        <SoundButton />
         <button type="button" className="os-exit" data-os="exit" onClick={onExit}>
           EXIT TO WEB
         </button>
