@@ -1,6 +1,6 @@
 # 產線日誌 PLD/OS 1995 體驗模式 設計規格書
 
-> 狀態：**規格草案；X0（PR #49）、X1（PR #50）、X2（PR #51）、X3（PR #53）已合併，X4 起尚未開始實作**（2026-10-31 起草）。
+> 狀態：**規格草案；X0（PR #49）、X1（PR #50）、X2（PR #51）、X3（PR #53）已合併，X4 實作中（`feat/os-x4-audio`）**（2026-10-31 起草）。
 > 風格：90 年代向量線框 3D ＋ 現有 Cyber-Terminal 主題。
 > 本文件是之後實作與驗收的唯一依據；實作時若要偏離，先改這份文件再改程式碼。
 > 前置文件：`docs/refactor-plan.md`（§2 紅線、§5 執行流程）、`docs/cyber-theme-spec.md`（色票、`useFx()`、P3 教訓）。
@@ -389,7 +389,7 @@ B 區的紋理與掃描線只能蓋在 HUD 與外框範圍內，**不得蓋到�
 
 - 完整版 ≤ 4 秒，每個分頁工作階段只播一次（D3）；之後是只有 B3＋B4 的短開機，≤ 1 秒。
 - 任意鍵跳過。
-- **B1 的第一次按鍵用來啟用音效**（瀏覽器要求互動後才能出聲）。
+- **B1 的第一次按鍵用來啟用音效**（瀏覽器要求互動後才能出聲）。**X4 已實作**：黑畫面＋`PRESS ANY KEY▮`（游標閃爍，減少動態效果時常亮；點擊也可），只在完整開機之前出現；那一次手勢＝啟用音效＋開始 B2，由輸入閘吃掉；只按 Shift／Ctrl／Alt／Meta 不算；Esc 算（但見 X4 備註：Chrome 不把 Esc 當使用者啟用）。螢幕閱讀器讀到「PLD/OS 1995，按任意鍵開始」。
 - **短開機沒有 B1**，所以重新整理或新開頁面時，聲音要等使用者**第一次按鍵或點擊**才會出現；狀態列的音效圖示在這之前顯示「待啟用」，避免誤以為音效壞了。
 
 ### 5.6 減少動態效果
@@ -428,23 +428,27 @@ B 區的紋理與掃描線只能蓋在 HUD 與外框範圍內，**不得蓋到�
 
 ## 8. 音效
 
-- **全部用 Web Audio 即時合成**：振盪器＋雜訊緩衝＋包絡，不使用任何音檔。
-- 音效表放在 `features/os/audio/sounds.ts`，每個音效是一個參數物件，有單元測試檢查參數範圍。
+- **全部用 Web Audio 即時合成**：振盪器＋一份共用雜訊緩衝＋包絡＋濾波，不使用任何音檔。
+- 音效表放在 `features/os/audio/sounds.ts`，每個音效是一個純資料的參數物件，有單元測試檢查參數範圍（頻率 20–12,000Hz、長度、增益 ≤ 1、同時發聲增益總和 ≤ 1、總音量上限）。
 
-| 事件 | 聲音 | 長度 |
-|---|---|---|
-| 開機 B2 | 撥接連線音（雙音頻＋雜訊）、BIOS 嗶一聲 | ≤ 2.5s |
-| 控制室待機 | CRT 低頻嗡聲，非常小聲，持續 | 持續 |
-| 選頻道（左右移動） | 繼電器喀噠 | ≤ 60ms |
-| 進入 E1／E3 | 上升音、轉台雜訊 | 對應段落 |
-| 離開 X1／X4 | 高頻「啾」、下降音 | 對應段落 |
-| 雷達新異常 | 短促雙音提示 | ≤ 200ms |
-| 指令錯誤 | 低音嗶 | ≤ 150ms |
+| 事件 | 聲音 | 長度 | 相對音量 |
+|---|---|---|---|
+| 開機 B2 | 撥接握手（雙音頻＋雜訊掃頻）、結尾 BIOS 嗶一聲 | ≤ 2.5s（實際 2.4s） | 0 dB（峰值＝上限） |
+| 控制室待機 | CRT 低頻嗡聲（60Hz 基音＋120／180／240Hz 泛音），非常小聲，持續，只在 HUB | 持續 | −24 dB |
+| 選頻道（←→、換選取） | 繼電器喀噠 | ≤ 60ms | −10 dB |
+| 進入 E1／E2／E3 | 上升音（0）／喀噠（600ms）／轉台雜訊（750ms） | 600／60／250ms | −6 dB |
+| 離開 X1／X4 | 高頻「啾」（約 6kHz 往下掃，0）／低頻下降音（300ms） | 150／600ms | −8 dB |
+| 短轉場 | 150ms 轉台雜訊（E3 縮短版） | ≤ 150ms | −8 dB |
+| 雷達新異常 | 短促雙音（`setAlertToneHook`），2 秒內最多一次 | ≤ 200ms | −6 dB |
+| 指令錯誤 | 低音嗶（指令列解析失敗） | ≤ 150ms | −10 dB |
+| 減少動態效果的直接切換 | 只有一聲喀噠 | ≤ 60ms | −8 dB |
 
-- **主音量上限**：-18 dBFS，所有音效經過同一個總音量節點。
-- **靜音**：`M` 鍵或狀態列按鈕；偏好存在 `pld.os.sound`（`on`／`off`），預設 `on`。
-- `AudioContext` 建立失敗時一律靜默，不影響任何功能。
-- 分頁切到背景時暫停待機嗡聲。
+- **主音量上限**：−18 dBFS。所有音效經過同一個總音量節點（0.125 ≈ −18.06 dBFS）→ 安全限制器（`DynamicsCompressor`，threshold −18 dBFS、ratio 20、attack 1ms）→ 輸出。各音效的聲部增益總和 ≤ 1，所以最大聲的開機音在進限制器之前峰值就 ≤ −18.06 dBFS，限制器只是疊音時的保險。
+- **靜音**：`M` 鍵（只在控制室）、指令 `sound on|off` 或狀態列按鈕；偏好存在 `pld.os.sound`（`on`／`off`），預設 `on`。靜音＝總音量 20ms 淡到 0，`AudioContext` 保留。
+- `AudioContext` 只在第一次使用者手勢（keydown／pointerdown）的處理函式裡建立或 resume；建立失敗一律靜默，不影響任何功能。網頁模式完全不載入音效程式、不建立 `AudioContext`；離開 OS 模式時 `close()`。
+- **跳過**：跳過開機或轉場＝正在播的音效 30ms 淡出、還沒播的取消。
+- **背景**：分頁隱藏 → `suspend()`（並取消還沒播完的音效）；可見 → `resume()`，嗡聲接續。嗡聲只在 HUB：進入工作站時 200ms 淡出，回到 HUB 時 400ms 淡入。
+- **減少動態效果**：音效照常；沒有轉場的直接切換只播一聲喀噠。
 
 ---
 
@@ -538,7 +542,7 @@ B 區的紋理與掃描線只能蓋在 HUD 與外框範圍內，**不得蓋到�
 | **X1 骨架與導演**（已合併，PR #50，2026-11-01） | 完整狀態機（含 `SWITCHING`）與路由對應；`channels.ts`；7 個頻道都能進出（3D 仍是簡化版，完整轉場可先用短轉場代替）；`OsShell` 繼承 `AppShell` 行為；HUD 頻道清單、狀態列、EXIT；快速鍵與 Esc 規則；側欄「OS 模式」按鈕與 `pld.mode`；裝置與 WebGL 後備；未儲存確認；列印；無障礙 | §1.2、§3、§4.5、§4.6、§5.4、§6、§7 | A1–A9、I1–I4、E1–E7、P2、P5、S1–S3 |
 | **X2 控制室**（已合併，PR #51） | 7 台螢幕的弧形螢幕牆、螢幕貼圖與即時訊號、雷達台與光點、選中四角框、鏡頭與待機巡視、開機序列；B 區淡紋理與掃描線；CRT 強度設定（D7） | §4.3、§4.4、§4.7、§5.5 | P1、P6、A4（開機）、S4（三種強度）、S5、設計審查 |
 | **X3 轉場**（已合併，PR #53） | 完整的進入 E1–E4 與離開 X1–X4、台標卡、磷光殘影、短轉場正式版（§5.4）、減少動態效果 | §4.2、§5 | A4、I1–I4、P1、設計審查 |
-| **X4 音效** | 合成器、音效表、靜音、背景暫停 | §8 | A7、手動 3 |
+| **X4 音效**（實作中） | 合成器、音效表、靜音、背景暫停、B1 `PRESS ANY KEY` | §5.5（B1）、§8 | A7、手動 3 |
 | **X5 收尾** | 效能調整、文件、使用者實測回饋修正 | §9 全部 | §9 全部 |
 
 **X0 狀態與實作備註**
@@ -615,6 +619,23 @@ B 區的紋理與掃描線只能蓋在 HUD 與外框範圍內，**不得蓋到�
     - **第一次進入（整頁剛載入）一幀 66–83ms：定位為「第一次排版時的文字塑形與字型初始化」，未能壓到 ≤ 33ms，沒有併入程式碼（等待設計師／使用者裁示）**。Chrome 追蹤（硬體加速，AMD Radeon 780M）：點擊後約 40ms 的那一幀，主執行緒 BeginMainFrame 共 70ms，全是「整份文件的樣式重算 7ms ＋ 排版 61ms」，沒有任何腳本；排版裡 `InlineNode::ShapeTextIncludingFirstLine` 四次各 8–12ms（共約 40ms）。LoAF 顯示該幀的腳本只有 React 時間切片的 5ms 小段，渲染段約 70ms。工作站此時只有 255 個元素（紀錄頁、5 筆範例資料），但中文用 Noto Sans TC 的 unicode-range 切片字型，第一次用到某個切片的字形才建立 HarfBuzz face 與字形快取，並且走備援字型查找；`document.fonts.load` 只把檔案載進來，不會塑形，所以第一次造訪某頁要一次付清，第二次就乾淨。實驗：（1）在控制室閒置時用「與工作站頁面完全相同的文字」預先排版一次，第一次進入的那一幀降到 ≤ 33ms（但那段預熱本身要連續 300ms 以上，且文字需事先知道，只是上限驗證）；（2）改成可上線的版本——紀錄資料的字＋整個 `web/src` 非 ASCII 字池（約 1,058 字，含 → ◀ ▮ 這類備援符號），在閒置回呼裡分塊（每回呼 ≤ 4–6ms）用螢幕外 `visibility:hidden` 容器排版，字型優先排序、含等寬疊層——點擊那一幀由 70ms（rAF 間隔 +70）降到約 52ms（+35），約三到五成的載入完全乾淨，但不穩定，而且仍有 > 33ms（剩下約 35ms 的樣式＋排版，其中第一次整份 454 個 dirty 物件的排版約 25ms 與字型無關）；預熱本身在控制室閒置時偶爾多一幀約 35ms。結論：字型預熱只能把一幀砍掉約一半，達不到 ≤ 33ms，不值得為它多一份字池與閒置工作而不合入。剩下的是頁面第一次進入時樣式＋排版的實際成本，要再壓低只有三條路：①接受「整頁載入後第一次進入允許一幀約 50ms」；②改頁面元件（讓頁面首繪更便宜／分批），違反「不改頁面元件」；③在控制室閒置時真的把選中頻道的頁面在螢幕外 render 一次（需要把路由與資料查詢也預熱，副作用與記憶體風險大，不建議）。另有一個只出現在「瀏覽器開啟後第一個載入」的交接點（約 920–1000ms）53–71ms 幀，是整個瀏覽器第一次的 GPU 點陣化／著色器，不是這個工作站的內容，之後的載入都沒有。
     - **設計師裁示（r4）**：①第一次進入（整頁剛載入）後點擊 1–2 幀有一幀約 50–80ms（第一次中文字塑形加上剛掛載工作站的第一次完整排版；main 上本來就有 52–70ms；之後的進入 0 幀 > 33ms，離開沒有）：**核可為已知偏離**，要修需改頁面元件或離屏預先渲染頁面，留到 X5。②1280×720 離開 325–425ms 時 HUD 列輕觸特寫螢幕下緣（沒有切到字）：**接受**，記為次要備註。③P6（進出 20 次 heap）在驗證腳本下 +10.9%，與 main 同腳本 +10.3% 接近：以並排量測（r5）裁定，與 main 差 ≤ 約 1 個百分點視為既有量測雜訊。
   - **驗證掛鉤**：網址 `?osdebug=transition`（可與其他旗標以逗號並列）時，`window.__osTransition()` 回傳目前（或最近一段）轉場的快照：`kind`、`tMs`、`overlayFrames`（疊層實際繪製的幀數；減少動態效果必須是 0）、`overlayFrameTimes`、`hubFrameTimes`（進出轉場期間 3D 迴圈每幀間隔，驗收「沒有任何一幀 > 33ms」）、`faceRect`（螢幕面目前的投影矩形，視窗比例）、`cardFrame`（疊層卡片外框，視窗比例）、`tagTarget`（交接點讀到的真實台標矩形，CSS 像素）、`tagRect`（疊層台標目前矩形）、`camera`（位置、看向點、進度）、`cleanTail`。沒有旗標時所有掛鉤第一行就返回，不配置物件。
+
+**X4 狀態與實作備註**
+
+- 狀態：**實作中**（`feat/os-x4-audio`；合併後改為已合併）。
+- **檔案**：`features/os/audio/`：`sounds.ts`（音效表資料、`MASTER_GAIN`、限制器參數）、`synth.ts`（`renderSound(ctx, id, destination, when, opts)`：在任何 `BaseAudioContext` 上建立一個音效的節點圖；`buildMasterChain` 建總音量鏈；共用雜訊緩衝以固定種子產生）、`engine.ts`（`AudioEngine`：手勢才建立 context、靜音、嗡聲、背景暫停、`close()`；可注入 context 工廠）、`offline.ts`／`debug.ts`（除錯掛鉤）、`settings.ts`（`pld.os.sound`，結構同 `crt/settings.ts`）、`useAudio.ts`（手勢啟用、可見性、狀態列按鈕狀態）、`useAudioEvents.ts`（導演狀態 → 音效）、`testUtils.ts`（測試用假 Web Audio，不進打包）。音效程式只在延遲載入的 OS chunk 內，網頁進入點不含（A5 照常綠燈）。
+- **音量鏈與補償增益**：Chrome 等瀏覽器的 `DynamicsCompressor` 會自動加與訊號無關的補償增益（threshold −18、ratio 20、knee 0 時 +10.26 dB；實測：0.125 振幅的正弦經過後變 0.407），所以限制器後面接一個反向 trim（`LIMITER_TRIM`，由 `compressorMakeupDb` 以 Blink 公式算出，單元測試鎖住 10.26／2.01 dB 兩個實測值）。knee 設 0（硬轉折）。整條鏈在 −18 dBFS 以下是 0 dB。離線實測（Chrome，經同一條鏈）：開機音峰值 −18.14 dBFS，其餘音效 −25 至 −45 dBFS。
+- **音效表（最終）**：見 §8。聲部增益：開機音撥號雙音各 0.2、握手載波 0.2／0.15／0.18、雜訊掃頻 0.4、BIOS 嗶 1.0（方波 1kHz，與其他聲部不重疊，總和 1.0）；嗡聲 0.55／0.25／0.12／0.05。
+- **B1 語意**：導演狀態 `BOOT` 多一個 `b1` 旗標；B1 沒有計時器（`clock.bootStart` 是 null），INPUT／HANDOFF／DONE 都不會結束它；輸入閘把那一次手勢轉成 `GESTURE` 事件（不是 INPUT）：減少動態效果＝直接進控制室（不寫 `pld.os.boot`），否則開始 B2（完整）或 B3（短）。`useInputGate` 多一個 `rearmKey`（`waiting`），B1 的閘結束後立刻重新武裝成 B2 的跳過閘，那一次手勢仍由舊的閘攔到 keyup／click 結束。出現條件（`boot.ts` 的 `decideB1`）：控制室、且（完整開機，或減少動態效果且這個分頁還沒通過 B1）；通過後寫 `sessionStorage` 的 `pld.os.b1`（減少動態效果沒有 `pld.os.boot`，靠它避免每次重新整理都要再按）。短開機、深層連結、工作站、`pld.os.boot` 已寫都沒有 B1。B1 期間 `data-os-phase="boot"`、HUD inert；畫面是 `[data-os="b1"]`（z-index 45，低於 Radix 浮層）。
+- **第一次手勢啟用（含 Esc 說明）**：`window` 的 capture 階段 keydown／pointerdown 監聽器（`installGestureActivation`，不吞事件，修飾鍵不算）在 OsStage 的 layout effect 裡先於輸入閘裝上，所以被輸入閘吃掉的手勢（B1、跳過）也先啟用音效；短開機與深層連結的第一次手勢同樣啟用。**Chrome 不把 Esc 當成使用者啟用**：以 Esc 通過 B1 時 context 可能停在 `suspended`（狀態列 `SND …`），之後每一次手勢都會再 `resume()` 直到 `running`；手勢當下 context 剛建立還是 `suspended` 的短暫空檔，音效排隊最多等 300ms，過了就丟掉（不補播過期的聲音）。
+- **狀態列按鈕**：真實 `<button>`、`aria-pressed`；`SND ON`（開且 running）／`SND OFF`（已靜音）／`SND …`（開，但還沒有手勢或 context 未 running）／`SND N/A`（不支援或建立失敗；停用）；accessible name 用中文完整句，例如「音效：開啟，按下切換為靜音」「音效：已靜音，按下開啟」。按鈕只在控制室的 HUD 狀態列，工作站內沒有（`M` 也只在控制室）。
+- **快速鍵與指令**：`M`（`keymap.ts`，規則同 `N`：控制室／exiting-post、焦點不在輸入元件、無 Ctrl／Meta／Alt／Shift、不重複、無對話框）。`sound on|off`（不帶參數顯示目前狀態，同 `crt`），含 help 與 Tab 補全（`so` → `sound `、`sound ` → on／off）。
+- **事件接線**：開機 B2＝`boot`（B1 之後、完整開機，離開 BOOT 時 30ms 淡出）；進入＝轉場開始時用 context 時間排程 E1 0／E2 600ms／E3 750ms（時間取自 `timing.ts`，並扣掉效果到轉場時鐘起點的延遲）；離開 X1 0／X4 300ms；短轉場 0；轉場結束或被跳過（`gen` 改變或離開轉場狀態）一律 30ms 淡出已播的、取消未播的；減少動態效果的直接切換（`isDirectCut`）＝一聲 `cut`；選頻道＝←→ 與換選取的進入（滑鼠點不同頻道、1–7、N）響一聲繼電器，初次掛載與狀態同步造成的選取改變不響；指令列解析失敗（含未知指令、參數錯誤）響低音嗶一次；雷達新異常經 `setAlertToneHook`、`createAlertTone` 限流 2 秒；靜音時 `play` 不建立任何節點。
+- **除錯掛鉤**（網址 `?osdebug=audio`，可與 `transition` 等旗標以逗號並列；沒有旗標什麼都不安裝）：`window.__osAudio()` → `{ supported, contextState（null＝從未建立）, contextCreateCount, events: [{id, tMs（performance.now()；start 是預定開始時間）, kind: start｜fadeout｜stop, cancelled?}], activeNodeCount（建立的節點數 − 已 disconnect 的節點數；總音量鏈與嗡聲是固定基準）, muted, humActive }`；`window.__osAudioRender(id)` → `Promise<{ id, sampleRate: 44100, durationSec, renderedSec, peak, peakDbfs, samples（單聲道 Float32 小端位元組的 base64）, encoding: f32le-base64 }>`，用 `OfflineAudioContext` 經過與即時相同的總音量鏈（總音量＋限制器＋補償）算出，不需要手勢。掛鉤在 OS chunk 載入後才存在：網頁模式沒有 `window.__osAudio`，要證明「網頁模式沒有 AudioContext」請在頁面載入前包住 `window.AudioContext` 計數。
+- **背景與離開**：`visibilitychange` 隱藏 → `suspend()`（先取消還沒播完的音效）；可見 → `resume()`。OsShell 卸載（離開 OS 模式）→ `close()`，之後 `contextState` 為 `closed`；再進入 OS 模式會建新的引擎與 context（`contextCreateCount` +1）。
+- **驗證腳本**：新鮮分頁第一次顯示控制室會停在 B1，`scripts/verify/os-common.mjs` 新增 `passB1(page)`，`waitPhase` 等 `hub` 時自動按一個鍵，`os-e2e.mjs` 的 `settled()` 同樣處理（見 `scripts/verify/README.md`）。
+- **單元測試**（A7）：`audio/sounds.test.ts`（每個音效的頻率／長度／增益範圍、總音量上限、補償增益）、`audio/settings.test.ts`（讀寫失敗）、`audio/engine.test.ts`（手勢才建立、建立失敗、Esc、靜音、生命週期、節點回收、背景、close、除錯掛鉤）、`audio/useAudio.test.ts`、`keymap.test.ts`（M）、`commands.test.ts`（sound）、`director/useDirector.test.tsx`（B1 狀態轉移：等待→手勢→B2、修飾鍵不算、減少動態效果、短開機與深層連結沒有 B1）、`OsShell.x4.test.tsx`（整合）。
+- **未做（留 X5）**：X3 留下的小問題、第一次進入的長幀、P6 量測方式、表單 dirty 欄位疑點、音量滑桿（只有開關）；使用者實聽（手動 3）。
 
 **X0 的通過條件（使用者決定是否繼續）**
 
