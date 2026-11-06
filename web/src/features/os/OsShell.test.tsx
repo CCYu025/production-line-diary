@@ -26,7 +26,12 @@ vi.mock("./hub/HubCanvas", () => ({
 const bootMock = vi.hoisted(() => ({ real: false }));
 vi.mock("./director/boot", async (orig) => {
   const actual = await orig<typeof import("./director/boot")>();
-  return { ...actual, decideBoot: (i: Parameters<typeof actual.decideBoot>[0]) => (bootMock.real ? actual.decideBoot(i) : null) };
+  return {
+    ...actual,
+    decideBoot: (i: Parameters<typeof actual.decideBoot>[0]) => (bootMock.real ? actual.decideBoot(i) : null),
+    // B1（X4）：和開機一起預設關閉（bootMock.real 打開時才有）
+    decideB1: (i: Parameters<typeof actual.decideB1>[0]) => (bootMock.real ? actual.decideB1(i) : false),
+  };
 });
 
 // 控制室資料（X2）：紀錄查詢換成可控的替身（預設空清單）
@@ -125,6 +130,12 @@ const key = (k: string, init: KeyboardEventInit = {}, target: Element | Window =
 const advance = (ms: number) =>
   act(() => {
     vi.advanceTimersByTime(ms);
+  });
+/** 通過 B1（PRESS ANY KEY）：一次完整的按鍵手勢（keydown＋keyup） */
+const passB1 = (k = "x") =>
+  act(() => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: k, code: `Key${k.toUpperCase()}`, bubbles: true, cancelable: true }));
+    document.body.dispatchEvent(new KeyboardEvent("keyup", { key: k, code: `Key${k.toUpperCase()}`, bubbles: true, cancelable: true }));
   });
 const click = (el: HTMLElement) =>
   act(() => {
@@ -1274,6 +1285,9 @@ describe("OsShell：開機（X2）", () => {
     mount("/os");
     expect(phase()).toBe("boot");
     expect(window.sessionStorage.getItem("pld.os.boot")).toBeNull();
+    passB1();
+    expect(document.querySelector('[data-os="b1"]')).toBeNull();
+    expect(phase()).toBe("boot");
     advance(3899);
     expect(phase()).toBe("boot");
     advance(1);
@@ -1285,6 +1299,7 @@ describe("OsShell：開機（X2）", () => {
   it("開機中第一次按鍵＝跳過：進控制室，那次按鍵不傳給下面", () => {
     bootMock.real = true;
     mount("/os");
+    passB1();
     const underneath = vi.fn();
     document.addEventListener("keydown", underneath);
     act(() => {

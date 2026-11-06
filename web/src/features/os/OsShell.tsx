@@ -17,6 +17,10 @@ import { channelByIndex, channelForPath, CHANNELS, getChannel, HUB_PATH, isHubPa
 import { useCrtLevel } from "./crt/settings";
 import { useDevicePixelRatio } from "./crt/useDevicePixelRatio";
 import { bZoneVars } from "./crt/zones";
+import { getAudioEngine } from "./audio/engine";
+import { toggleSound } from "./audio/settings";
+import { useAudioEvents } from "./audio/useAudioEvents";
+import { useAudioSession } from "./audio/useAudio";
 import { DeviceGate } from "./DeviceGate";
 import { installEscapeRule } from "./director/escapeRule";
 import { arrivalOf } from "./director/focusRule";
@@ -211,8 +215,19 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
   const place = React.useMemo(() => placeOf(pathname), [pathname]);
 
-  const { state, skip, clock, gateActive } = useDirector(place, reduced);
-  useInputGate(gateActive && !suspended, skip);
+  const { state, skip, clock, gateActive, waiting } = useDirector(place, reduced);
+  // 音效（X4）：第一次手勢啟用的監聽器必須早於輸入閘裝上（同一個 window 捕獲階段按註冊順序執行：輸入閘吃掉的那一次手勢，音效也要先拿到）
+  useAudioSession();
+  // B1 與 B2 跳過是兩道連續的閘：waiting 變了就重新武裝（那一次手勢仍由舊的閘攔到結束）
+  useInputGate(
+    gateActive && !suspended,
+    React.useCallback(() => {
+      getAudioEngine().activate(); // 手勢處理函式裡：保險（監聽器已經啟用過；activate 可重複呼叫）
+      skip();
+    }, [skip]),
+    waiting,
+  );
+  useAudioEvents(state, clock, suspended);
 
   const phase = phaseOf(state);
   const inHub = state.kind === "HUB";
@@ -248,12 +263,24 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
   // 事件處理用的最新值（監聽器只裝一次）
   const latest = React.useRef({ phase, selected, navigate, suspended });
   latest.current = { phase, selected, navigate, suspended };
-
-  /** HUD 按鈕、快速鍵與 3D 螢幕點選共用的路徑：選取＋進入 */
-  const enterChannel = React.useCallback((id: ChannelId) => {
+  // 即時的選取（連按方向鍵時，state 還沒重繪也要算對）；音效：換選取才響一聲繼電器
+  const selectedLive = React.useRef(selected);
+  selectedLive.current = selected;
+  const changeSelection = React.useCallback((id: ChannelId) => {
+    if (id === selectedLive.current) return;
+    selectedLive.current = id;
     setSelected(id);
-    void latest.current.navigate(getChannel(id).path);
+    getAudioEngine().play("relay");
   }, []);
+
+  /** HUD 按鈕、快速鍵與 3D 螢幕點選共用的路徑：選取＋進入（選取的頻道和目前不同才響繼電器） */
+  const enterChannel = React.useCallback(
+    (id: ChannelId) => {
+      changeSelection(id);
+      void latest.current.navigate(getChannel(id).path);
+    },
+    [changeSelection],
+  );
 
   // ---- 指令列 ----
   const exporter = useExportAction();
@@ -308,10 +335,8 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
         case "select-prev":
         case "select-next": {
           const step = action.type === "select-next" ? 1 : -1;
-          setSelected((cur) => {
-            const i = CHANNELS.findIndex((c) => c.id === cur);
-            return CHANNELS[(i + step + CHANNELS.length) % CHANNELS.length]!.id;
-          });
+          const i = CHANNELS.findIndex((c) => c.id === selectedLive.current);
+          changeSelection(CHANNELS[(i + step + CHANNELS.length) % CHANNELS.length]!.id);
           return;
         }
         case "enter-selected":
@@ -328,11 +353,14 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
         case "open-palette":
           setPaletteOpen(true);
           return;
+        case "toggle-sound":
+          toggleSound();
+          return;
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [enterChannel]);
+  }, [enterChannel, changeSelection]);
 
   // ---- Esc 離開工作站（§5.4、E6）：走 router 的 navigate，useBlocker 的確認照常 ----
   React.useEffect(
@@ -513,7 +541,18 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
           const recId = recIdFromPath(path);
           if (recId !== null) acknowledgeRecord(recId);
           void navigate(path);
-        }} onExit={onExitWeb} onExport={() => void runExport()} />
+        }} onExit={onExitWeb} onExport={() => void runExport()} onError={() => void getAudioEngine().play("error")} />
+      {/* B1（X4）：開機前等第一次按鍵或點擊；那一次輸入由輸入閘吃掉。游標只是裝飾，另有一句給螢幕閱讀器的話 */}
+      {waiting ? (
+        <div className="os-b1" data-os="b1">
+          <span className="sr-only" role="status">
+            PLD/OS 1995，按任意鍵開始
+          </span>
+          <p aria-hidden="true">
+            PRESS ANY KEY<span className="os-b1-cursor">▮</span>
+          </p>
+        </div>
+      ) : null}
       <div className="sr-only" role="status" aria-live="polite" data-os="live">
         {live}
       </div>

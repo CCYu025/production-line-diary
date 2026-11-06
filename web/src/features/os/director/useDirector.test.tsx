@@ -1,11 +1,11 @@
 /*
  * A1（X2）：導演在開機與待機巡視的行為，用真正的 useDirector＋useInputGate＋usePatrol（不含 3D）。
  */
-import { act, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BOOT_FULL, BOOT_SHORT, PATROL_IDLE_MS } from "../transition/timing";
-import { BOOT_STORAGE_KEY, markBootDone, resetBootDoneForTest } from "./boot";
+import { B1_STORAGE_KEY, BOOT_STORAGE_KEY, markBootDone, resetBootDoneForTest } from "./boot";
 import { phaseOf, type DirectorState, type Place } from "./reducer";
 import { useDirector } from "./useDirector";
 import { useInputGate } from "./useInputGate";
@@ -16,6 +16,7 @@ const station: Place = { kind: "channel", ch: "CH-02" };
 
 let state: DirectorState;
 let patrolling = false;
+let waiting = false;
 let underneath: ReturnType<typeof vi.fn>;
 let setPlace: (p: Place) => void;
 
@@ -24,7 +25,8 @@ function Harness({ initial, reduced }: { initial: Place; reduced: boolean }) {
   setPlace = setP;
   const d = useDirector(place, reduced);
   state = d.state;
-  useInputGate(d.gateActive, d.skip);
+  useInputGate(d.gateActive, d.skip, d.waiting);
+  waiting = d.waiting;
   patrolling = usePatrol(d.state.kind === "HUB" && !reduced);
   return (
     <button data-testid="under" onClick={underneath as never} onKeyDown={underneath as never}>
@@ -40,6 +42,8 @@ const advance = (ms: number) =>
   });
 const phase = () => phaseOf(state);
 const under = () => document.querySelector("[data-testid=under]")!;
+/** 通過 B1：一次按鍵手勢（之後的 B2 才開始） */
+const passB1 = () => keyPress(under(), "x");
 
 function clickGesture(target: Element) {
   const evs = ["pointerdown", "mousedown", "pointerup", "mouseup", "click"].map((t) => new MouseEvent(t, { bubbles: true, cancelable: true }));
@@ -71,11 +75,17 @@ afterEach(() => {
 });
 
 describe("A1：開機", () => {
-  it("第一次顯示控制室：完整 BOOT，播完（≤ 4000ms）進 HUB 並寫 key", () => {
+  it("第一次顯示控制室：先停在 B1，手勢之後才開始完整 BOOT，播完（≤ 4000ms）進 HUB 並寫 key", () => {
     mount(hub);
     expect(state.kind).toBe("BOOT");
     expect(state.kind === "BOOT" && state.short).toBeFalsy();
+    advance(10_000); // B1 沒有計時器：怎麼等都不會開機
+    expect(waiting).toBe(true);
+    expect(phase()).toBe("boot");
     expect(window.sessionStorage.getItem(BOOT_STORAGE_KEY)).toBeNull();
+    passB1();
+    expect(waiting).toBe(false);
+    expect(phase()).toBe("boot");
     advance(BOOT_FULL.total - 1);
     expect(phase()).toBe("boot");
     advance(1);
@@ -83,9 +93,10 @@ describe("A1：開機", () => {
     expect(window.sessionStorage.getItem(BOOT_STORAGE_KEY)).toBe("1");
   });
 
-  it("key 已寫：短開機（≤ 1000ms）", () => {
+  it("key 已寫：短開機（≤ 1000ms），沒有 B1", () => {
     markBootDone();
     mount(hub);
+    expect(waiting).toBe(false);
     expect(state.kind === "BOOT" && state.short).toBe(true);
     advance(BOOT_SHORT.total - 1);
     expect(phase()).toBe("boot");
@@ -93,32 +104,58 @@ describe("A1：開機", () => {
     expect(phase()).toBe("hub");
   });
 
-  it("按鍵跳過：跳到 HUB、key 已寫、那次按鍵（keydown＋keyup）不傳給下面", () => {
+  it("B1：那一次按鍵（keydown＋keyup）被輸入閘吃掉，不傳給下面；B2 開始", () => {
     mount(hub);
-    const evs = keyPress(under());
+    const evs = passB1();
+    expect(waiting).toBe(false);
+    expect(underneath).not.toHaveBeenCalled();
+    expect(evs.every((e) => e.defaultPrevented)).toBe(true);
+    expect(window.sessionStorage.getItem(B1_STORAGE_KEY)).toBe("1");
+    expect(window.sessionStorage.getItem(BOOT_STORAGE_KEY)).toBeNull();
+  });
+
+  it("B1：點擊也算，整個手勢（含 click）不傳給下面", () => {
+    mount(hub);
+    clickGesture(under());
+    expect(waiting).toBe(false);
+    expect(underneath).not.toHaveBeenCalled();
+  });
+
+  it("B1：只按修飾鍵（Shift／Ctrl／Alt／Meta）不算", () => {
+    mount(hub);
+    for (const key of ["Shift", "Control", "Alt", "Meta"]) keyPress(under(), key);
+    expect(waiting).toBe(true);
+    expect(phase()).toBe("boot");
+  });
+
+  it("B1：Esc 算數", () => {
+    mount(hub);
+    keyPress(under(), "Escape");
+    expect(waiting).toBe(false);
+  });
+
+  it("B1 之後的 B2：一次按鍵＝跳過，寫 key，那次按鍵不傳給下面", () => {
+    mount(hub);
+    passB1();
+    advance(500);
+    const evs = keyPress(under(), "y");
     expect(phase()).toBe("hub");
     expect(window.sessionStorage.getItem(BOOT_STORAGE_KEY)).toBe("1");
     expect(underneath).not.toHaveBeenCalled();
     expect(evs.every((e) => e.defaultPrevented)).toBe(true);
   });
 
-  it("點擊跳過：跳到 HUB、整個手勢（含 click）不傳給下面", () => {
+  it("B2 跳過之後的下一次輸入照常傳到下面（不多吞）", () => {
     mount(hub);
-    clickGesture(under());
-    expect(phase()).toBe("hub");
-    expect(window.sessionStorage.getItem(BOOT_STORAGE_KEY)).toBe("1");
-    expect(underneath).not.toHaveBeenCalled();
-  });
-
-  it("跳過之後的下一次輸入照常傳到下面（不多吞）", () => {
-    mount(hub);
+    passB1();
+    advance(500);
     clickGesture(under());
     advance(700);
     clickGesture(under());
     expect(underneath).toHaveBeenCalledTimes(1);
   });
 
-  it("短開機同樣可被跳過，輸入被吃掉", () => {
+  it("短開機可被跳過，輸入被吃掉", () => {
     markBootDone();
     mount(hub);
     keyPress(under());
@@ -126,15 +163,39 @@ describe("A1：開機", () => {
     expect(underneath).not.toHaveBeenCalled();
   });
 
-  it("深層連結（第一個畫面是工作站）：沒有開機，key 不寫", () => {
+  it("深層連結（第一個畫面是工作站）：沒有 B1、沒有開機，key 不寫", () => {
     mount(station);
+    expect(waiting).toBe(false);
     expect(phase()).toBe("station");
     advance(5000);
     expect(window.sessionStorage.getItem(BOOT_STORAGE_KEY)).toBeNull();
   });
 
-  it("減少動態效果：沒有開機，直接 HUB", () => {
+  it("減少動態效果：B1 保留；手勢之後直接 HUB（沒有 B2，不寫開機 key，記下 B1 已通過）", () => {
     mount(hub, true);
+    expect(waiting).toBe(true);
+    expect(phase()).toBe("boot");
+    passB1();
+    expect(phase()).toBe("hub");
+    expect(window.sessionStorage.getItem(BOOT_STORAGE_KEY)).toBeNull();
+    expect(window.sessionStorage.getItem(B1_STORAGE_KEY)).toBe("1");
+  });
+
+  it("減少動態效果：B1 通過之後重新掛載（重新整理）不再出現 B1", () => {
+    mount(hub, true);
+    passB1();
+    cleanup();
+    mount(hub, true);
+    expect(waiting).toBe(false);
+    expect(phase()).toBe("hub");
+  });
+
+  it("B1 等待中打開減少動態效果：仍等手勢，手勢之後直接 HUB", () => {
+    const r = mount(hub);
+    expect(waiting).toBe(true);
+    r.rerender(<Harness initial={hub} reduced={true} />);
+    expect(waiting).toBe(true);
+    passB1();
     expect(phase()).toBe("hub");
   });
 
@@ -147,9 +208,19 @@ describe("A1：開機", () => {
     expect(phase()).toBe("hub");
   });
 
-  it("開機中路由改成工作站：結束後直接到工作站（沒有轉場）", () => {
+  it("開機中（B1 之後）路由改成工作站：結束後直接到工作站（沒有轉場）", () => {
     mount(hub);
     act(() => setPlace(station));
+    passB1();
+    advance(BOOT_FULL.total);
+    expect(phase()).toBe("station");
+  });
+
+  it("B1 等待中路由改成工作站：仍等手勢，之後走 B2 再到工作站", () => {
+    mount(hub);
+    act(() => setPlace(station));
+    expect(waiting).toBe(true);
+    passB1();
     advance(BOOT_FULL.total);
     expect(phase()).toBe("station");
   });

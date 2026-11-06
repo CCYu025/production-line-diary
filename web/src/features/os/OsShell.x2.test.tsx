@@ -22,7 +22,12 @@ vi.mock("./hub/HubCanvas", () => ({
 const bootMock = vi.hoisted(() => ({ real: false }));
 vi.mock("./director/boot", async (orig) => {
   const actual = await orig<typeof import("./director/boot")>();
-  return { ...actual, decideBoot: (i: Parameters<typeof actual.decideBoot>[0]) => (bootMock.real ? actual.decideBoot(i) : null) };
+  return {
+    ...actual,
+    decideBoot: (i: Parameters<typeof actual.decideBoot>[0]) => (bootMock.real ? actual.decideBoot(i) : null),
+    // B1（X4）：和開機一起預設關閉（bootMock.real 打開時才有）
+    decideB1: (i: Parameters<typeof actual.decideB1>[0]) => (bootMock.real ? actual.decideB1(i) : false),
+  };
 });
 vi.mock("@/app/useExportAction", () => ({ useExportAction: () => ({ run: vi.fn(), pending: false }) }));
 vi.mock("./webgl", async (orig) => ({ ...(await orig<typeof import("./webgl")>()), webglAvailable: () => true }));
@@ -107,6 +112,12 @@ const key = (k: string) =>
     fireEvent.keyDown(document.body, { key: k });
   });
 const hudButton = (name: string) => screen.getByRole("button", { name });
+/** 通過 B1（PRESS ANY KEY）：一次完整的按鍵手勢（keydown＋keyup） */
+const passB1 = () =>
+  act(() => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "x", code: "KeyX", bubbles: true, cancelable: true }));
+    document.body.dispatchEvent(new KeyboardEvent("keyup", { key: "x", code: "KeyX", bubbles: true, cancelable: true }));
+  });
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -386,6 +397,7 @@ describe("開機：輸入與減少動態效果", () => {
   it("跳過開機的那次 keydown 與它的 keyup 都不傳給下面", () => {
     bootMock.real = true;
     mount("/os");
+    passB1();
     const seen: string[] = [];
     const on = (e: Event) => seen.push(e.type);
     document.addEventListener("keydown", on);
@@ -423,6 +435,7 @@ describe("開機：輸入與減少動態效果", () => {
     );
     mount("/os");
     expect(phase()).toBe("boot");
+    passB1();
     const seen: string[] = [];
     const on = (e: Event) => seen.push(e.type);
     document.addEventListener("keydown", on);
@@ -445,6 +458,7 @@ describe("開機：3D 層的屬性", () => {
     apiMock.list.mockResolvedValue([rec({ equipment: "F1" }), rec({ equipment: "F2" }), rec({ equipment: "F2" }), rec({ deleted: true, equipment: "F9" })]);
     mount("/os");
     await flush();
+    passB1();
     expect(hubMock.props?.boot).toBe("full");
     expect(hubMock.props?.bootCounts).toEqual({ machines: 2, records: 3 });
     await flush(4000);
@@ -465,7 +479,12 @@ describe("開機：3D 層的屬性", () => {
       (q: string) => ({ matches: q.includes("reduce"), media: q, addEventListener() {}, removeEventListener() {} }) as unknown as MediaQueryList,
     );
     mount("/os");
+    // B1 保留（啟用音效）；手勢之後沒有 B2，直接控制室
+    expect(phase()).toBe("boot");
+    expect(document.querySelector('[data-os="b1"]')).not.toBeNull();
+    passB1();
     expect(phase()).toBe("hub");
     expect(hubMock.props?.boot).toBeNull();
+    expect(window.sessionStorage.getItem("pld.os.boot")).toBeNull();
   });
 });

@@ -532,6 +532,71 @@
   font-weight: 700;
 }
 
+/* ---------- 狀態列的音效按鈕（X4） ---------- */
+
+:root[data-mode="os"] .os-sound {
+  flex: none;
+  min-width: 78px;
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--ink-2);
+  font: 500 13px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+:root[data-mode="os"] .os-sound:hover:not(:disabled) {
+  background: var(--accent-wash);
+  color: var(--ink-1);
+}
+
+:root[data-mode="os"] .os-sound[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+:root[data-mode="os"] .os-sound:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* ---------- B1：PRESS ANY KEY（X4；開機前，等第一次按鍵或點擊） ---------- */
+
+:root[data-mode="os"] .os-b1 {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--page);
+  color: var(--accent-text);
+  font: 500 22px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+}
+
+:root[data-mode="os"] .os-b1-cursor {
+  animation: os-b1-blink 1s steps(1, end) infinite;
+}
+
+@keyframes os-b1-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* 減少動態效果：游標不閃，常亮 */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mode="os"] .os-b1-cursor {
+    animation: none;
+  }
+}
+
 /* ---------- B 區 CRT 疊層（D7、§4.7）：Trinitron 直條＋掃描線 ----------
  * 只蓋在 HUD 的上下列（狀態列、頻道清單）與工作站 CRT 外框的邊框（頂列與四周的外框環）；
  * 絕不與 <main> 重疊（外框環用遮罩把內容區挖空；不支援遮罩合成的瀏覽器就不顯示環）。
@@ -604,6 +669,7 @@
   :root[data-mode="os"] #os-overlay-tag,
   :root[data-mode="os"] .os-frame-bar,
   :root[data-mode="os"] .os-skip,
+  :root[data-mode="os"] .os-b1,
   :root[data-mode="os"] [data-os-chrome],
   :root[data-mode="os"] .os-root .os-frame::after {
     display: none !important;

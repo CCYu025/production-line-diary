@@ -1,6 +1,6 @@
 import * as React from "react";
 import { BOOT_FULL, BOOT_SHORT, ENTER, EXIT, SWITCH } from "../transition/timing";
-import { decideBoot, markBootDone, readBootDone } from "./boot";
+import { decideB1, decideBoot, markB1Passed, markBootDone, readB1Passed, readBootDone } from "./boot";
 import {
   bootState,
   initialState,
@@ -50,9 +50,12 @@ const placeKey = (p: Place) => (p.kind === "hub" ? "hub" : `ch:${p.ch ?? "-"}`);
  * 計時器只送 HANDOFF／DONE，且事件帶著建立計時器時的 gen（過期的計時器不會影響新轉場）；使用者輸入由 useInputGate 送 INPUT。
  */
 export function useDirector(place: Place, instant: boolean) {
-  // 開機決策只在掛載時做一次（boot.ts）：減少動態效果＝不開機；直接載入工作站＝不開機
+  // 開機決策只在掛載時做一次（boot.ts）：減少動態效果＝不開機；直接載入工作站＝不開機。
+  // B1（X4）：完整開機之前、或減少動態效果的第一次控制室，先停在 BOOT＋b1 等第一次手勢（沒有計時器、不寫 key）
   const [state, setState] = React.useState<DirectorState>(() => {
-    const boot = decideBoot({ place, reduced: instant, done: readBootDone() });
+    const done = readBootDone();
+    const boot = decideBoot({ place, reduced: instant, done });
+    if (decideB1({ place, reduced: instant, boot, passed: readB1Passed() })) return bootState(place, 0, boot === "short" || (boot === null && done), true);
     return boot ? bootState(place, 0, boot === "short") : initialState(place);
   });
   const [prevKey, setPrevKey] = React.useState(() => placeKey(place));
@@ -87,29 +90,37 @@ export function useDirector(place: Place, instant: boolean) {
     };
   }, [transitionGen, kind, clock]);
 
-  // 開機：計時器送 DONE；開機結束（播完或被跳過）時寫 sessionStorage key
+  // 開機：計時器送 DONE；開機結束（播完或被跳過）時寫 sessionStorage key。B1 等待手勢期間沒有計時器、bootStart 是 null（B2 在手勢那一刻才開始）
   const booting = state.kind === "BOOT";
+  const waiting = state.kind === "BOOT" && !!state.b1;
   const bootShort = state.kind === "BOOT" && !!state.short;
   const bootGen = state.gen;
   React.useInsertionEffect(() => {
-    if (!booting) {
+    if (!booting || waiting) {
       clock.bootStart = null;
       return;
     }
     clock.bootStart = performance.now();
     const t = window.setTimeout(() => setState((s) => reduce(s, { type: "DONE", gen: bootGen })), bootShort ? BOOT_SHORT.total : BOOT_FULL.total);
     return () => window.clearTimeout(t);
-  }, [booting, bootShort, bootGen, clock]);
-  const wasBooting = React.useRef(booting);
+  }, [booting, waiting, bootShort, bootGen, clock]);
+  // 開機結束寫 key：只有真的開過機（B2／B3 開始過）才寫；減少動態效果在 B1 之後直接進控制室不算（和 X2 一樣不寫）。B1 通過另外記
+  const bootRan = React.useRef(false);
+  const wasWaiting = React.useRef(waiting);
   React.useEffect(() => {
-    if (wasBooting.current && !booting) markBootDone();
-    wasBooting.current = booting;
-  }, [booting]);
+    if (wasWaiting.current && !waiting) markB1Passed();
+    wasWaiting.current = waiting;
+    if (booting && !waiting) bootRan.current = true;
+    else if (!booting && bootRan.current) {
+      bootRan.current = false;
+      markBootDone();
+    }
+  }, [booting, waiting]);
 
   // 開機中打開「減少動態效果」：直接跳到結束（像跳過，但不吞任何輸入，也不經過輸入閘）
   React.useEffect(() => {
-    if (instant && state.kind === "BOOT") setState((s) => reduce(s, { type: "INPUT" }));
-  }, [instant, state.kind]);
+    if (instant && state.kind === "BOOT" && !state.b1) setState((s) => reduce(s, { type: "INPUT" }));
+  }, [instant, state.kind, waiting]);
 
   // 轉場進行中打開「減少動態效果」：立刻跳到終點（疊層取消、鏡頭到終點位置、焦點與宣告走既有的抵達規則）。
   // 不經過輸入閘，也不吞任何輸入（不是使用者輸入）。交接點之後也要跳：swallowed 讓它無視交接旗標。
@@ -118,6 +129,12 @@ export function useDirector(place: Place, instant: boolean) {
     if (instant && inTransition) setState((s) => reduce(s, { type: "INPUT", swallowed: true }));
   }, [instant, inTransition]);
 
-  const skip = React.useCallback(() => setState((s) => reduce(s, { type: "INPUT", swallowed: true })), []);
-  return { state, dispatch, skip, clock, gateActive: isGateActive(state) };
+  // 輸入閘吃到的那一次手勢：B1 等待中＝通過 B1（減少動態效果直接進控制室）；其他＝跳過（轉場／開機）
+  const instantRef = React.useRef(instant);
+  instantRef.current = instant;
+  const skip = React.useCallback(
+    () => setState((s) => (s.kind === "BOOT" && s.b1 ? reduce(s, { type: "GESTURE", instant: instantRef.current }) : reduce(s, { type: "INPUT", swallowed: true }))),
+    [],
+  );
+  return { state, dispatch, skip, clock, gateActive: isGateActive(state), waiting };
 }
