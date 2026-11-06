@@ -357,6 +357,13 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
   // 交接點：焦點移到目的地（工作站的主內容／控制室選中的頻道按鈕）。
   // 不是轉場的換頁（同一頻道內、例如 /records → /records/63/edit）：焦點移到 #main（第一次載入不搶焦點）。
   const prev = React.useRef({ state, pathname });
+  const focusRetry = React.useRef<{ raf: number; arrival: "station" | "hub" } | null>(null);
+  React.useEffect(
+    () => () => {
+      if (focusRetry.current) window.cancelAnimationFrame(focusRetry.current.raf);
+    },
+    [],
+  );
   React.useEffect(() => {
     const before = prev.current;
     prev.current = { state, pathname };
@@ -365,25 +372,39 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
     if (arrival === "station") focusMain();
     else if (arrival === "hub") hudRef.current?.focusSelected();
     else if (pathname !== before.pathname && state === before.state && state.kind === "STATION") focusMain();
-    if (!arrival) return;
     // 轉場進行中切換減少動態效果：同一個 commit 同時改了工作站的隱藏／inert 與 HUD 的 inert，瀏覽器可能還沒讓目的地可以聚焦，
-    // 焦點會掉到 <body>。下一幀如果焦點仍在 body（沒有人移走它），就再套用一次抵達規則；焦點已經在別處（使用者自己移走的）不動。
-    // 目的地可能還要幾十到幾百毫秒才可聚焦（驗證 r2：工作站在轉場中途仍是 visibility:hidden），所以有上限地逐幀重試：
+    // 焦點會掉到 <body>。目的地可能還要幾十到幾百毫秒才可聚焦（驗證 r2：工作站在轉場中途仍是 visibility:hidden），所以有上限地逐幀重試：
     // 焦點到了目標就停；焦點被移到別的真實元素（使用者自己移的）就停；最多 FOCUS_RETRY_FRAMES 幀。
-    let raf = 0;
-    let n = 0;
-    const retry = () => {
-      const a = document.activeElement;
-      const target = arrival === "station" ? mainRef.current : null;
-      if (arrival === "station" && a === target) return;
-      if (a && a !== document.body && a !== document.documentElement && (arrival === "station" || !a.matches?.('[data-os="hud-ch"]'))) return;
-      if (arrival === "hub" && a && a.matches?.('[data-os="hud-ch"][aria-current="true"]')) return;
-      if (arrival === "station") focusMain();
-      else hudRef.current?.focusSelected();
-      if (++n < FOCUS_RETRY_FRAMES) raf = window.requestAnimationFrame(retry);
-    };
-    raf = window.requestAnimationFrame(retry);
-    return () => window.cancelAnimationFrame(raf);
+    // 重試迴圈不綁在這個 effect 的 cleanup 上（驗證 r4：交接點後約 6ms 狀態又變成 STATION，那一次沒有抵達事件，cleanup 會把剛排好的重試取消，
+    // 焦點就永遠留在 body）。只有「新的抵達」「去了和重試目的地無關的狀態」「卸載」才取消。
+    const pending = focusRetry.current;
+    if (arrival) {
+      if (pending) window.cancelAnimationFrame(pending.raf);
+      const job = { raf: 0, arrival };
+      focusRetry.current = job;
+      let n = 0;
+      const done = () => {
+        if (focusRetry.current === job) focusRetry.current = null;
+      };
+      const retry = () => {
+        const a = document.activeElement;
+        const target = arrival === "station" ? mainRef.current : null;
+        if (arrival === "station" && a === target) return done();
+        if (a && a !== document.body && a !== document.documentElement && (arrival === "station" || !a.matches?.('[data-os="hud-ch"]'))) return done();
+        if (arrival === "hub" && a && a.matches?.('[data-os="hud-ch"][aria-current="true"]')) return done();
+        if (arrival === "station") focusMain();
+        else hudRef.current?.focusSelected();
+        if (++n < FOCUS_RETRY_FRAMES) job.raf = window.requestAnimationFrame(retry);
+        else done();
+      };
+      job.raf = window.requestAnimationFrame(retry);
+    } else if (pending) {
+      const toward = pending.arrival === "station" ? state.kind === "STATION" || state.kind === "ENTERING" || state.kind === "SWITCHING" : state.kind === "HUB" || state.kind === "EXITING";
+      if (!toward) {
+        window.cancelAnimationFrame(pending.raf);
+        focusRetry.current = null;
+      }
+    }
   }, [state, pathname]);
 
   // ---- 即時宣告：轉場開始＋完成（第一次掛載不宣告） ----

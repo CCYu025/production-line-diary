@@ -935,6 +935,30 @@ describe("OsShell：抵達後焦點若掉到 body 會在下一幀補上（X3 修
     for (let i = 0; i < 6; i++) tick();
     expect(document.activeElement).toBe(main);
   });
+  it("頻道之間切換：交接點（抵達 station）之後幾毫秒又被跳到 STATION（沒有抵達事件），重試不會被 effect cleanup 取消（r4）", () => {
+    const setReduced = controllableReducedMotion();
+    mount("/records");
+    go("/calendar");
+    advance(74);
+    expect(phase()).toBe("switching-pre");
+    const main = document.querySelector("main#main") as HTMLElement;
+    const real = main.focus.bind(main);
+    let hiddenFrames = 8;
+    vi.spyOn(main, "focus").mockImplementation((o) => {
+      if (hiddenFrames > 0) return; // 交接那一刻 main 仍 hidden，focus() 默默失敗
+      real(o);
+    });
+    (document.activeElement as HTMLElement | null)?.blur();
+    advance(2); // 交接點：抵達 station，排好逐幀重試
+    expect(phase()).toBe("switching-post");
+    setReduced(true); // 重試的第一幀之前，被跳到終點 STATION（此次沒有抵達事件）
+    expect(phase()).toBe("station");
+    for (let i = 0; i < 14; i++) {
+      hiddenFrames--;
+      advance(17);
+    }
+    expect(document.activeElement).toBe(main);
+  });
   it("重試有上限（永遠不可聚焦就停，不無限排 rAF）", () => {
     const setReduced = controllableReducedMotion();
     mount("/os");
