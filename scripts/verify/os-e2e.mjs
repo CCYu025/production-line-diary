@@ -13,7 +13,7 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { sleep } from './cdp.mjs';
 import {
-  SEL, PHASE_EXPR, VISIBLE_FN, WEBGL_FALLBACK_TEXT, q, hudCh, osUrl, launchChrome, openPage, waitPhase, centerOf, Reporter,
+  SEL, PHASE_EXPR, VISIBLE_FN, WEBGL_FALLBACK_TEXT, q, hudCh, osUrl, launchChrome, openPage, waitPhase, passB1, centerOf, Reporter,
 } from './os-common.mjs';
 import { checkScratchServer, exportTargetInScratch, firstRecordId, seedPhoto, DEFAULT_SCRATCH } from './safety.mjs';
 
@@ -64,6 +64,7 @@ const phaseOf = (p) => p.eval(PHASE_EXPR);
 const modeOf = (p) => p.eval(`document.documentElement.getAttribute('data-mode')`);
 const isTransPhase = (x) => /-(pre|post)$/.test(x);
 async function settled(p, timeout = 4000) {
+  await passB1(p); // X4: first control-room show of a fresh tab stops at B1 (PRESS ANY KEY)
   await p.waitFor(`['hub','station'].includes(${PHASE_EXPR})`, timeout, 30);
   await sleep(150);
 }

@@ -25,6 +25,8 @@ export const SEL = {
   gate: '[data-os="device-gate"]',
   gateWeb: '[data-os="device-gate-web"]',
   enterOs: '[data-os="enter-os"]',
+  b1: '[data-os="b1"]',          // X4: PRESS ANY KEY screen (only before the first full boot of a tab)
+  sound: '[data-os="sound"]',    // X4: status bar sound button (SND ON / SND OFF / SND … / SND N/A)
 };
 export const WEBGL_FALLBACK_TEXT = '顯示卡不支援，已改用網頁模式';
 export const PHASES = ['hub', 'entering-pre', 'entering-post', 'station', 'exiting-pre', 'exiting-post', 'switching-pre', 'switching-post'];
@@ -96,9 +98,27 @@ export const HOOK_SRC = `(()=>{
 export const phase = (p) => p.eval(PHASE_EXPR);
 export const nowIn = (p) => p.eval('performance.now()');
 
+/**
+ * X4: a fresh tab that shows the control room for the first time stops at B1 (`[data-os="b1"]`, PRESS ANY KEY) before the boot.
+ * Presses one non-modifier key (a real CDP key event = user gesture) if B1 is showing; returns true if it pressed. Safe to call any time.
+ */
+export async function passB1(p, key = 'x') {
+  if (!(await p.eval(`!!document.querySelector('[data-os="b1"]')`).catch(() => false))) return false;
+  await p.key(key);
+  return true;
+}
+
+/** Waits for one of the phases. If B1 (PRESS ANY KEY) is showing and the wanted list contains 'hub', passes it first. */
 export async function waitPhase(p, want, timeout = 6000) {
   const list = Array.isArray(want) ? want : [want];
-  await p.waitFor(`${JSON.stringify(list)}.includes(${PHASE_EXPR})`, timeout, 20);
+  const t0 = Date.now();
+  let pressed = false;
+  while (Date.now() - t0 < timeout) {
+    if (await p.eval(`${JSON.stringify(list)}.includes(${PHASE_EXPR})`)) return;
+    if (!pressed && list.includes('hub')) pressed = await passB1(p);
+    await sleep(20);
+  }
+  throw new Error('waitFor timeout: ' + list.join('|'));
 }
 
 /** Center point of the first element matched by a JS expression (or null). */
