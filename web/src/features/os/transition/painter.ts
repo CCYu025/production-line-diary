@@ -45,6 +45,9 @@ import { dbgBegin, dbgOverlayFrame, dbgSet, dbgTime, transitionDebugEnabled } fr
 import { ENTER, EXIT, SWITCH } from "./timing";
 import { applyAlphaTrail, applyTrail } from "./trail";
 
+/** 離開亮點的暗暈寬度（疊層像素；640×360 疊層在 1920 寬下 1 像素＝3 個 CSS 像素） */
+export const EXIT_HALO = 3;
+
 export const OVERLAY_W = CARD_W;
 export const OVERLAY_H = CARD_H;
 
@@ -296,9 +299,9 @@ export class OverlayPainter {
   /* ----- 共用 ----- */
 
   /** 不透明階段的開頭：CRT 開＝向 --page 拖尾（applyTrail）；第一次或 CRT 關＝直接蓋一層不透明 --page。 */
-  private coverPage(dt: number): void {
+  private coverPage(dt: number, trail = true): void {
     const { ctx } = this;
-    if (this.covered && keepFor(this.o.level) > 0) applyTrail(ctx, this.o.palette.page, this.o.level, dt, OVERLAY_W, OVERLAY_H, false);
+    if (trail && this.covered && keepFor(this.o.level) > 0) applyTrail(ctx, this.o.palette.page, this.o.level, dt, OVERLAY_W, OVERLAY_H, false);
     else {
       ctx.fillStyle = rgbCss(this.o.palette.page);
       ctx.fillRect(0, 0, OVERLAY_W, OVERLAY_H);
@@ -534,8 +537,9 @@ export class OverlayPainter {
     const g = exitGeometry(t, OVERLAY_W, OVERLAY_H, this.block);
     const p = this.o.palette;
     if (t < EXIT.handoff) {
-      // X1／X2：不透明 --page 上的亮面塊（代表工作站外框範圍）→ 亮線 → 亮點；CRT 開時留下磷光拖尾
-      this.coverPage(dt);
+      // X1／X2：不透明 --page 上的亮面塊（代表工作站外框範圍）→ 亮線 → 亮點。
+      // 磷光拖尾只在 X2 之後留（X5）：X1 面塊垂直壓扁時拖尾與掃描線會疊出橫向的百葉窗條紋，所以 X1 每幀都是不透明 --page 全蓋
+      this.coverPage(dt, t >= EXIT.X1[1]);
       ctx.fillStyle = rgbCss(mixRgb(this.base, WHITE, g.heat));
       ctx.fillRect(g.x, g.y, g.w, g.h);
     } else {
@@ -546,6 +550,9 @@ export class OverlayPainter {
       } else applyAlphaTrail(ctx, this.o.level, dt, OVERLAY_W, OVERLAY_H, false);
       ctx.fillStyle = rgbCss(WHITE, g.alpha * 0.25);
       ctx.fillRect(g.x - 6, g.y - 3, g.w + 12, g.h + 6);
+      // 暗暈（X5）：亮點底下是控制室剛現身的明亮特寫螢幕面，白點會被吃掉；先在點周圍墊一圈 --page 色，亮點對周圍的對比才夠
+      ctx.fillStyle = rgbCss(p.page, g.alpha);
+      ctx.fillRect(g.x - EXIT_HALO, g.y - EXIT_HALO, g.w + EXIT_HALO * 2, g.h + EXIT_HALO * 2);
       ctx.fillStyle = rgbCss(mixRgb(WHITE, p.accent, 0.15), g.alpha);
       ctx.fillRect(g.x, g.y, g.w, g.h);
     }

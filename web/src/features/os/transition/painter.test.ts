@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CARD_FRAME_FULL, exitBlockRect, type Rect } from "./choreo";
 import { resetTransitionDebugForTest, transitionDebugEnabled } from "./debug";
-import { fillNoise, makeNoisePool, NOISE_POOL_FRAMES, OverlayPainter, OVERLAY_H, OVERLAY_W, runWarmFrame, WARM_FRAMES, type OverlayKind, type OverlayPalette } from "./painter";
+import { EXIT_HALO, fillNoise, makeNoisePool, NOISE_POOL_FRAMES, OverlayPainter, OVERLAY_H, OVERLAY_W, runWarmFrame, WARM_FRAMES, type OverlayKind, type OverlayPalette } from "./painter";
 import { ENTER, EXIT, SWITCH } from "./timing";
 import type { CrtLevel } from "../crt/settings";
 
@@ -193,25 +193,30 @@ describe("進入：最後 60ms 完全乾淨", () => {
 });
 
 describe("磷光拖尾（疊層）：CRT 開才拖尾，關＝全蓋不拖", () => {
-  it("離開 X1：CRT 標準第二幀以 1-keep 的不透明度蓋 --page；CRT 關每幀都是不透明 --page", () => {
+  it("離開 X1 沒有拖尾（X5：避免百葉窗條紋）：CRT 標準的每一幀也是不透明 --page 全蓋；X2 起才以 1-keep 的不透明度蓋", () => {
     const std = make("exit", { level: "std" });
-    std.at(0);
+    for (const t of [0, 16.67, 50, 100, EXIT.X1[1] - 1]) {
+      std.reset();
+      std.at(t);
+      const cover = std.main.calls.find((c) => c.fn === "fillRect" && c.args[2] === OVERLAY_W && c.args[3] === OVERLAY_H)!;
+      expect(cover.alpha).toBe(1);
+    }
     std.reset();
-    std.at(16.67);
-    const cover = std.main.calls.find((c) => c.fn === "fillRect" && c.args[2] === OVERLAY_W)!;
-    expect(cover.alpha).toBeCloseTo(0.15, 3);
+    std.at(EXIT.X1[1] + 16.67);
+    const cover = std.main.calls.find((c) => c.fn === "fillRect" && c.args[2] === OVERLAY_W && c.args[3] === OVERLAY_H)!;
+    expect(cover.alpha).toBeCloseTo(0.15, 1);
     const off = make("exit", { level: "off" });
-    off.at(0);
+    off.at(EXIT.X2[0]);
     off.reset();
-    off.at(16.67);
+    off.at(EXIT.X2[0] + 16.67);
     const cover2 = off.main.calls.find((c) => c.fn === "fillRect" && c.args[2] === OVERLAY_W)!;
     expect(cover2.alpha).toBe(1);
   });
   it("拖尾依實際 dt 換算（兩倍 dt 蓋得更多）", () => {
     const a = make("exit", { level: "std" });
-    a.at(0);
+    a.at(EXIT.X2[0]);
     a.reset();
-    a.at(33.3);
+    a.at(EXIT.X2[0] + 33.3);
     const cover = a.main.calls.find((c) => c.fn === "fillRect" && c.args[2] === OVERLAY_W)!;
     expect(cover.alpha).toBeCloseTo(1 - 0.85 ** 2, 2);
   });
@@ -261,6 +266,23 @@ describe("離開：X1 亮面塊壓成亮線、X2 收成亮點、X3 淡出", () =
     m.at(EXIT.X3[1] + 50);
     m.at(EXIT.total);
     expect(m.main.calls).toEqual([]);
+  });
+  it("X5：交接點之後亮點底下先墊一圈 --page 色暗暈（EXIT_HALO），再畫白點；暗暈與亮點一起淡出", () => {
+    const m = make("exit", { level: "off" });
+    m.at(EXIT.handoff - 1);
+    for (const t of [EXIT.handoff, 330, 360]) {
+      m.reset();
+      m.at(t);
+      const rects = m.main.calls.filter((c) => c.fn === "fillRect");
+      const dot = rects[rects.length - 1]!;
+      const halo = rects[rects.length - 2]!;
+      expect(dot.args[2]).toBe(6);
+      const alphaOf = (c: Call) => Number(String(c.style).match(/,([\d.]+)\)$/)![1]);
+      expect(String(halo.style)).toMatch(/^rgba\(7,11,17,/);
+      expect(halo.args[0]).toBeCloseTo(dot.args[0]! - EXIT_HALO, 6);
+      expect(halo.args[2]).toBeCloseTo(6 + EXIT_HALO * 2, 6);
+      expect(alphaOf(halo)).toBeCloseTo(alphaOf(dot), 6);
+    }
   });
   it("離開沒有任何文字（signal lock 等）與台標層繪製", () => {
     const m = make("exit");
