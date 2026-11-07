@@ -1,8 +1,12 @@
 /*
  * 音效引擎（docs/os-mode-spec.md §8；X4）：一個 AudioContext、一條總音量鏈、一個嗡聲。
  *
- * - AudioContext 只在使用者手勢的處理函式裡建立或 resume（activate，由 useAudio 在 window 的 keydown／pointerdown 捕獲階段呼叫）；之前一律不建立。
+ * - AudioContext 只在使用者手勢之後建立（activate，由 useAudio 在 window 的 keydown／pointerdown 捕獲階段呼叫）；之前一律不建立。
  *   建立失敗＝永久靜默（狀態 unsupported，不影響任何功能）。
+ * - 建立時機（X5）：B1（PRESS ANY KEY，黑畫面）的那一次手勢在處理函式裡同步建立；其餘（短開機、深層連結）手勢只記下「已啟用」，
+ *   context 延到下一個「沒有轉場進行中」的閒置時刻（requestIdleCallback，timeout 1s）才建立——建立 context 會卡主執行緒約 380ms。
+ *   依據是 Chrome 的 sticky activation：手勢之後才建立的 context 直接是 running。還沒建立前要播的音效直接略過（不排隊）。
+ *   建立後立刻用一個 0 增益、1ms 的節點預熱整條鏈，第一個真的音效才不會晚。
  * - 手勢不一定讓 context 變成 running：Esc 不被 Chrome 當成「使用者啟用」，所以 B1 用 Esc 進入時 context 會留在 suspended（狀態 pending），
  *   下一次手勢再 resume（每次手勢都會再呼叫 activate，直到 running）。
  * - 靜音＝總音量 20ms 淡到 0，context 保留；分頁隱藏 suspend()、可見 resume()；離開 OS 模式 close()。
@@ -31,10 +35,35 @@ const NOOP_PLAYBACK: Playback = { cancel() {} };
 export const PENDING_PLAY_MAX_AGE_MS = 300;
 const MAX_PENDING = 8;
 
+/** 閒置排程：回傳取消函式。預設用 requestIdleCallback（timeout 1s），沒有的瀏覽器退回 setTimeout。 */
+export type IdleScheduler = (cb: () => void) => () => void;
+/** 延後建立的最長等待（毫秒，requestIdleCallback 的 timeout） */
+export const IDLE_TIMEOUT_MS = 1000;
+/** 延後建立時，轉場進行中就再等這麼久重試（毫秒） */
+export const IDLE_RETRY_MS = 100;
+
+function defaultIdle(cb: () => void): () => void {
+  if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+    const id = window.requestIdleCallback(cb, { timeout: IDLE_TIMEOUT_MS });
+    return () => window.cancelIdleCallback?.(id);
+  }
+  const id = setTimeout(cb, 50);
+  return () => clearTimeout(id);
+}
+
+/** 建立時機的策略（由 useAudioSession 依導演狀態提供）。 */
+export interface ActivationPolicy {
+  /** true＝這一次手勢不要在處理函式裡建立 context（B1 以外的情況） */
+  shouldDefer: () => boolean;
+  /** true＝轉場或開機進行中，延後的建立要再等 */
+  isBusy: () => boolean;
+}
+
 export interface EngineDeps {
   /** 建立 AudioContext；null＝瀏覽器不支援。預設用 window.AudioContext／webkitAudioContext */
   createContext?: (() => AudioContext) | null;
   now?: () => number;
+  scheduleIdle?: IdleScheduler;
 }
 
 function defaultFactory(): (() => AudioContext) | null {
@@ -56,6 +85,13 @@ export class AudioEngine {
   private hidden = false;
   private humWanted = false;
   private hum: SoundHandle | null = null;
+  /** 嗡聲目前是「淡入或已淡入」（applyHum 已套用）；避免沒在播時每次手勢都記一筆 fadeout */
+  private humOn = false;
+  /** 預熱節點的收尾（播完或 close() 時 disconnect） */
+  private warmNodes: (() => void) | null = null;
+  private policy: ActivationPolicy | null = null;
+  private readonly scheduleIdle: IdleScheduler;
+  private cancelIdle: (() => void) | null = null;
   private readonly active = new Set<SoundHandle>();
   private readonly cancelledBeforeStart = new WeakSet<SoundHandle>();
   private pending: Array<{ id: SoundId; delaySec: number; at: number; box: { handle: SoundHandle | null; dead: boolean } }> = [];
@@ -64,6 +100,7 @@ export class AudioEngine {
   constructor(deps: EngineDeps = {}) {
     this.factory = deps.createContext === undefined ? defaultFactory() : deps.createContext;
     this.now = deps.now ?? (() => performance.now());
+    this.scheduleIdle = deps.scheduleIdle ?? defaultIdle;
     this.snap = { status: this.factory ? "idle" : "unsupported", muted: false };
     if (audioDebugEnabled()) {
       setAudioDebugSource(() => ({
@@ -104,27 +141,109 @@ export class AudioEngine {
   }
 
   // ---- 啟用（只在使用者手勢的處理函式裡呼叫） ----
+  configure(policy: ActivationPolicy | null): void {
+    this.policy = policy;
+  }
+
+  /** 手勢已發生、context 還在等閒置時刻建立 */
+  get creationDeferred(): boolean {
+    return this.cancelIdle !== null;
+  }
+
   activate(): void {
     if (this.closed || this.failed || !this.factory) return;
     if (!this.ctx) {
-      try {
-        const ctx = this.factory();
-        this.ctx = ctx;
-        dbgContextCreated();
-        this.chain = buildMasterChain(ctx, this.tracker);
-        if (this.muted) this.chain.input.gain.value = 0;
-        this.noise = createNoiseBuffer(ctx);
-        ctx.onstatechange = () => this.onContextState();
-      } catch {
-        // 永久靜默：不影響任何功能
-        this.failed = true;
-        this.ctx = null;
-        this.chain = null;
-        this.refresh();
+      if (this.policy?.shouldDefer()) {
+        // 手勢只記下「已啟用」；建立延到閒置時刻（已排程就不重複排）
+        this.deferCreate();
         return;
       }
+      this.cancelDeferred();
+      if (!this.createNow()) return;
     }
+    this.resumeIfNeeded();
+  }
+
+  private deferCreate(): void {
+    if (this.cancelIdle) return;
+    const run = () => {
+      this.cancelIdle = null;
+      if (this.closed || this.failed || this.ctx) return;
+      if (this.policy?.isBusy()) {
+        // 轉場進行中：再等（requestIdleCallback 的 timeout 到了也不能硬建）
+        this.cancelIdle = this.scheduleIdleRetry();
+        return;
+      }
+      if (this.createNow()) this.resumeIfNeeded();
+    };
+    this.cancelIdle = this.scheduleIdle(run);
+  }
+
+  private scheduleIdleRetry(): () => void {
+    const id = setTimeout(() => {
+      this.cancelIdle = null;
+      this.deferCreate();
+    }, IDLE_RETRY_MS);
+    return () => clearTimeout(id);
+  }
+
+  private cancelDeferred(): void {
+    this.cancelIdle?.();
+    this.cancelIdle = null;
+  }
+
+  /** 建立 context 與整條鏈；失敗＝永久靜默並回傳 false */
+  private createNow(): boolean {
+    try {
+      const ctx = this.factory!();
+      this.ctx = ctx;
+      dbgContextCreated();
+      this.chain = buildMasterChain(ctx, this.tracker);
+      if (this.muted) this.chain.input.gain.value = 0;
+      this.noise = createNoiseBuffer(ctx);
+      ctx.onstatechange = () => this.onContextState();
+      this.warmUp(ctx);
+      return true;
+    } catch {
+      this.failed = true;
+      this.ctx = null;
+      this.chain = null;
+      this.refresh();
+      return false;
+    }
+  }
+
+  /** 預熱：0 增益、1ms 的節點走一遍整條鏈（不計入節點數；播完自己 disconnect）。 */
+  private warmUp(ctx: AudioContext): void {
+    try {
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      const o = ctx.createOscillator();
+      o.connect(g);
+      g.connect(this.chain!.input);
+      const t = ctx.currentTime;
+      const dispose = () => {
+        o.onended = null;
+        this.warmNodes = null;
+        try {
+          o.disconnect();
+          g.disconnect();
+        } catch {
+          /* 略 */
+        }
+      };
+      this.warmNodes = dispose;
+      o.onended = dispose;
+      o.start(t);
+      o.stop(t + 0.001);
+    } catch {
+      /* 預熱失敗不影響功能 */
+    }
+  }
+
+  private resumeIfNeeded(): void {
     const ctx = this.ctx;
+    if (!ctx) return;
     if (!this.hidden && ctx.state === "suspended") {
       try {
         void Promise.resolve(ctx.resume()).then(
@@ -196,6 +315,8 @@ export class AudioEngine {
 
   private cancelHandle(h: SoundHandle, fadeMs: number): void {
     if (h.done || !this.ctx) return;
+    // 已經自然播完、只是 ended 事件還沒到：不必再淡出或 stop，也不記 fadeout
+    if (h.endAt !== null && this.ctx.currentTime >= h.endAt) return;
     if (this.ctx.currentTime < h.startAt) {
       this.cancelledBeforeStart.add(h);
       dbgRetractStart(h.id, this.now());
@@ -232,8 +353,13 @@ export class AudioEngine {
         this.hum = renderSound(this.ctx, "hum", this.chain!.input, this.ctx.currentTime, { noise: this.noise!, tracker: this.tracker, initialLevel: 0 });
         dbgEvent("hum", "start", this.now());
       }
-      this.hum.setLevel(1, HUM_FADE_IN_MS);
-    } else if (this.hum) {
+      if (!this.humOn) {
+        this.humOn = true;
+        this.hum.setLevel(1, HUM_FADE_IN_MS);
+      }
+    } else if (this.hum && this.humOn) {
+      // 只有真的在播才淡出；已經淡出完的嗡聲，之後每次手勢都不再記、也不重複動作
+      this.humOn = false;
       dbgEvent("hum", "fadeout", this.now());
       this.hum.setLevel(0, HUM_FADE_OUT_MS);
     }
@@ -276,11 +402,14 @@ export class AudioEngine {
   // ---- 離開 OS 模式 ----
   close(): void {
     if (this.closed) return;
+    this.cancelDeferred();
     for (const p of this.pending) p.box.dead = true;
     this.pending = [];
     for (const h of Array.from(this.active)) h.stop(0);
     this.hum?.stop(0);
     this.hum = null;
+    this.humOn = false;
+    this.warmNodes?.();
     this.chain?.dispose();
     this.chain = null;
     const ctx = this.ctx;

@@ -217,7 +217,7 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
 
   const { state, skip, clock, gateActive, waiting } = useDirector(place, reduced);
   // 音效（X4）：第一次手勢啟用的監聽器必須早於輸入閘裝上（同一個 window 捕獲階段按註冊順序執行：輸入閘吃掉的那一次手勢，音效也要先拿到）
-  useAudioSession();
+  useAudioSession({ waiting, busy: isTransition(state) || (state.kind === "BOOT" && !waiting) });
   // B1 與 B2 跳過是兩道連續的閘：waiting 變了就重新武裝（那一次手勢仍由舊的閘攔到結束）
   useInputGate(
     gateActive && !suspended,

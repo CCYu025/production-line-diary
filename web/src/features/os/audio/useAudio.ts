@@ -29,11 +29,20 @@ export function installGestureActivation(target: Window, engine: () => AudioEngi
   };
 }
 
-export function useAudioSession(): void {
+export interface AudioSessionState {
+  /** 停在 B1（PRESS ANY KEY）：那一次手勢在處理函式裡同步建立 context（黑畫面，看不出卡頓）；其餘情況延後建立 */
+  waiting: boolean;
+  /** 轉場或開機進行中：延後的 context 建立要等它結束 */
+  busy: boolean;
+}
+
+export function useAudioSession(session: AudioSessionState): void {
   const pref = useSoundPref();
+  const sessionRef = React.useRef(session);
+  sessionRef.current = session;
 
   React.useLayoutEffect(() => {
-    getAudioEngine();
+    getAudioEngine().configure({ shouldDefer: () => !sessionRef.current.waiting, isBusy: () => sessionRef.current.busy });
     emitAudio();
     return installGestureActivation(window, getAudioEngine);
   }, []);
