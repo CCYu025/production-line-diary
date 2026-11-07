@@ -300,3 +300,77 @@ describe("歷史紀錄（上一頁）", () => {
     expect(getMode()).toBe("web");
   });
 });
+
+describe("X5：幽靈 /os 紀錄（從工作站離開後上一頁不用按兩次）", () => {
+  // 記憶體路由不寫 window.history.state；這裡用假的 idx（與記憶體路由的位置同步）模擬 createHashRouter 的 history.state.idx 與 history.length
+  let idx = 0;
+  let len = 3;
+  beforeEach(() => {
+    idx = 2;
+    len = 3;
+    Object.defineProperty(window.history, "state", { configurable: true, get: () => ({ idx }) });
+    Object.defineProperty(window.history, "length", { configurable: true, get: () => len });
+  });
+  afterEach(() => {
+    delete (window.history as unknown as Record<string, unknown>).state;
+    delete (window.history as unknown as Record<string, unknown>).length;
+  });
+
+  function setup(entries: string[], index: number) {
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/",
+          element: (
+            <>
+              <Probe />
+              <ModeShell />
+            </>
+          ),
+          children: [
+            { path: "dashboard", element: <div>dashboard-page</div> },
+            { path: "records", element: <div>records-page</div> },
+            { path: "os", element: <OsRouteElement /> },
+          ],
+        },
+      ],
+      { initialEntries: entries, initialIndex: index },
+    );
+    idx = index;
+    len = entries.length;
+    renderWith(router);
+    return router;
+  }
+
+  it("上一頁落在 /os（網頁模式）：沿同方向再退一步，一次回到原頁；不導向儀表板", async () => {
+    const router = setup(["/records", "/os", "/records"], 2);
+    idx = 1;
+    act(() => void router.navigate(-1));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/records"));
+    expect(router.state.historyAction).toBe("POP");
+    expect(screen.queryByText("dashboard-page")).toBeNull();
+    expect(getMode()).toBe("web");
+  });
+
+  it("下一頁落在 /os：沿同方向再進一步，回到工作站離開時的頁面", async () => {
+    const router = setup(["/records", "/os", "/records"], 0);
+    idx = 1;
+    act(() => void router.navigate(1));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/records"));
+    expect(router.state.historyAction).toBe("POP");
+  });
+
+  it("那個方向沒有紀錄可走（/os 是第一筆）：維持原本行為，導向儀表板", async () => {
+    const router = setup(["/os", "/records"], 1);
+    idx = 0;
+    act(() => void router.navigate(-1));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/dashboard"));
+  });
+
+  it("讀不到位置序號（idx 不是數字）：維持原本行為，導向儀表板", async () => {
+    const router = setup(["/records", "/os", "/records"], 2);
+    Object.defineProperty(window.history, "state", { configurable: true, get: () => null });
+    act(() => void router.navigate(-1));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/dashboard"));
+  });
+});
