@@ -5,6 +5,7 @@
 import * as THREE from "three";
 import type { ActiveAlert } from "./alerts";
 import { topSeverity } from "./alerts";
+import type { CrtLevel } from "../crt/settings";
 import { blipLocal, type HubParts, LOCK_POOL, MAX_BLIPS, PULSE_POOL, SEGMENTS_PER_BLIP } from "./hubLines";
 import { ALERT_RING_PERIOD_S, blipFrame, PING_MS, severityColorKey, SWEEP_OMEGA, sweepCrossed, TIER_PARAMS, tierOf, type Blip, type BlipColorKey, type BlipTier } from "./radar";
 
@@ -12,6 +13,13 @@ const PING_R0 = 0.1;
 const PING_R1 = 0.6;
 const LOCK_WIDTH = 2;
 const LOCK_WIDTH_THICK = 4;
+/**
+ * 濃 CRT（426×240）下，標準大小的鎖定框只剩約 8 個粗像素、看起來是一團點：框放大成這個倍數，線寬也加粗 1 像素
+ * （斜線在低解析度加掃描線下會斷成點，粗一點才連得起來、讀得出「框」）。標準與關不變。
+ */
+export const LOCK_SCALE_MAX = 1.6;
+export const LOCK_WIDTH_MAX = 3;
+export const LOCK_WIDTH_THICK_MAX = 5;
 
 interface Item {
   angle: number;
@@ -31,12 +39,23 @@ export class RadarAnimator {
   private tmp = new THREE.Color();
   private ringColor = new THREE.Color();
   private ringOn = false;
+  private lockScale = 1;
+  private lockW = LOCK_WIDTH;
+  private lockWThick = LOCK_WIDTH_THICK;
 
   constructor(
     private parts: HubParts,
     private page: THREE.Color,
     private colorOf: (k: BlipColorKey) => THREE.Color,
   ) {}
+
+  /** CRT 強度改變時呼叫：濃＝鎖定框放大。 */
+  setLevel(level: CrtLevel): void {
+    this.lockScale = level === "max" ? LOCK_SCALE_MAX : 1;
+    this.lockW = level === "max" ? LOCK_WIDTH_MAX : LOCK_WIDTH;
+    this.lockWThick = level === "max" ? LOCK_WIDTH_THICK_MAX : LOCK_WIDTH_THICK;
+    for (const lock of this.parts.radar.locks) lock.obj.scale.setScalar(this.lockScale);
+  }
 
   /** 光點或警示改變時呼叫（不是每幀）：寫入光點位置、分配鎖定框、設定警示外圈顏色。 */
   set(blips: readonly Blip[], alerts: readonly ActiveAlert[]): void {
@@ -95,7 +114,7 @@ export class RadarAnimator {
         const lock = radar.locks[it.lock]!;
         lock.obj.visible = f.lock > 0.01;
         lock.mat.opacity = f.lock;
-        const w = f.thick ? LOCK_WIDTH_THICK : LOCK_WIDTH;
+        const w = f.thick ? this.lockWThick : this.lockW;
         if (lock.mat.linewidth !== w) lock.mat.linewidth = w;
       }
       // ping：掃描線這一幀掃過方位角（嚴重／重大）

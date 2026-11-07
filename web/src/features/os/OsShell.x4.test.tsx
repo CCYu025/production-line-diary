@@ -229,6 +229,9 @@ describe("B1：PRESS ANY KEY", () => {
     document.addEventListener("keydown", seen);
     gesture("a"); // 短開機被這次手勢跳過（輸入閘吃掉），但音效仍啟用
     document.removeEventListener("keydown", seen);
+    // X5：短開機的手勢只記下「已啟用」，context 延到安靜視窗（沒有轉場進行中、≥1000ms 沒有輸入）之後的閒置時刻才建立
+    expect(ctxs).toHaveLength(0);
+    advance(1200);
     expect(ctxs).toHaveLength(1);
     expect(phase()).toBe("hub");
   });
@@ -242,6 +245,8 @@ describe("B1：PRESS ANY KEY", () => {
     document.addEventListener("keydown", seen);
     gesture("a");
     document.removeEventListener("keydown", seen);
+    expect(ctxs).toHaveLength(0);
+    advance(1200);
     expect(ctxs).toHaveLength(1);
     expect(seen).toHaveBeenCalledTimes(1);
   });
@@ -254,6 +259,9 @@ describe("狀態列音效按鈕、M 鍵、sound 指令", () => {
     expect(sndButton().textContent).toBe("SND …");
     expect(sndButton().getAttribute("aria-pressed")).toBe("true");
     gesture("a");
+    expect(sndButton().textContent).toBe("SND …");
+    expect(sndButton().getAttribute("aria-label")).toBe("音效準備中");
+    advance(1200);
     expect(sndButton().textContent).toBe("SND ON");
     expect(sndButton().getAttribute("aria-label")).toBe("音效：開啟，按下切換為靜音");
   });
@@ -261,6 +269,7 @@ describe("狀態列音效按鈕、M 鍵、sound 指令", () => {
   it("點按鈕切換：SND OFF（寫入 pld.os.sound）；靜音保留 context", () => {
     mount("/os");
     gesture("a");
+    advance(1200);
     act(() => sndButton().click());
     expect(sndButton().textContent).toBe("SND OFF");
     expect(sndButton().getAttribute("aria-pressed")).toBe("false");
@@ -281,6 +290,7 @@ describe("狀態列音效按鈕、M 鍵、sound 指令", () => {
   it("M 在控制室切換；焦點在輸入元件、有對話框、帶修飾鍵時不作用", () => {
     mount("/os");
     gesture("a");
+    advance(1200);
     kd("m");
     expect(sndButton().textContent).toBe("SND OFF");
     kd("M");

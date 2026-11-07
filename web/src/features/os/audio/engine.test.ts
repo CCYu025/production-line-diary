@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { audioDebugEnabled, resetAudioDebugForTest } from "./debug";
-import { AudioEngine, PENDING_PLAY_MAX_AGE_MS } from "./engine";
+import { AudioEngine, IDLE_RETRY_MS, QUIET_MS, PENDING_PLAY_MAX_AGE_MS } from "./engine";
 import { LIMITER, LIMITER_TRIM, MASTER_GAIN } from "./sounds";
 import { buildMasterChain, createNoiseBuffer, newTracker, renderSound } from "./synth";
 import { asContext, FakeAudioContext, FakeCompressor, FakeGain } from "./testUtils";
@@ -114,6 +114,7 @@ describe("音效生命週期", () => {
     const e = make();
     e.activate();
     const c = ctxs[0]!;
+    c.endSources(); // 預熱節點播完
     const base = c.liveNodes.length;
     e.play("relay");
     expect(c.liveNodes.length).toBeGreaterThan(base);
@@ -124,6 +125,7 @@ describe("音效生命週期", () => {
     const e = make();
     e.activate();
     const c = ctxs[0]!;
+    c.endSources(); // 預熱節點播完
     const base = c.liveNodes.length;
     for (let i = 0; i < 20; i++) {
       for (const id of ["enterRise", "enterClick", "enterNoise", "exitChirp", "exitDescend"] as const) e.play(id, 0.1);
@@ -135,6 +137,7 @@ describe("音效生命週期", () => {
     const e = make();
     e.activate();
     const c = ctxs[0]!;
+    c.endSources(); // 預熱節點播完
     const base = c.liveNodes.length;
     const started = e.play("enterRise");
     const later = e.play("enterClick", 0.6);
@@ -250,5 +253,208 @@ describe("synth", () => {
     expect(done).toHaveBeenCalledTimes(1);
     chain.dispose();
     expect(tracker.created).toBe(tracker.disconnected);
+  });
+});
+
+describe("X5：延後建立 context", () => {
+  const makeDeferred = (opts: { busy?: () => boolean; allowRunning?: boolean } = {}) => {
+    const idle: Array<() => void> = [];
+    const e = new AudioEngine({
+      createContext: () => {
+        const c = new FakeAudioContext();
+        c.allowRunning = opts.allowRunning ?? true;
+        ctxs.push(c);
+        return asContext(c);
+      },
+      now: () => clock,
+      scheduleIdle: (cb) => {
+        idle.push(cb);
+        return () => {
+          const i = idle.indexOf(cb);
+          if (i >= 0) idle.splice(i, 1);
+        };
+      },
+    });
+    e.configure({ shouldDefer: () => true, isBusy: opts.busy ?? (() => false) });
+    return { e, idle };
+  };
+
+  /** 手勢後讓時間走過安靜視窗（假計時器與注入的 clock 同步） */
+  const elapse = (ms: number) => {
+    clock += ms;
+    vi.advanceTimersByTime(ms);
+  };
+
+  it("延後：手勢只排安靜等待、不建立；安靜 ≥1000ms 後才排閒置回呼，閒置時刻才建立，之後直接 running", () => {
+    const { e, idle } = makeDeferred();
+    e.activate();
+    e.activate(); // 重複手勢不重複排
+    expect(ctxs).toHaveLength(0);
+    expect(idle).toHaveLength(0);
+    expect(e.creationDeferred).toBe(true);
+    expect(e.getSnapshot()).toMatchObject({ status: "idle", gestured: true });
+    elapse(QUIET_MS - 1);
+    expect(idle).toHaveLength(0);
+    elapse(1);
+    expect(idle).toHaveLength(1);
+    expect(ctxs).toHaveLength(0);
+    idle[0]!();
+    expect(ctxs).toHaveLength(1);
+    expect(e.creationDeferred).toBe(false);
+    expect(e.getSnapshot().status).toBe("running");
+  });
+  it("安靜視窗內又有輸入：重新計時，最後一次輸入之後 ≥1000ms 才建立", () => {
+    const { e, idle } = makeDeferred();
+    e.activate();
+    elapse(600);
+    e.noteInput();
+    elapse(600); // 距第一次手勢 1200ms，但距最後輸入只有 600ms
+    expect(idle).toHaveLength(0);
+    elapse(399);
+    expect(idle).toHaveLength(0);
+    elapse(1);
+    expect(idle).toHaveLength(1);
+    expect(ctxs).toHaveLength(0);
+  });
+  it("閒置回呼真正執行前又有輸入：不建立，回到安靜等待", () => {
+    const { e, idle } = makeDeferred();
+    e.activate();
+    elapse(QUIET_MS);
+    expect(idle).toHaveLength(1);
+    e.noteInput();
+    idle.shift()!();
+    expect(ctxs).toHaveLength(0);
+    expect(e.creationDeferred).toBe(true);
+    elapse(QUIET_MS);
+    idle.shift()!();
+    expect(ctxs).toHaveLength(1);
+  });
+  it("還沒建立前要播的音效直接略過、不排隊（建立後也不補播）", () => {
+    const { e, idle } = makeDeferred();
+    e.activate();
+    e.play("enterRise");
+    elapse(QUIET_MS);
+    idle[0]!();
+    const c = ctxs[0]!;
+    c.endSources();
+    expect(e.getSnapshot().status).toBe("running");
+    expect(c.liveNodes.length).toBe(3 + 0); // 只有總音量鏈（預熱節點已播完）
+  });
+  it("轉場進行中不建立：等一下再試，結束後（且安靜）才建立", () => {
+    let busy = true;
+    const { e, idle } = makeDeferred({ busy: () => busy });
+    e.activate();
+    elapse(QUIET_MS + IDLE_RETRY_MS * 3);
+    expect(idle).toHaveLength(0);
+    expect(ctxs).toHaveLength(0);
+    expect(e.creationDeferred).toBe(true);
+    busy = false;
+    elapse(IDLE_RETRY_MS);
+    expect(idle).toHaveLength(1);
+    idle.shift()!();
+    expect(ctxs).toHaveLength(1);
+    expect(e.getSnapshot().status).toBe("running");
+  });
+  it("shouldDefer 為 false（B1）：手勢處理函式裡同步建立，並取消已排的延後", () => {
+    let defer = true;
+    const { e, idle } = makeDeferred();
+    e.configure({ shouldDefer: () => defer, isBusy: () => false });
+    e.activate();
+    expect(e.creationDeferred).toBe(true);
+    expect(ctxs).toHaveLength(0);
+    defer = false;
+    e.activate();
+    expect(ctxs).toHaveLength(1);
+    expect(e.creationDeferred).toBe(false);
+    elapse(QUIET_MS * 2);
+    expect(idle).toHaveLength(0);
+    expect(ctxs).toHaveLength(1);
+  });
+  it("延後等待中 close()：取消排程、不建立", () => {
+    const { e, idle } = makeDeferred();
+    e.activate();
+    e.close();
+    expect(idle).toHaveLength(0);
+    expect(ctxs).toHaveLength(0);
+  });
+  it("延後建立的 context 仍 suspended（沒有 sticky activation）：維持 pending，下一次手勢再 resume", () => {
+    const { e, idle } = makeDeferred({ allowRunning: false });
+    e.activate();
+    elapse(QUIET_MS);
+    idle[0]!();
+    expect(e.getSnapshot().status).toBe("pending");
+    expect(ctxs[0]!.resumeCalls).toBe(1);
+  });
+  it("建立後立刻預熱：一個 0 增益、1ms 的振盪器走整條鏈，播完自己 disconnect", () => {
+    const e = make();
+    e.activate();
+    const c = ctxs[0]!;
+    const warm = c.sources[0]!;
+    const warmGain = c.nodes.find((n) => n instanceof FakeGain && n.connections.includes(c.nodes[0]!))! as unknown as FakeGain;
+    expect(warm.startedAt).toBe(0);
+    expect(warm.stoppedAt).toBeCloseTo(0.001, 6);
+    expect(warmGain.gain.value).toBe(0);
+    c.endSources();
+    expect(warm.disconnected).toBe(true);
+    expect(warmGain.disconnected).toBe(true);
+  });
+});
+
+describe("X5：除錯紀錄不重複", () => {
+  beforeEach(() => {
+    window.history.pushState({}, "", "/?osdebug=audio");
+    resetAudioDebugForTest();
+  });
+  afterEach(() => window.history.pushState({}, "", "/"));
+  const humEvents = () => window.__osAudio!().events.filter((x) => x.id === "hum").map((x) => x.kind);
+
+  it("嗡聲沒在播時，之後每次手勢都不再記 hum fadeout、也不重複動作", () => {
+    const e = make();
+    e.activate();
+    e.setHum(true);
+    e.setHum(false);
+    expect(humEvents()).toEqual(["start", "fadeout"]);
+    const gain = (ctxs[0]!.nodes.filter((n) => n instanceof FakeGain) as unknown as FakeGain[]).at(-1)!;
+    const calls = gain.gain.calls.length;
+    for (let i = 0; i < 5; i++) e.activate();
+    expect(humEvents()).toEqual(["start", "fadeout"]);
+    expect(gain.gain.calls.length).toBe(calls);
+    // 再回 HUB：重新淡入，可再淡出一次
+    e.setHum(true);
+    e.setHum(false);
+    expect(humEvents()).toEqual(["start", "fadeout", "fadeout"]);
+  });
+  it("嗡聲在播時多次手勢不重複淡入", () => {
+    const e = make();
+    e.activate();
+    e.setHum(true);
+    const gain = (ctxs[0]!.nodes.filter((n) => n instanceof FakeGain) as unknown as FakeGain[]).at(-1)!;
+    const calls = gain.gain.calls.length;
+    e.activate();
+    e.activate();
+    expect(gain.gain.calls.length).toBe(calls);
+  });
+  it("ended 晚到：已播完的音效被 cancel 不記 fadeout、不 stop、不設保險計時", () => {
+    const e = make();
+    e.activate();
+    const c = ctxs[0]!;
+    const pb = e.play("relay");
+    c.currentTime = 0.5; // 已經超過結束時間，但 ended 事件還沒來
+    const sources = c.sources.filter((s) => s.startedAt !== null);
+    const stops = sources.map((s) => s.stoppedAt);
+    pb.cancel();
+    expect(window.__osAudio!().events.map((x) => x.kind)).toEqual(["start"]);
+    expect(sources.map((s) => s.stoppedAt)).toEqual(stops);
+    c.endSources();
+    expect(window.__osAudio!().events.map((x) => x.kind)).toEqual(["start", "stop"]);
+  });
+  it("播放中被 cancel 仍記一次 fadeout", () => {
+    const e = make();
+    e.activate();
+    const c = ctxs[0]!;
+    const pb = e.play("exitDescend");
+    c.currentTime = 0.1;
+    pb.cancel();
+    expect(window.__osAudio!().events.map((x) => x.kind)).toEqual(["start", "fadeout"]);
   });
 });

@@ -29,7 +29,7 @@ import { RadarAnimator } from "./radarAnim";
 import type { HubAnomalies } from "./useHubAnomalies";
 import { MONITOR_COUNT, SCREEN_LOCAL, SCREEN_SIZE } from "./layout";
 import { pickChannel } from "./pick";
-import { BLIP_TOKEN, DIM_BLIP_MIX, SWEEP_OMEGA, type Blip, type BlipColorKey } from "./radar";
+import { BLIP_TOKEN, DIM_BLIP_HUE_MAX, DIM_BLIP_MIX, DIM_BLIP_MIX_MAX, SWEEP_OMEGA, type Blip, type BlipColorKey } from "./radar";
 import { drawMonitorScreen, TEX_H, TEX_W, UNSELECTED_BRIGHTNESS, type CursorRect } from "./screenTexture";
 import { signalKey, type HubSignals } from "./signals";
 
@@ -81,12 +81,17 @@ function mixColor(a: string, b: string, t: number): THREE.Color {
   return new THREE.Color(a).lerp(new THREE.Color(b), t);
 }
 
-function readBlipColors(): Record<BlipColorKey, THREE.Color> {
+/** 已解決光點的顏色：標準／關＝--ink-muted 往 --page 混（亮度約為嚴重度色的 2/3，在 --page 上仍清楚可見）；濃＝更暗、色相偏青（見 radar.ts 的 DIM_BLIP_MIX_MAX） */
+function dimBlipColor(c: ReturnType<typeof readOsColors>, level: CrtLevel): THREE.Color {
+  if (level !== "max") return new THREE.Color(c.page).lerp(new THREE.Color(c.inkMuted), DIM_BLIP_MIX);
+  const hue = new THREE.Color(c.inkMuted).lerp(new THREE.Color(c.accent), DIM_BLIP_HUE_MAX);
+  return new THREE.Color(c.page).lerp(hue, DIM_BLIP_MIX_MAX);
+}
+
+function readBlipColors(level: CrtLevel): Record<BlipColorKey, THREE.Color> {
   const out = {} as Record<BlipColorKey, THREE.Color>;
   for (const k of BLIP_KEYS) out[k] = new THREE.Color(readToken(BLIP_TOKEN[k]));
-  // 已解決：--ink-muted 往 --page 混（亮度約為嚴重度色的2/3，在 --page 上仍清楚可見）
-  const c = readOsColors();
-  out.dim = new THREE.Color(c.page).lerp(new THREE.Color(c.inkMuted), DIM_BLIP_MIX);
+  out.dim = dimBlipColor(readOsColors(), level);
   return out;
 }
 
@@ -126,11 +131,12 @@ function HubScene({
   blips,
   alerts,
   reduced,
+  level,
   motion,
-}: Pick<HubCanvasProps, "channel" | "signals" | "blips" | "alerts" | "reduced"> & { motion: React.MutableRefObject<Motion | null> }) {
+}: Pick<HubCanvasProps, "channel" | "signals" | "blips" | "alerts" | "reduced" | "level"> & { motion: React.MutableRefObject<Motion | null> }) {
   const scene = useThree((s) => s.scene);
-  const latest = React.useRef({ channel, signals, reduced });
-  latest.current = { channel, signals, reduced };
+  const latest = React.useRef({ channel, signals, reduced, level });
+  latest.current = { channel, signals, reduced, level };
 
   const built = React.useMemo<Built>(() => {
     const colors = readOsColors();
@@ -165,7 +171,7 @@ function HubScene({
     cursor.renderOrder = 3;
     cursor.visible = false;
     parts.monitors[CURSOR_INDEX]?.group.add(cursor);
-    const blipColors = readBlipColors();
+    const blipColors = readBlipColors(latest.current.level);
     return {
       accentColor: new THREE.Color(colors.accent),
       colors,
@@ -187,10 +193,11 @@ function HubScene({
       const sigs = latest.current.signals;
       CHANNELS.forEach((ch, i) => {
         const sig = sigs[ch.id];
-        const key = signalKey(sig);
+        // 濃與標準的貼圖版面不同：內容鍵帶上強度，切換強度時重畫
+        const key = `${latest.current.level}|${signalKey(sig)}`;
         if (!force && built.keys[i] === key) return;
         built.keys[i] = key;
-        const rect = drawMonitorScreen(built.canvases[i]!, built.colors, ch, sig);
+        const rect = drawMonitorScreen(built.canvases[i]!, built.colors, ch, sig, latest.current.level);
         built.textures[i]!.needsUpdate = true;
         if (i === CURSOR_INDEX) placeCursor(built, rect);
       });
@@ -200,7 +207,7 @@ function HubScene({
 
   React.useEffect(() => {
     redraw(false);
-  }, [redraw, signals]);
+  }, [redraw, signals, level]);
 
   // 字型（IBM Plex Mono）載入完成後重畫一次，避免第一幀用後備字型
   React.useEffect(() => {
@@ -250,8 +257,11 @@ function HubScene({
 
   // 光點與警示：改變時才寫入（位置、鎖定框、外圈顏色）；每幀只改顏色／不透明度（RadarAnimator.frame）
   React.useEffect(() => {
+    // 強度改變：鎖定框大小與已解決光點的顏色跟著變（光點顏色是物件池共用的 Color，原地改）
+    built.anim.setLevel(level);
+    built.blipColors.dim.copy(dimBlipColor(built.colors, level));
     built.anim.set(blips, alerts);
-  }, [built, blips, alerts]);
+  }, [built, blips, alerts, level]);
 
   React.useEffect(() => {
     const page = new THREE.Color(built.colors.page);
@@ -669,7 +679,7 @@ export default function HubCanvas({
         gl={{ antialias: false, alpha: false, powerPreference: "high-performance" }}
         camera={{ fov: CAMERA_FOV, near: 0.1, far: 120, position: [restPose(16 / 9).position.x, restPose(16 / 9).position.y, restPose(16 / 9).position.z] }}
       >
-        <HubScene channel={channel} signals={signals} blips={blips} alerts={alerts} reduced={reduced} motion={motion} />
+        <HubScene channel={channel} signals={signals} blips={blips} alerts={alerts} reduced={reduced} level={level} motion={motion} />
         <Rig mode={mode} clock={clock} reduced={reduced} sway={!flags.has("nosway")} channel={channel} patrolling={patrolling} level={level} motion={motion} />
         <Pipeline reduced={reduced} bloom={!flags.has("nobloom")} level={level} boot={boot} bootCounts={bootCounts} clock={clock} mode={mode} />
         <Picker pickable={pickable} onPick={onPick} level={level} />

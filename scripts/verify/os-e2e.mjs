@@ -439,12 +439,15 @@ check('E6.combobox', 'Esc closes only the combobox list', async (a) => {
   }, (p) => p.eval(`!document.querySelector('[role=combobox][aria-expanded="true"]')`));
 });
 check('E6.lightbox', 'Esc closes only the lightbox (photo seeded into the scratch record)', async (a) => {
-  if (!ctx.scratchOk) return a.skip('server is not a proven scratch server (needs a photo seeded): ' + ctx.scratchWhy);
-  await seedPhoto(ctx.url, A.scratch, 3);
+  // X5 §5.3: never a silent SKIP. On a proven scratch server the photo is seeded; otherwise the photo must already exist, and if the
+  // lightbox cannot be opened the waitFor below throws => FAIL (not skip, not pass).
+  if (ctx.scratchOk) await seedPhoto(ctx.url, A.scratch, 3); else a.note('not a proven scratch server, photo not seeded (' + ctx.scratchWhy + '): the lightbox must open with existing data or this FAILS');
   await escCase(a, 'lightbox', '#/records?open=3', async (p) => {
     await p.waitFor(`document.querySelector('[data-photo-index="0"]')`, 5000);
     await clickSel(p, '[data-photo-index="0"]');
     await p.waitFor(`document.querySelector('[aria-label="關閉照片"]')`, 3000);
+    await sleep(400);
+    if (!(await p.eval(`!!document.querySelector('[aria-label="關閉照片"]')`))) throw new Error('lightbox did not stay open');
   }, (p) => p.eval(`!document.querySelector('[aria-label="關閉照片"]')`));
 });
 check('E6.palette', 'Esc closes only the command palette (hub and station)', async (a) => {

@@ -419,6 +419,22 @@ describe("OsShell：指令列", () => {
     expect(document.querySelector('[data-os="palette"]')).not.toBeNull();
   });
 
+  it("指令列開啟時控制室整棵 inert（HUD 不可聚焦）；關閉還原，焦點回到開啟前的元素", () => {
+    mount("/form");
+    const field = screen.getByLabelText("欄位");
+    act(() => field.focus());
+    const root = () => document.querySelector('[data-os="root"]') as HTMLElement;
+    expect(root().hasAttribute("inert")).toBe(false);
+    key("k", { ctrlKey: true }, field);
+    expect(root().hasAttribute("inert")).toBe(true);
+    expect(root().contains(document.querySelector('[data-os="hud"]'))).toBe(true);
+    expect(root().contains(document.activeElement)).toBe(false);
+    key("Escape", {}, input());
+    advance(200);
+    expect(root().hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(field);
+  });
+
   it("工作站：/ 不開（輸入框內也不開）；Ctrl+K 開（焦點在表單欄位內也開）", () => {
     mount("/form");
     key("/");

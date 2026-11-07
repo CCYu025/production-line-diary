@@ -53,6 +53,7 @@ node process listening on the port).
 | `os-e2e.mjs` | E2 E3 E5 E6 E7, device gate, mode persistence, EXIT TO WEB, sidebar button, WebGL fallback, E1 export guard. | yes |
 | `os-shots.mjs` | design-review material (hub, strips, stations, palette, gate). | yes |
 | `os-perf.mjs` | P1 fps (headed, real GPU) and P2 rAF attribution. | yes |
+| `os-p6.mjs` | P6 heap growth (forced GC) + WebGL resource release, branch and main side by side. | yes |
 | `os-common.mjs` | selectors (`SEL`, `hudCh(n)`), page hook, helpers (`waitPhase` auto-passes B1, `passB1(page)`), `Reporter`. | – |
 | `serve.mjs` | safe server launcher. | – |
 
@@ -78,15 +79,20 @@ node scripts/verify/c1.mjs --base http://localhost:3115/ --new http://localhost:
   `--ignore-width-related` skips width-derived props and rect x/w (S4(b): OS frame has a different width).
   **`--ignore-offset-y`** (needs `--scope`) subtracts the scope root's own y from every rect y, i.e. ignores the vertical offset of the whole
   `<main>` caused by the OS frame bar (56 px) while still comparing the layout inside it.
+  **`--ignore-vertical`** skips every height-related difference (rect y/h, `height`/`block-size`/`min-/max-height`, `top`/`bottom`/`inset-block`, `grid-template-rows`, origins) so each element is compared by computed style keyed by DOM path,
+  independent of the height/offset difference of `<main>` (OS frame bar + different viewport height stretch every descendant vertically; `--ignore-offset-y` alone left ~525 vertical diffs). Width-related diffs are still reported
+  unless `--ignore-width-related` is also given. Self-test: the same server on both sides must give 0 diffs.
+  `--new-storage k=v,k2=v2` sets localStorage entries on the `--new` side only (new-document script), e.g. `pld.os.crt=off|std|max` for the three CRT intensities.
 - **Determinism (new)**: before each snapshot every finite animation/transition is finished and every infinite one (cyber cursor blink, scanlines…) is
-  paused at t=0 (`--freeze js`, default; `--freeze css` additionally injects `animation-play-state:paused; transition:none; caret-color:transparent` which
-  also hides differences in those properties; `--freeze none`). `Date` is pinned to 2026-01-12 09:00 +08:00 and the timezone to Asia/Taipei
+  paused at t=0. Default `--freeze all` first injects a style that forces `animation-duration/-delay` and `transition-duration/-delay` to `0s` on every element and pseudo-element
+  (X5 §5.2, no timing-induced false diffs), then runs the JS finish/hold pass; `--freeze css` = CSS only, `--freeze js` = JS only, `--freeze none`. `Date` is pinned to 2026-01-12 09:00 +08:00 and the timezone to Asia/Taipei
   (`--no-freeze-time` to disable) – removes the minute-rollover flake of the new-record form and "today" highlighting.
 - **Act failures fail (new)**: a `wait`/`act` step that cannot be performed prints `ACTFAIL`, counts as a failure and the exit code is 1; it is never compared silently un-acted.
   (X0 clicked without scrolling and silently missed off-screen buttons, e.g. `form-validation`; clicks now scroll into view first.)
 - **Data-dependent scenarios (new)**: `dialog` needs a trashed record, `lightbox` needs a record with a photo. The example data has neither, so right before those scenarios
   c1 seeds both servers identically via the API (`seedTrash` record 4, `seedPhoto` record 3), **only on servers proven to be serve.mjs scratch servers** (`--scratch`).
-  Without proof the scenarios ACTFAIL (they never run silently). `--no-seed` disables seeding (data must already exist).
+  Without proof the scenarios ACTFAIL (they never run silently).
+  X5 §5.3: every overlay scenario (`dialog`, `lightbox`, `detail`, `more-panel`) has an `opened` check that is re-evaluated after the settle delay: if the dialog/lightbox is not really open, the scenario is an ACTFAIL (a failure), not a pass. `--no-seed` disables seeding (data must already exist).
 - OS mode on the `--new` side: pass `--new-query "?mode=os"`; the capture waits for `data-os-phase="station"`.
 - `--ax` / `--no-ax` AX-tree comparison (default: on only when not scoped). `--shots`, `--settle`, `--settle-after`, `--verbose`, `--cdp-port`, `--headed`.
 - Output: one line per scenario (`OK` / `DIFF` / `ACTFAIL`), JSON in `<out>/c1-result.json`. Exit 1 if any style/rect/pseudo/text/missing/extra/AX diff or any ACTFAIL
@@ -94,7 +100,9 @@ node scripts/verify/c1.mjs --base http://localhost:3115/ --new http://localhost:
 - With `--scope main`, portal content (dialogs, lightbox, more-panel) is outside `main` and not compared.
 
 S1 (web mode must be identical): `--base :3115 --new :3114 --theme all --widths 375,900,1280` (expect 0 diffs, 0 ACTFAIL).
-S4(b): `--base http://localhost:3115/ --base-query "?theme=cyber" --new http://localhost:3114/ --new-query "?mode=os" --theme standard-light --scope main --ignore-width-related --ignore-offset-y --widths 1280`.
+S4(b), once per CRT level (`off`, `std`, `max`):
+`--base http://localhost:3114/ --base-query "?theme=cyber" --new http://localhost:3114/ --new-query "?mode=os" --new-storage pld.os.crt=std --theme standard-light --scope main --ignore-offset-y --ignore-vertical --ignore-width-related --widths 1280 --scenarios dashboard,records,new,calendar,trash,settings,report,detail,form-validation`
+(web Cyber = `?theme=cyber`; the base and new sides may be the same server because mode is chosen by query). Drop `--ignore-width-related` to list the width-related differences (OS `<main>` is 1100 px wide vs 1056/1041 px next to the web sidebar; every element inside shifts x / changes w accordingly).
 (At 1280 only: the OS shell needs ≥1024 wide, below that the device gate replaces the station.)
 
 ## os-handoff.mjs — I1–I4
@@ -111,11 +119,12 @@ node scripts/verify/os-handoff.mjs --url http://localhost:3114/ [--throttles 1,4
 - Exit code: 1 any FAIL; 3 no FAIL but DEVIATED samples; 0 clean (`--allow-deviated` turns 3 into 0).
 - **Precision caveat**: software GL (headless default, SwiftShader) saturates the renderer main thread right after a transition starts, so early offsets (≤ ~150 ms) are often not reachable (many DEVIATED).
   For authoritative numbers use `--headed` on a GPU machine (as for P1); for a headless smoke use `--viewport 1024x640 --osdebug nobloom,nosway`. Hub canvas load is the dominant factor.
-- I1 pointer: ENTER 0..850 step 50 × {over `/records` sort control, over HUD CH-02}; EXIT 0..**300** step 50 × over HUD CH-02; SWITCH (CH-02→CH-01, via `location.hash` and via palette `dash`) 0..75 step 25 × {over ◀ HUB, over a dashboard KPI card}.
+- I1 pointer: ENTER 0..850 step 50 × {over `/records` sort control, over HUD CH-02}; EXIT 0..**300** step 50 × over HUD CH-02 (pre-handoff window; the 300..900 ms remainder is covered by I2 below); SWITCH (CH-02→CH-01, via `location.hash` and via palette `dash`) 0..75 step 25 × {over ◀ HUB, over a dashboard KPI card}.
   Asserts: phase jumps to `station`/`hub`, hash unchanged (no `sort=asc`, no navigation), no dialog, underlying control not focused, no phase regression after the jump (stale timers), then the second click on the real target works.
 - I1 keyboard (`--only key`): Enter and Space at several offsets, **focus placed on a real control** (enter: another HUD button / EXIT; exit: the sort control; switch: ◀ HUB). The control must not act; the keydown target and focus
   placement are printed. If every candidate is inert the focus falls to `body` (noted; `--strict-focus` turns that into a FAIL).
-- I2: first click 0/10/25/50 ms after the `*-post` stamp (enter/exit/switch) must hit the destination target (pointerdown target label checked, then the effect: `sort=asc` / `entering-pre` / `exiting-pre`).
+- I2: first click 0/10/25/50 ms after the `*-post` stamp (enter/switch) must hit the destination target (pointerdown target label checked, then the effect: `sort=asc` / `entering-pre` / `exiting-pre`).
+  **EXIT is sampled further: 0/10/25/50/100/200/300/400/500/600 ms after `exiting-post`, i.e. 300..900 ms after the transition start** (X5 §5.1: the whole 900 ms is covered; the last offset may land in the `hub` end phase, which is accepted because input must be live there too). None of these clicks may be swallowed.
 - I3: 12×7 grid + corners + centre sampled every frame/16 ms over palette open/close, enter, short switch and exit: overlay computed `pointer-events:none` in every phase, never returned by `elementFromPoint`, all 8 phases seen (missing ones listed).
 - I4: hub → 10 × (Enter/click on HUD CH-02, 100 ms, Esc, 100 ms) + a final enter (keyboard and pointer variants). After settling: exactly one stable `data-os-phase` token, route ⇔ phase (`#/os` ⇔ hub), no `#os-overlay[data-active=true]`, overlay `display:none`, one live region,
   no dialog, focus on a HUD button (hub) or inside `#main` (station), state unchanged 600 ms later.
@@ -136,7 +145,7 @@ Exit 1 on any FAIL. SKIP (e.g. mutating check without scratch proof) and MANUAL 
 | `E3.history` | back/forward: hub→ch enter, ch→hub exit, ch→ch switching, same channel none | |
 | `E3.direct` | direct `#/records/<id>/edit` → station, edit form, no entry transition | id from the served data |
 | `E5.drill`, `E5.detail`, `E5.save-toast` | chart drill, detail 編輯 (same channel: no transition per §3.3) / 複製為新紀錄 (switching), save redirect + toast 「查看」 | `E5.save-toast` creates a record (scratch proof required) |
-| `E6.*` | one Esc closes only: detail sheet (+ a second Esc leaves), confirm dialog, popover, combobox, lightbox, palette | lightbox seeds a photo (scratch proof required) |
+| `E6.*` | one Esc closes only: detail sheet (+ a second Esc leaves), confirm dialog, popover, combobox, lightbox, palette | lightbox: photo seeded on a proven scratch server; otherwise the photo must already exist. If the lightbox does not open the check FAILS (never SKIP) |
 | `E7.focus/title/skip-link/print` | focus on `#main` after every page change (not on first load), `document.title` for 7 routes + edit, skip link, print layout (OS chrome hidden, `<main>` rect and PDF page count equal to web mode) | print PDF count needs headless |
 | `GATE` | device gate at 1000×700, 1280×500, 1023×768 (shown) / 1024×600, 1280×720 (hidden); no hub/HUD/outlet/canvas while gated; button → web persisted; cold gated load enters without transition | |
 | `PERSIST` | `pld.mode` in localStorage, reload, new tab (same profile), `?mode=` override + URL cleanup (other query kept), X0 `sessionStorage` key removal, no cross-tab sync, throwing storage | |
@@ -146,7 +155,7 @@ Exit 1 on any FAIL. SKIP (e.g. mutating check without scratch proof) and MANUAL 
 | `E1` | **MANUAL** (see below) + export guard report + export click only if the guard passes and a 匯出 Excel control exists in the OS shell | |
 
 Not automatable / left to the independent verifier by hand: **E1** (new record with photo upload, edit, delete/restore/permanent delete, report printing, settings save – compare with web mode; photo capture and print dialogs are unreliable over CDP),
-**E4** final judgement (the script reports print rects, PDF page counts and screenshot hashes as proxies), **S5** moiré at 100/125/150 % Windows scaling, **P1/P6** on the real GPU (`os-perf.mjs --headed`), audio/UX feel (§9.7), real touch behaviour, screen-reader announcements of the live region
+**E4** final judgement (the script reports print rects, PDF page counts and screenshot hashes as proxies), **S5** moiré at 100/125/150 % Windows scaling, **P1/P6** on the real GPU (`os-perf.mjs` headed; `os-p6.mjs`), audio/UX feel (§9.7), real touch behaviour, screen-reader announcements of the live region
 (the script only checks DOM text), design-review judgement of the shots.
 
 ## os-shots.mjs — design review material (§9.6)
@@ -186,3 +195,21 @@ node scripts/verify/os-perf.mjs --url http://localhost:3114/ [--only p1,p2] [--d
   `[data-os="hud-ch"][aria-current="true"]`), waits for phase `station`, records stacks for 3 s and counts calls whose stack contains a file of an OS lazy chunk
   (computed from `--dist`, or `--os-chunks a.js,b.js`). Expect 0; other callers (react, entry, radix, sonner…) are listed for information.
 - Results in `<out>/result.json`. Exit 1 on failure.
+
+## os-p6.mjs — P6 (X5 §5.4 fixed method)
+
+```
+# 3114 = branch, 3115 = main/baseline (both started with serve.mjs); headed Chrome on the GPU machine
+node scripts/verify/os-p6.mjs --url http://localhost:3114/ --base http://localhost:3115/ [--cycles 20] [--warmup 1] [--rounds 1]
+```
+
+- One script, one Chrome launch, both servers measured (separate browser contexts, interleaved; `--rounds N` alternates the order, medians are used).
+- **Every heap read is preceded by `HeapProfiler.collectGarbage`** (3 passes) and read with `Runtime.getHeapUsage().usedSize`. Heap baseline = post-GC heap at the hub after
+  `--warmup` enter/exit cycles (default 1: the first enter loads the lazy OS chunks, which is not growth); heap after `--cycles` (default 20) further cycles is compared to it.
+  Growth vs the cold first hub is printed too (informational).
+- Cycle = click the selected HUD channel button, wait `station`, click ◀ HUB, wait `hub` (`--settle` ms pause after each phase).
+- **Pass (branch)**: post-GC growth <= `--max-growth` (10 %) **or** <= main's growth + `--max-over-main` (1 percentage point); **and** the WebGL counts from `window.__osGl()`
+  (page loaded with `?osdebug=gldebug`) — geometries, textures, renderTargets — are back to (<=) the baseline taken at the hub before the cycles. A missing `__osGl`/counter is a FAIL, not a skip.
+  Without `--base` only the absolute 10 % rule applies (printed).
+- The WebGL renderer is recorded; software renderer or `--headless` ⇒ `INVALID`, exit 2 (spec §9.4), unless `--allow-software` (then informational, e.g. smoke runs).
+- Exit 0 pass / 1 fail / 2 invalid. Results in `<out>/result.json` (all raw heap/GL numbers per round and side).

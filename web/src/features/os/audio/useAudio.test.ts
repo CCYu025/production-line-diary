@@ -10,6 +10,10 @@ describe("soundButtonState", () => {
     expect(soundButtonState("off", "running")).toMatchObject({ label: "SND OFF", pressed: false, name: "音效：已靜音，按下開啟" });
     expect(soundButtonState("off", "idle").label).toBe("SND OFF");
     for (const st of ["idle", "pending"] as const) expect(soundButtonState("on", st)).toMatchObject({ label: "SND …", pressed: true });
+    // 手勢已發生、context 還沒建立：準備中；還沒手勢：等待第一次按鍵
+    expect(soundButtonState("on", "idle", true)).toMatchObject({ label: "SND …", name: "音效準備中" });
+    expect(soundButtonState("on", "idle", false).name).toContain("等待第一次按鍵");
+    expect(soundButtonState("on", "pending", true).name).toContain("等待第一次按鍵");
     expect(soundButtonState("on", "unsupported")).toMatchObject({ label: "SND N/A", disabled: true, pressed: false });
     expect(soundButtonState("off", "unsupported").label).toBe("SND N/A");
   });
@@ -18,7 +22,8 @@ describe("soundButtonState", () => {
 describe("installGestureActivation", () => {
   it("keydown／pointerdown 啟用；只按修飾鍵不算；不吞事件", () => {
     const activate = vi.fn();
-    const off = installGestureActivation(window, () => ({ activate }) as unknown as AudioEngine);
+    const noteInput = vi.fn();
+    const off = installGestureActivation(window, () => ({ activate, noteInput }) as unknown as AudioEngine);
     for (const k of ["Shift", "Control", "Alt", "Meta"]) window.dispatchEvent(new KeyboardEvent("keydown", { key: k }));
     expect(activate).not.toHaveBeenCalled();
     const ev = new KeyboardEvent("keydown", { key: "a", cancelable: true });
@@ -27,9 +32,18 @@ describe("installGestureActivation", () => {
     expect(ev.defaultPrevented).toBe(false);
     window.dispatchEvent(new MouseEvent("pointerdown"));
     expect(activate).toHaveBeenCalledTimes(2);
+    // 其餘輸入（指標移動、滾輪、修飾鍵）只記時間，不啟用
+    noteInput.mockClear();
+    window.dispatchEvent(new MouseEvent("pointermove"));
+    window.dispatchEvent(new WheelEvent("wheel"));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift" }));
+    expect(noteInput).toHaveBeenCalledTimes(3);
+    expect(activate).toHaveBeenCalledTimes(2);
     off();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+    window.dispatchEvent(new MouseEvent("pointermove"));
     expect(activate).toHaveBeenCalledTimes(2);
+    expect(noteInput).toHaveBeenCalledTimes(3);
   });
 });
 

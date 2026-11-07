@@ -64,12 +64,15 @@ export interface SoundSpec {
 const osc = (v: Omit<OscVoice, "kind">): OscVoice => ({ kind: "osc", ...v });
 const noise = (v: Omit<NoiseVoice, "kind">): NoiseVoice => ({ kind: "noise", ...v });
 
-/** 繼電器喀噠：兩次短促的高頻雜訊＋方波衰減（總長 ≤ 60ms） */
+/**
+ * 繼電器喀噠：兩次短促的高頻雜訊＋方波衰減。
+ * 尾端（X5）：最後一個聲部在 50ms 結束；總音量鏈的限制器有約 6ms 預看延遲，量到的「−60 dBFS 以上」長度才會落在 60ms 以內（原本 57ms 結束量到 61ms）。
+ */
 const CLICK_VOICES: readonly Voice[] = [
   noise({ at: 0, dur: 0.012, gain: 0.5, attack: 0.001, release: 0.008, filter: { type: "highpass", freq: [2400, 2400], q: 0.7 } }),
   osc({ at: 0.001, dur: 0.03, gain: 0.35, attack: 0.001, release: 0.025, wave: "square", freq: [1800, 700] }),
-  noise({ at: 0.036, dur: 0.012, gain: 0.4, attack: 0.001, release: 0.008, filter: { type: "highpass", freq: [1800, 1800], q: 0.7 } }),
-  osc({ at: 0.037, dur: 0.02, gain: 0.25, attack: 0.001, release: 0.016, wave: "square", freq: [1300, 600] }),
+  noise({ at: 0.032, dur: 0.012, gain: 0.4, attack: 0.001, release: 0.008, filter: { type: "highpass", freq: [1800, 1800], q: 0.7 } }),
+  osc({ at: 0.033, dur: 0.017, gain: 0.25, attack: 0.001, release: 0.014, wave: "square", freq: [1300, 600] }),
 ];
 
 export const SOUNDS: Readonly<Record<SoundId, SoundSpec>> = {
@@ -128,7 +131,7 @@ export const SOUNDS: Readonly<Record<SoundId, SoundSpec>> = {
     event: "離開 X1：高頻「啾」（約 6kHz 往下掃）",
     durationSec: 0.15,
     gainDb: -8,
-    voices: [osc({ at: 0, dur: 0.15, gain: 0.7, attack: 0.005, release: 0.04, wave: "sine", freq: [6000, 2200] })],
+    voices: [osc({ at: 0, dur: 0.14, gain: 0.7, attack: 0.005, release: 0.04, wave: "sine", freq: [6000, 2200] })],
   },
   exitDescend: {
     id: "exitDescend",
@@ -145,7 +148,8 @@ export const SOUNDS: Readonly<Record<SoundId, SoundSpec>> = {
     event: "短轉場：150ms 轉台雜訊（E3 縮短版）",
     durationSec: 0.15,
     gainDb: -8,
-    voices: [noise({ at: 0, dur: 0.15, gain: 0.9, attack: 0.008, release: 0.06, filter: { type: "bandpass", freq: [2800, 1100], q: 0.8 } })],
+    // 聲部 140ms（限制器預看約 6ms）：量到的 −60 dBFS 以上長度 ≤ 150ms
+    voices: [noise({ at: 0, dur: 0.14, gain: 0.9, attack: 0.008, release: 0.06, filter: { type: "bandpass", freq: [2800, 1100], q: 0.8 } })],
   },
   alert: {
     id: "alert",

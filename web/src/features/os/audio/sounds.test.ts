@@ -123,3 +123,13 @@ describe("A7：總音量上限與限制器", () => {
     expect(linearToDb(LIMITER_TRIM) + compressorMakeupDb(LIMITER.thresholdDb, LIMITER.kneeDb, LIMITER.ratio)).toBeCloseTo(0, 6);
   });
 });
+
+describe("X5：尾端長度（總音量鏈的限制器有約 6ms 預看延遲）", () => {
+  const lastEnd = (id: SoundId) => Math.max(...SOUNDS[id].voices.map((v) => v.at + v.dur));
+  it("喀噠類（relay／enterClick／cut）最後一個聲部在 52ms 前結束：量到的 −60 dBFS 以上長度 ≤ 60ms", () => {
+    for (const id of ["relay", "enterClick", "cut"] as const) expect(lastEnd(id)).toBeLessThanOrEqual(0.052);
+  });
+  it("短轉場雜訊與離開 X1 的啾聲最後一個聲部在 144ms 前結束：量到的長度 ≤ 150ms", () => {
+    for (const id of ["switchNoise", "exitChirp"] as const) expect(lastEnd(id)).toBeLessThanOrEqual(0.144);
+  });
+});

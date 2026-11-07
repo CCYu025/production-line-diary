@@ -10,6 +10,10 @@
 //                                 opts.ignoreCustoms: skip :root custom-property diffs (use when scoped).
 //                                 opts.ignoreOffsetY: (scoped snapshots) compare rect y relative to the scope root's own y, i.e. ignore
 //                                   the vertical offset of the whole subtree (OS frame bar above <main>); relative layout is still compared.
+//                                 opts.ignoreVertical: skip height-related diffs (rect y/h; height/block-size/min-max-height/top/bottom/inset-block/
+//                                   grid-template-rows/origins). Width-related diffs (rect x/w, width props) are still reported unless ignoreWidthRelated is
+//                                   also set. S4(b): the OS frame changes <main>'s height, which shifts/stretches descendants vertically; the per-element
+//                                   computed styles keyed by DOM path are what is compared.
 // data-fx attribute counts are recorded (snap.fx) but never counted as diffs.
 
 export function snapExpr(scope = null) {
@@ -47,7 +51,9 @@ export async function takeSnap(p, { scope = null } = {}) {
 
 const WIDTH_PROP = /^(min-|max-)?(width|height|inline-size|block-size)$|^(perspective-origin|transform-origin|grid-template-columns|grid-template-rows|left|right|inset-inline-start|inset-inline-end|inset-inline|margin-left|margin-right|margin-inline-start|margin-inline-end|column-width|text-indent|offset-.*|-webkit-perspective-origin|-webkit-transform-origin)$/;
 
-export function diffSnaps(a, b, { ignoreProps = [], ignoreRect = false, ignoreWidthRelated = false, ignoreCustoms = false, ignoreOffsetY = false } = {}) {
+const HEIGHT_PROP = /^(min-|max-)?(height|block-size)$|^(top|bottom|inset-block-start|inset-block-end|inset-block|grid-template-rows|perspective-origin|transform-origin|-webkit-perspective-origin|-webkit-transform-origin)$/;
+
+export function diffSnaps(a, b, { ignoreProps = [], ignoreRect = false, ignoreWidthRelated = false, ignoreCustoms = false, ignoreOffsetY = false, ignoreVertical = false } = {}) {
   const diffs = [];
   if (a.missingScope || b.missingScope) { diffs.push({ kind: 'missing-scope', a: !!a.missingScope, b: !!b.missingScope }); return diffs; }
   if (JSON.stringify(a.names) !== JSON.stringify(b.names)) diffs.push({ kind: 'propnames', a: a.names.length, b: b.names.length });
@@ -64,6 +70,7 @@ export function diffSnaps(a, b, { ignoreProps = [], ignoreRect = false, ignoreWi
       const oyA = ignoreOffsetY ? a.rootY ?? 0 : 0, oyB = ignoreOffsetY ? b.rootY ?? 0 : 0;
       const rr = ['x', 'y', 'w', 'h'].map((k, i) => [k, ea.r[i] - (i === 1 ? oyA : 0), eb.r[i] - (i === 1 ? oyB : 0)])
         .filter(([k]) => !(ignoreWidthRelated && (k === 'x' || k === 'w')))
+        .filter(([k]) => !(ignoreVertical && (k === 'y' || k === 'h')))
         .filter(([, x, y]) => Math.abs(x - y) > 0.011);
       if (rr.length) diffs.push({ kind: 'rect', p, tag: ea.tag, txt: ea.txt, d: rr.map(([k, x, y]) => `${k}:${x}->${y}`).join(' ') });
     }
@@ -72,12 +79,13 @@ export function diffSnaps(a, b, { ignoreProps = [], ignoreRect = false, ignoreWi
       const n = a.names[i];
       if (skip.has(n)) continue;
       if (ignoreWidthRelated && WIDTH_PROP.test(n)) continue;
+      if (ignoreVertical && HEIGHT_PROP.test(n)) continue;
       if (ea.v[i] !== eb.v[i]) pd.push(`${n}: ${ea.v[i]} -> ${eb.v[i]}`);
     }
     if (pd.length) diffs.push({ kind: 'style', p, tag: ea.tag, txt: ea.txt, d: pd });
     let peA = ea.pe, peB = eb.pe;
-    if (ignoreWidthRelated) {
-      const strip = (pe) => Object.fromEntries(Object.entries(pe).map(([k, o]) => [k, Object.fromEntries(Object.entries(o).filter(([n]) => n !== 'width' && n !== 'height'))]));
+    if (ignoreWidthRelated || ignoreVertical) {
+      const strip = (pe) => Object.fromEntries(Object.entries(pe).map(([k, o]) => [k, Object.fromEntries(Object.entries(o).filter(([n]) => !((ignoreWidthRelated && (n === 'width' || n === 'height')) || (ignoreVertical && n === 'height'))))]));
       peA = strip(peA); peB = strip(peB);
     }
     if (JSON.stringify(peA) !== JSON.stringify(peB)) diffs.push({ kind: 'pseudo', p, a: ea.pe, b: eb.pe });
