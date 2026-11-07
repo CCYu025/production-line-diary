@@ -491,9 +491,11 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
   const overlayKind = transitionKindOf(state);
   const cardCh = stationCh ? getChannel(stationCh) : channel;
   const stationInert = stationHidden ? { inert: "" } : undefined;
+  // 指令列（Radix Dialog，掛在 body）開啟時：控制室整棵（HUD、3D 螢幕、工作站）inert，背景不可聚焦也不可點；關閉即還原，焦點由指令列還給原來的元素
+  const rootInert = paletteOpen ? { inert: "" } : undefined;
 
   return (
-    <div className="os-root" data-os="root" data-crt={crtLevel} style={(bVars ?? undefined) as React.CSSProperties | undefined}>
+    <div className="os-root" data-os="root" data-crt={crtLevel} style={(bVars ?? undefined) as React.CSSProperties | undefined} {...(rootInert as object)}>
       <div className="os-hub" data-os="hub" data-visible={hubVisible ? "true" : "false"}>
         <HubCanvas
           running={hubVisible && !suspended}
