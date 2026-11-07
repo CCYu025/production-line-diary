@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { audioDebugEnabled, resetAudioDebugForTest } from "./debug";
-import { AudioEngine, IDLE_RETRY_MS, PENDING_PLAY_MAX_AGE_MS } from "./engine";
+import { AudioEngine, IDLE_RETRY_MS, QUIET_MS, PENDING_PLAY_MAX_AGE_MS } from "./engine";
 import { LIMITER, LIMITER_TRIM, MASTER_GAIN } from "./sounds";
 import { buildMasterChain, createNoiseBuffer, newTracker, renderSound } from "./synth";
 import { asContext, FakeAudioContext, FakeCompressor, FakeGain } from "./testUtils";
@@ -279,42 +279,78 @@ describe("X5：延後建立 context", () => {
     return { e, idle };
   };
 
-  it("延後：手勢只排閒置回呼、不建立；閒置時刻才建立，之後直接 running", () => {
+  /** 手勢後讓時間走過安靜視窗（假計時器與注入的 clock 同步） */
+  const elapse = (ms: number) => {
+    clock += ms;
+    vi.advanceTimersByTime(ms);
+  };
+
+  it("延後：手勢只排安靜等待、不建立；安靜 ≥1000ms 後才排閒置回呼，閒置時刻才建立，之後直接 running", () => {
     const { e, idle } = makeDeferred();
     e.activate();
     e.activate(); // 重複手勢不重複排
     expect(ctxs).toHaveLength(0);
-    expect(idle).toHaveLength(1);
+    expect(idle).toHaveLength(0);
     expect(e.creationDeferred).toBe(true);
-    expect(e.getSnapshot().status).toBe("idle");
+    expect(e.getSnapshot()).toMatchObject({ status: "idle", gestured: true });
+    elapse(QUIET_MS - 1);
+    expect(idle).toHaveLength(0);
+    elapse(1);
+    expect(idle).toHaveLength(1);
+    expect(ctxs).toHaveLength(0);
     idle[0]!();
     expect(ctxs).toHaveLength(1);
     expect(e.creationDeferred).toBe(false);
     expect(e.getSnapshot().status).toBe("running");
   });
+  it("安靜視窗內又有輸入：重新計時，最後一次輸入之後 ≥1000ms 才建立", () => {
+    const { e, idle } = makeDeferred();
+    e.activate();
+    elapse(600);
+    e.noteInput();
+    elapse(600); // 距第一次手勢 1200ms，但距最後輸入只有 600ms
+    expect(idle).toHaveLength(0);
+    elapse(399);
+    expect(idle).toHaveLength(0);
+    elapse(1);
+    expect(idle).toHaveLength(1);
+    expect(ctxs).toHaveLength(0);
+  });
+  it("閒置回呼真正執行前又有輸入：不建立，回到安靜等待", () => {
+    const { e, idle } = makeDeferred();
+    e.activate();
+    elapse(QUIET_MS);
+    expect(idle).toHaveLength(1);
+    e.noteInput();
+    idle.shift()!();
+    expect(ctxs).toHaveLength(0);
+    expect(e.creationDeferred).toBe(true);
+    elapse(QUIET_MS);
+    idle.shift()!();
+    expect(ctxs).toHaveLength(1);
+  });
   it("還沒建立前要播的音效直接略過、不排隊（建立後也不補播）", () => {
     const { e, idle } = makeDeferred();
     e.activate();
     e.play("enterRise");
+    elapse(QUIET_MS);
     idle[0]!();
     const c = ctxs[0]!;
     c.endSources();
     expect(e.getSnapshot().status).toBe("running");
     expect(c.liveNodes.length).toBe(3 + 0); // 只有總音量鏈（預熱節點已播完）
   });
-  it("轉場進行中不建立：等一下再試，結束後才建立", () => {
+  it("轉場進行中不建立：等一下再試，結束後（且安靜）才建立", () => {
     let busy = true;
     const { e, idle } = makeDeferred({ busy: () => busy });
     e.activate();
-    idle.shift()!();
+    elapse(QUIET_MS + IDLE_RETRY_MS * 3);
+    expect(idle).toHaveLength(0);
     expect(ctxs).toHaveLength(0);
     expect(e.creationDeferred).toBe(true);
-    vi.advanceTimersByTime(IDLE_RETRY_MS);
-    expect(idle).toHaveLength(1);
-    idle.shift()!();
-    expect(ctxs).toHaveLength(0); // 還在忙
     busy = false;
-    vi.advanceTimersByTime(IDLE_RETRY_MS);
+    elapse(IDLE_RETRY_MS);
+    expect(idle).toHaveLength(1);
     idle.shift()!();
     expect(ctxs).toHaveLength(1);
     expect(e.getSnapshot().status).toBe("running");
@@ -324,11 +360,15 @@ describe("X5：延後建立 context", () => {
     const { e, idle } = makeDeferred();
     e.configure({ shouldDefer: () => defer, isBusy: () => false });
     e.activate();
-    expect(idle).toHaveLength(1);
+    expect(e.creationDeferred).toBe(true);
+    expect(ctxs).toHaveLength(0);
     defer = false;
     e.activate();
     expect(ctxs).toHaveLength(1);
+    expect(e.creationDeferred).toBe(false);
+    elapse(QUIET_MS * 2);
     expect(idle).toHaveLength(0);
+    expect(ctxs).toHaveLength(1);
   });
   it("延後等待中 close()：取消排程、不建立", () => {
     const { e, idle } = makeDeferred();
@@ -340,6 +380,7 @@ describe("X5：延後建立 context", () => {
   it("延後建立的 context 仍 suspended（沒有 sticky activation）：維持 pending，下一次手勢再 resume", () => {
     const { e, idle } = makeDeferred({ allowRunning: false });
     e.activate();
+    elapse(QUIET_MS);
     idle[0]!();
     expect(e.getSnapshot().status).toBe("pending");
     expect(ctxs[0]!.resumeCalls).toBe(1);

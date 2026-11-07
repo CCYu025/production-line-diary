@@ -4,7 +4,8 @@
  * - AudioContext 只在使用者手勢之後建立（activate，由 useAudio 在 window 的 keydown／pointerdown 捕獲階段呼叫）；之前一律不建立。
  *   建立失敗＝永久靜默（狀態 unsupported，不影響任何功能）。
  * - 建立時機（X5）：B1（PRESS ANY KEY，黑畫面）的那一次手勢在處理函式裡同步建立；其餘（短開機、深層連結）手勢只記下「已啟用」，
- *   context 延到下一個「沒有轉場進行中」的閒置時刻（requestIdleCallback，timeout 1s）才建立——建立 context 會卡主執行緒約 380ms。
+ *   context 延到「沒有轉場進行中、而且使用者已經 ≥1000ms 沒有任何輸入（指標／按鍵／滾輪）」的安靜視窗之後，再等一個閒置時刻
+ *   （requestIdleCallback，timeout 1s）才建立——建立 context 會卡主執行緒約 380ms，不能落在剛點擊後的互動期。
  *   依據是 Chrome 的 sticky activation：手勢之後才建立的 context 直接是 running。還沒建立前要播的音效直接略過（不排隊）。
  *   建立後立刻用一個 0 增益、1ms 的節點預熱整條鏈，第一個真的音效才不會晚。
  * - 手勢不一定讓 context 變成 running：Esc 不被 Chrome 當成「使用者啟用」，所以 B1 用 Esc 進入時 context 會留在 suspended（狀態 pending），
@@ -23,6 +24,8 @@ export type EngineStatus = "idle" | "pending" | "running" | "unsupported" | "clo
 export interface EngineSnapshot {
   status: EngineStatus;
   muted: boolean;
+  /** 使用者手勢已經發生過（context 可能還在等安靜視窗才建立） */
+  gestured: boolean;
 }
 
 export interface Playback {
@@ -39,6 +42,8 @@ const MAX_PENDING = 8;
 export type IdleScheduler = (cb: () => void) => () => void;
 /** 延後建立的最長等待（毫秒，requestIdleCallback 的 timeout） */
 export const IDLE_TIMEOUT_MS = 1000;
+/** 延後建立前必須的安靜視窗：距離最後一次使用者輸入至少這麼久（毫秒） */
+export const QUIET_MS = 1000;
 /** 延後建立時，轉場進行中就再等這麼久重試（毫秒） */
 export const IDLE_RETRY_MS = 100;
 
@@ -92,6 +97,8 @@ export class AudioEngine {
   private policy: ActivationPolicy | null = null;
   private readonly scheduleIdle: IdleScheduler;
   private cancelIdle: (() => void) | null = null;
+  private gestured = false;
+  private lastInputAt = Number.NEGATIVE_INFINITY;
   private readonly active = new Set<SoundHandle>();
   private readonly cancelledBeforeStart = new WeakSet<SoundHandle>();
   private pending: Array<{ id: SoundId; delaySec: number; at: number; box: { handle: SoundHandle | null; dead: boolean } }> = [];
@@ -101,7 +108,7 @@ export class AudioEngine {
     this.factory = deps.createContext === undefined ? defaultFactory() : deps.createContext;
     this.now = deps.now ?? (() => performance.now());
     this.scheduleIdle = deps.scheduleIdle ?? defaultIdle;
-    this.snap = { status: this.factory ? "idle" : "unsupported", muted: false };
+    this.snap = { status: this.factory ? "idle" : "unsupported", muted: false, gestured: false };
     if (audioDebugEnabled()) {
       setAudioDebugSource(() => ({
         supported: this.factory !== null && !this.failed,
@@ -126,8 +133,8 @@ export class AudioEngine {
 
   private refresh(): void {
     const status = this.status();
-    if (status === this.snap.status && this.muted === this.snap.muted) return;
-    this.snap = { status, muted: this.muted };
+    if (status === this.snap.status && this.muted === this.snap.muted && this.gestured === this.snap.gestured) return;
+    this.snap = { status, muted: this.muted, gestured: this.gestured };
     emitAudio();
   }
 
@@ -150,8 +157,18 @@ export class AudioEngine {
     return this.cancelIdle !== null;
   }
 
+  /** 記下一次使用者輸入（指標移動、按鍵、滾輪…）的時間：延後建立要等它安靜 ≥QUIET_MS */
+  noteInput(): void {
+    this.lastInputAt = this.now();
+  }
+
   activate(): void {
     if (this.closed || this.failed || !this.factory) return;
+    this.noteInput();
+    if (!this.gestured) {
+      this.gestured = true;
+      this.refresh();
+    }
     if (!this.ctx) {
       if (this.policy?.shouldDefer()) {
         // 手勢只記下「已啟用」；建立延到閒置時刻（已排程就不重複排）
@@ -166,25 +183,32 @@ export class AudioEngine {
 
   private deferCreate(): void {
     if (this.cancelIdle) return;
-    const run = () => {
+    this.waitQuiet();
+  }
+
+  /** 等到「不忙、且最後一次輸入已經 ≥QUIET_MS」才排閒置回呼；條件沒達成就依剩餘時間再等。 */
+  private waitQuiet(): void {
+    const quietLeft = () => QUIET_MS - (this.now() - this.lastInputAt);
+    const wait = (ms: number) => {
+      const id = setTimeout(() => {
+        this.cancelIdle = null;
+        this.waitQuiet();
+      }, Math.max(1, ms));
+      this.cancelIdle = () => clearTimeout(id);
+    };
+    if (this.closed || this.failed || this.ctx) return;
+    if (this.policy?.isBusy()) return wait(IDLE_RETRY_MS);
+    if (quietLeft() > 0) return wait(quietLeft());
+    this.cancelIdle = this.scheduleIdle(() => {
       this.cancelIdle = null;
       if (this.closed || this.failed || this.ctx) return;
-      if (this.policy?.isBusy()) {
-        // 轉場進行中：再等（requestIdleCallback 的 timeout 到了也不能硬建）
-        this.cancelIdle = this.scheduleIdleRetry();
+      // 排閒置回呼到真正執行之間又有輸入或轉場：回到等待（requestIdleCallback 的 timeout 到了也不能硬建）
+      if (this.policy?.isBusy() || quietLeft() > 0) {
+        this.waitQuiet();
         return;
       }
       if (this.createNow()) this.resumeIfNeeded();
-    };
-    this.cancelIdle = this.scheduleIdle(run);
-  }
-
-  private scheduleIdleRetry(): () => void {
-    const id = setTimeout(() => {
-      this.cancelIdle = null;
-      this.deferCreate();
-    }, IDLE_RETRY_MS);
-    return () => clearTimeout(id);
+    });
   }
 
   private cancelDeferred(): void {

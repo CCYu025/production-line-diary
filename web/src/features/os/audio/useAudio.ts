@@ -17,15 +17,23 @@ const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta", "AltGraph", "C
 export function installGestureActivation(target: Window, engine: () => AudioEngine): () => void {
   const onKey = (e: Event) => {
     const k = (e as KeyboardEvent).key;
-    if (MODIFIER_KEYS.has(k)) return; // 只按修飾鍵不算手勢
+    if (MODIFIER_KEYS.has(k)) {
+      engine().noteInput();
+      return; // 只按修飾鍵不算手勢（但算輸入：延後建立要等它安靜）
+    }
     engine().activate();
   };
   const onPointer = () => engine().activate();
+  // 其餘輸入只記時間（延後建立 context 要等使用者 ≥1000ms 沒有任何輸入）；被動監聽、不影響捲動
+  const onInput = () => engine().noteInput();
+  const INPUT_EVENTS = ["pointermove", "pointerup", "wheel", "keyup", "touchstart", "touchmove"] as const;
   target.addEventListener("keydown", onKey, true);
   target.addEventListener("pointerdown", onPointer, true);
+  for (const t of INPUT_EVENTS) target.addEventListener(t, onInput, { capture: true, passive: true });
   return () => {
     target.removeEventListener("keydown", onKey, true);
     target.removeEventListener("pointerdown", onPointer, true);
+    for (const t of INPUT_EVENTS) target.removeEventListener(t, onInput, true);
   };
 }
 
@@ -77,15 +85,17 @@ export interface SoundButtonState {
 }
 
 /** 純函式：偏好與引擎狀態 → 按鈕顯示。 */
-export function soundButtonState(pref: SoundPref, status: EngineStatus): SoundButtonState {
+export function soundButtonState(pref: SoundPref, status: EngineStatus, gestured = false): SoundButtonState {
   if (status === "unsupported") return { label: "SND N/A", name: "音效：此瀏覽器不支援", pressed: false, disabled: true };
   if (pref === "off") return { label: "SND OFF", name: "音效：已靜音，按下開啟", pressed: false, disabled: false };
   if (status === "running") return { label: "SND ON", name: "音效：開啟，按下切換為靜音", pressed: true, disabled: false };
+  // 手勢已發生、context 還在等安靜視窗才建立（idle＋gestured）：準備中，不是在等按鍵
+  if (status === "idle" && gestured) return { label: "SND …", name: "音效準備中", pressed: true, disabled: false };
   return { label: "SND …", name: "音效：開啟，等待第一次按鍵或點擊後才會出聲，按下切換為靜音", pressed: true, disabled: false };
 }
 
 export function useSoundButton(): SoundButtonState {
   const pref = useSoundPref();
   const snap = React.useSyncExternalStore(subscribeAudio, getAudioSnapshot, getAudioSnapshot);
-  return soundButtonState(pref, snap.status);
+  return soundButtonState(pref, snap.status, snap.gestured);
 }
