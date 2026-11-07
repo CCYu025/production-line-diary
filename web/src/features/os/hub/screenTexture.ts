@@ -6,6 +6,7 @@
  * CH-03 的 READY 後面的 ▮ 不畫進貼圖，而是獨立小網格切換可見性，所以閃爍不會重新上傳貼圖。
  */
 import type { Channel } from "../channels";
+import type { CrtLevel } from "../crt/settings";
 import type { ChannelSignal } from "./signals";
 
 export const TEX_W = 256;
@@ -50,6 +51,21 @@ export const SCREEN_LAYOUT = {
   /** 字的外描邊（--page 色）：和邊框、掃描線分開，降低色偏造成的彩邊 */
   outline: 5,
 } as const;
+/**
+ * 濃 CRT 的版面（X5）：低解析度只有 426×240，一台螢幕只剩約 30–40 像素寬，次要小字（下方標籤、CH-04 的當日筆數）讀不出來，直接不畫，
+ * 把空間讓給主數值：字級放大、可用寬度拉到最寬、置中；頻道代號縮小一點。標準與關的版面不變（SCREEN_LAYOUT）。
+ */
+export const SCREEN_LAYOUT_MAX = {
+  codeY: 26,
+  codeSize: 52,
+  codeMaxWidth: 160,
+  bigY: 112,
+  bigSize: 150,
+  bigMaxWidth: 242,
+  readySize: 84,
+  cursorGap: 8,
+  outline: 4,
+} as const;
 /** 粗體用 IBM Plex Mono 600（已載入的最粗字重；700 沒有載入會被瀏覽器合成假粗體而糊掉） */
 const WEIGHT = 600;
 
@@ -73,10 +89,11 @@ function outlined(ctx: CanvasRenderingContext2D, text: string, x: number, y: num
 }
 
 /** 畫一張螢幕；回傳 ▮ 游標的矩形（CH-03）或 null。getContext 不可用（jsdom）回傳 null。 */
-export function drawMonitorScreen(canvas: HTMLCanvasElement, colors: ScreenColors, ch: Channel, sig: ChannelSignal): CursorRect | null {
+export function drawMonitorScreen(canvas: HTMLCanvasElement, colors: ScreenColors, ch: Channel, sig: ChannelSignal, level: CrtLevel = "std"): CursorRect | null {
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  const L = SCREEN_LAYOUT;
+  const max = level === "max";
+  const L = max ? { ...SCREEN_LAYOUT, ...SCREEN_LAYOUT_MAX } : SCREEN_LAYOUT;
   ctx.fillStyle = colors.page;
   ctx.fillRect(0, 0, TEX_W, TEX_H);
   ctx.strokeStyle = colors.accent;
@@ -101,7 +118,7 @@ export function drawMonitorScreen(canvas: HTMLCanvasElement, colors: ScreenColor
     outlined(ctx, sig.big, cx, L.bigY, colors.accent, colors.page);
     if (ready) cursor = { x: cx + fit.width / 2 + gap, y: L.bigY - fit.size * 0.42, w: cursorW, h: Math.round(fit.size * 0.84) };
   }
-  if (sig.caption !== null) {
+  if (sig.caption !== null && !max) {
     if (sig.small !== null) {
       // 標籤＋小字（CH-04：TODAY 3）一起置中
       const lab = fitFont(ctx, sig.caption, L.labelSize, 130);

@@ -16,7 +16,7 @@ import {
   type Blip,
   type BlipColorKey,
 } from "./radar";
-import { RadarAnimator } from "./radarAnim";
+import { LOCK_SCALE_MAX, LOCK_WIDTH_MAX, LOCK_WIDTH_THICK_MAX, RadarAnimator } from "./radarAnim";
 
 const TWO_PI = Math.PI * 2;
 
@@ -124,6 +124,23 @@ describe("RadarAnimator（只動顏色與不透明度）", () => {
     expect(parts.radar.pulses.filter((p) => p.ring.visible)).toHaveLength(1);
     anim.frame(tAt(1.05) + 0.6, false);
     expect(parts.radar.pulses.filter((p) => p.ring.visible)).toHaveLength(0);
+  });
+  it("X5：濃 CRT 的鎖定框放大並加粗（426×240 下標準大小只剩一團粗像素）；標準與關不變", () => {
+    const { parts, anim } = setup([blip("A", "critical", 1)]);
+    const lock = parts.radar.locks[0]!;
+    anim.frame(5, true);
+    expect(lock.obj.scale.x).toBe(1);
+    expect(lock.mat.linewidth).toBe(2);
+    anim.setLevel("max");
+    anim.frame(5, true);
+    expect(lock.obj.scale.x).toBe(LOCK_SCALE_MAX);
+    expect(lock.obj.scale.z).toBe(LOCK_SCALE_MAX);
+    expect(lock.mat.linewidth).toBe(LOCK_WIDTH_MAX);
+    expect(LOCK_WIDTH_THICK_MAX).toBeGreaterThan(LOCK_WIDTH_MAX);
+    anim.setLevel("std");
+    anim.frame(5, true);
+    expect(lock.obj.scale.x).toBe(1);
+    expect(lock.mat.linewidth).toBe(2);
   });
   it("重大光點有鎖定框且閃爍；減少動態效果時常亮、沒有 ping、沒有閃爍", () => {
     const { parts, anim } = setup([blip("A", "critical", 1)]);

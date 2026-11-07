@@ -12,6 +12,13 @@ import type { DiaryRecord, Severity } from "@/lib/types";
 export const RADAR_WINDOW_DAYS = 7;
 /** 已解決光點的顏色＝--page 往 --ink-muted 混的比例：亮度約為嚴重度色的 2/3（40% 與 50% 在 CRT 掃描線與暗角下的 1px 細線實測仍太暗，故取 0.7） */
 export const DIM_BLIP_MIX = 0.7;
+/**
+ * 濃 CRT 的已解決光點（X5）：426×240 的低解析度加上 1.5 倍暈開，灰藍色的已解決光點和紅色的未解決光點在 1 像素細線上看起來差不多亮、色相也被暈開洗淡。
+ * 濃時改成「更暗、色相往 --accent 的青色偏」：亮度拉低（混合比例 DIM_BLIP_MIX_MAX），色相先把 --ink-muted 往 --accent 混 DIM_BLIP_HUE_MAX。
+ * 標準與關不變（DIM_BLIP_MIX）。
+ */
+export const DIM_BLIP_MIX_MAX = 0.5;
+export const DIM_BLIP_HUE_MAX = 0.4;
 export const RADAR_RADIUS_MIN = 0.35;
 export const RADAR_RADIUS_MAX = 0.9;
 
