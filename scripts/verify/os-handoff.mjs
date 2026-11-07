@@ -57,6 +57,9 @@ const SC = {
     pre: 'exiting-pre', post: 'exiting-post', end: 'hub', total: 900, handoff: 300,
     url: () => osUrl(A.url, { hash: '#/records', osdebug: A.osdebug }), ready: q(SEL.back),
     offsets: range(0, 300, +A['exit-step']), keyOffsets: [50, 150, 250], variants: ['hud'],
+    // I2 offsets are measured from the *-post stamp (= handoff). Exit: 300..900 ms after the transition start == 0..600 ms after the handoff;
+    // the input gate must never swallow any of them (clicks/keys reach the hub directly).
+    postOffsets: [0, 10, 25, 50, 100, 200, 300, 400, 500, 600],
     focusCandidates: [SORT_EXPR_SEL()],
   },
   switch: {
@@ -68,7 +71,7 @@ const SC = {
 };
 /** CSS version of the sort control (focus candidate list uses selectors) */
 function SORT_EXPR_SEL() { return 'main th[aria-sort] button, main button[aria-label*="排序"]'; }
-const POST_OFFSETS = [0, 10, 25, 50];
+const POST_OFFSETS = [0, 10, 25, 50]; // default; a scenario may override with postOffsets (exit covers up to 900 ms from its start)
 let browser, pts;
 const results = [];
 const leads = {}; // learned CDP round-trip compensation per throttle
@@ -256,7 +259,9 @@ async function postOnce({ kind, trigger, offset, throttle }) {
     if (!ev) return { status: 'FAIL', notes: ['pointerdown not recorded'], p };
     const achieved = Math.round(ev.now - arm.e.now); const delta = achieved - offset;
     leads[throttle] = Math.max(0, Math.min(80, lead + delta));
-    if (ev.ph !== sc.post) return { status: 'DEVIATED', achieved, notes: [`pointerdown landed in phase ${ev.ph} (wanted ${sc.post})`], p };
+    // an offset that reaches the very end of the transition may legitimately land in the end phase (input must be live there as well)
+    const tailOk = offset >= sc.total - sc.handoff - TOL && ev.ph === sc.end;
+    if (ev.ph !== sc.post && !tailOk) return { status: 'DEVIATED', achieved, notes: [`pointerdown landed in phase ${ev.ph} (wanted ${sc.post})`], p };
     const bad = [];
     if (!POST_TARGET[kind].label(ev.ctl)) bad.push(`pointerdown hit "${ev.ctl}" instead of the destination target`);
     const hit = await POST_TARGET[kind].effect(p).then(() => true, () => false);
@@ -267,7 +272,7 @@ async function postOnce({ kind, trigger, offset, throttle }) {
   } catch (e) { return { status: 'ERROR', notes: ['error: ' + e.message.split('\n')[0]], p }; }
 }
 async function runI2(throttle, kinds) {
-  for (const kind of kinds) for (const offset of POST_OFFSETS) for (let rep = 0; rep < (offset === 0 ? +A.reps : 1); rep++) {
+  for (const kind of kinds) for (const offset of (SC[kind].postOffsets ?? POST_OFFSETS)) for (let rep = 0; rep < (offset === 0 ? +A.reps : 1); rep++) {
     const spec = { kind, variant: 'first-click', trigger: SC[kind].triggers?.[0] ?? null, offset, throttle };
     let last;
     for (let i = 1; i <= ATTEMPTS; i++) { last = await postOnce(spec); await last.p?.close(); last.attempts = i; if (last.status === 'PASS' || last.status === 'FAIL') break; }
