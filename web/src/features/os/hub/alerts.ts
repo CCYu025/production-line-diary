@@ -3,7 +3,7 @@
  * - 新異常（id 大於進入 HUB 時的基準）加入 store；離開再進入 HUB 不清除（基準會重建，但警示集合留著）。
  * - 確認（acknowledge）：進入 CH-01／CH-02，或指令列 `rec <id>`；已確認的 id 之後不會再被加入。
  * - 可同時存在多個警示；外圈用最嚴重的。
- * - 不發聲（X4 才做）：X4 可呼叫 setAlertToneHook 接上警示音。
+ * - 警示音由 X4 的 useAudioEvents 透過 setAlertToneHook 接上（2 秒內最多響一次）。
  */
 import type { Severity } from "@/lib/types";
 import { SEVERITY_ORDER } from "@shared/aggregate";
@@ -28,7 +28,7 @@ function emit() {
 
 /**
  * X4 掛鉤：每次有「新加入」的警示時呼叫（只在真的新增時，已確認或重複的不會）。
- * X4 在這裡接警示音；目前沒有人設定，所以不發聲。傳 null 解除。
+ * X4 的 useAudioEvents 在這裡接警示音（createAlertTone，2 秒內最多一次）。傳 null 解除。
  */
 export function setAlertToneHook(fn: Hook | null): void {
   toneHook = fn;

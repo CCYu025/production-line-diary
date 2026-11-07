@@ -1,7 +1,7 @@
 /*
  * 開機畫面的時間軸與文字（docs/os-mode-spec.md §5.5、D3；X2）：純函式，3D 層每幀以「距開機開始的毫秒」呼叫。
  *  B2 BIOS 自檢文字逐行出現（只有完整開機）→ B3 一條亮線展開成全畫面 → B4 線框由中心向外描繪。
- *  短開機只有 B3＋B4（BOOT_SHORT）。B1（PRESS ANY KEY）留到 X4。
+ *  短開機只有 B3＋B4（BOOT_SHORT）。B1（PRESS ANY KEY）不在這條時間軸，在 director/boot.ts（X4）。
  * 所有時間取自 transition/timing.ts 的 BOOT_FULL／BOOT_SHORT。
  */
 import { BOOT_FULL, BOOT_SHORT } from "../transition/timing";

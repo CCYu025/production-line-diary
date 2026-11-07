@@ -3,6 +3,7 @@
  * 導覽結果只回傳路徑與標籤，由呼叫端走 router 的 navigate()（這樣 useBlocker 的離開確認照常生效）。
  */
 import { getChannel, type ChannelId } from "../channels";
+import { SOUND_PREFS, type SoundPref } from "../audio/settings";
 import { CRT_LABEL, CRT_LEVELS, isCrtLevel, type CrtLevel } from "../crt/settings";
 
 export type ParsedCommand =
@@ -12,6 +13,8 @@ export type ParsedCommand =
   | { type: "help" }
   /** CRT 強度（D7）：level 為 null＝只問目前強度（沒有給參數） */
   | { type: "crt"; level: CrtLevel | null }
+  /** 音效開關（X4）：pref 為 null＝只問目前狀態（沒有給參數） */
+  | { type: "sound"; pref: SoundPref | null }
   | { type: "empty" }
   | { type: "error"; message: string };
 
@@ -38,6 +41,7 @@ export const COMMANDS: readonly CommandDef[] = [
   { name: "trash", usage: "trash", description: "回收桶", channel: "CH-06" },
   { name: "set", usage: "set", description: "設定", channel: "CH-07" },
   { name: "crt", usage: "crt off|std|max", description: "CRT 強度：關／標準／濃（例如 crt max）" },
+  { name: "sound", usage: "sound on|off", description: "音效：開／關（例如 sound off；不帶參數顯示目前狀態）" },
   { name: "export", usage: "export", description: "匯出 Excel（與側欄的「匯出 Excel」相同）", aliases: ["匯出"] },
   { name: "exit", usage: "exit", description: "離開 OS 模式，回到網頁模式" },
   { name: "help", usage: "help", description: "列出所有指令" },
@@ -87,6 +91,13 @@ export function parseCommand(text: string): ParsedCommand {
     return { type: "crt", level: arg };
   }
 
+  if (name === "sound") {
+    if (args.length === 0) return { type: "sound", pref: null };
+    const arg = args[0]!.toLowerCase();
+    if (args.length > 1 || !(SOUND_PREFS as readonly string[]).includes(arg)) return { type: "error", message: `sound 只接受 on 或 off（例如 sound off）` };
+    return { type: "sound", pref: arg as SoundPref };
+  }
+
   const def = COMMANDS.find((c) => c.name === name || c.aliases?.includes(name));
   if (!def) return { type: "error", message: `未知指令：${parts[0]}（${HELP_HINT}）` };
   if (args.length > 0) return { type: "error", message: `${def.name} 不接受參數（${HELP_HINT}）` };
@@ -112,7 +123,7 @@ export function suggest(text: string): Suggestion[] {
     return COMMANDS.filter((c) => c.name.startsWith(lower) || c.aliases?.some((a) => a.startsWith(lower))).map((c) => ({
       command: c.usage,
       description: c.description,
-      insert: c.usage === "rec <id>" || c.name === "crt" ? `${c.name} ` : c.usage,
+      insert: c.usage === "rec <id>" || c.name === "crt" || c.name === "sound" ? `${c.name} ` : c.usage,
     }));
   }
 
@@ -123,6 +134,13 @@ export function suggest(text: string): Suggestion[] {
     if (options.length > 0) return options;
     const usage = COMMANDS.find((c) => c.name === "crt")!;
     return [{ command: usage.usage, description: usage.description, insert: "crt " }];
+  }
+  if (name === "sound") {
+    const arg = rest.join(" ");
+    const options = SOUND_PREFS.filter((p) => p.startsWith(arg)).map((p) => ({ command: `sound ${p}`, description: `音效：${p === "on" ? "開" : "關"}`, insert: `sound ${p}` }));
+    if (options.length > 0) return options;
+    const usage = COMMANDS.find((c) => c.name === "sound")!;
+    return [{ command: usage.usage, description: usage.description, insert: "sound " }];
   }
   if (name !== "rec") return [];
   const arg = rest.join(" ");

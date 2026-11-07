@@ -93,7 +93,7 @@ describe("suggest", () => {
     expect(names("exp")).toEqual(["export"]);
     expect(names("匯")).toEqual(["export"]);
     expect(names("t")).toEqual(["trash"]);
-    expect(names("s")).toEqual(["set"]);
+    expect(names("s")).toEqual(["set", "sound on|off"]);
   });
   it("沒有符合：空陣列", () => {
     expect(suggest("zzz")).toEqual([]);
@@ -173,5 +173,39 @@ describe("crt 指令（D7）", () => {
   });
   it("補全出來的 insert 都能被 parseCommand 接受", () => {
     for (const s of suggest("crt ")) expect(parseCommand(s.insert)).toMatchObject({ type: "crt" });
+  });
+});
+
+describe("sound 指令（X4）", () => {
+  it("sound on|off → { type: sound, pref }（不分大小寫、容忍空白）", () => {
+    expect(parseCommand("sound on")).toEqual({ type: "sound", pref: "on" });
+    expect(parseCommand("sound off")).toEqual({ type: "sound", pref: "off" });
+    expect(parseCommand("  SOUND   OFF ")).toEqual({ type: "sound", pref: "off" });
+  });
+  it("sound 不帶參數＝查詢目前狀態（不是錯誤）", () => expect(parseCommand("sound")).toEqual({ type: "sound", pref: null }));
+  it("無效參數、多個參數 → error，訊息列出可用值", () => {
+    for (const bad of ["sound loud", "sound on off", "sound 1", "sound mute"]) {
+      const r = parseCommand(bad);
+      expect(r.type, bad).toBe("error");
+      if (r.type === "error") expect(r.message).toMatch(/on.*off/);
+    }
+  });
+  it("在指令表（help 會列出）", () => {
+    const def = COMMANDS.find((c) => c.name === "sound")!;
+    expect(def.usage).toBe("sound on|off");
+    expect(def.description.length).toBeGreaterThan(0);
+  });
+  it("Tab 補全：so 補成 'sound '；'sound ' 列出兩個選項；前綴過濾；無效回用法", () => {
+    const names = (t: string) => suggest(t).map((s) => s.command);
+    expect(names("so")).toEqual(["sound on|off"]);
+    expect(suggest("so")[0]!.insert).toBe("sound ");
+    expect(names("sound ")).toEqual(["sound on", "sound off"]);
+    expect(names("sound o")).toEqual(["sound on", "sound off"]);
+    expect(names("sound of")).toEqual(["sound off"]);
+    expect(suggest("sound of")[0]!.insert).toBe("sound off");
+    expect(names("sound zzz")).toEqual(["sound on|off"]);
+  });
+  it("補全出來的 insert 都能被 parseCommand 接受", () => {
+    for (const s of suggest("sound ")) expect(parseCommand(s.insert)).toMatchObject({ type: "sound" });
   });
 });

@@ -53,8 +53,10 @@ node process listening on the port).
 | `os-e2e.mjs` | E2 E3 E5 E6 E7, device gate, mode persistence, EXIT TO WEB, sidebar button, WebGL fallback, E1 export guard. | yes |
 | `os-shots.mjs` | design-review material (hub, strips, stations, palette, gate). | yes |
 | `os-perf.mjs` | P1 fps (headed, real GPU) and P2 rAF attribution. | yes |
-| `os-common.mjs` | selectors (`SEL`, `hudCh(n)`), page hook, helpers, `Reporter`. | – |
+| `os-common.mjs` | selectors (`SEL`, `hudCh(n)`), page hook, helpers (`waitPhase` auto-passes B1, `passB1(page)`), `Reporter`. | – |
 | `serve.mjs` | safe server launcher. | – |
+
+X4 note: a fresh tab (no `sessionStorage pld.os.boot`) shows B1 (`[data-os="b1"]`, PRESS ANY KEY) before the boot; `waitPhase(p, 'hub')` and `os-e2e settled()` press one key via `passB1`. Deep links to a station, short boots and reduced motion after the first pass have no B1. Audio debug hooks: `?osdebug=audio` → `window.__osAudio()`, `window.__osAudioRender(id)` (see docs/os-mode-spec.md X4 notes).
 
 DOM contract used by the OS scripts: `<html data-mode="os" data-os-phase="hub|entering-pre|entering-post|station|exiting-pre|exiting-post|switching-pre|switching-post">`,
 `[data-os="hud"]`, `[data-os="hud-ch"][data-ch="CH-0N"]` (`aria-current="true"` = selected), `[data-os="statusbar|clock|exit"]`,

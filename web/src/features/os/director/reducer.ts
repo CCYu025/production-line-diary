@@ -14,8 +14,8 @@ import { channelForPath, isHubPath, type ChannelId } from "../channels";
 export type Place = { kind: "hub" } | { kind: "channel"; ch: ChannelId | null };
 
 export type DirectorState =
-  /** short＝短開機（只有 B3＋B4，≤ 1s）；省略或 false＝完整開機（≤ 4s）。見 boot.ts／transition/timing.ts */
-  | { kind: "BOOT"; dest: Place; gen: number; short?: boolean }
+  /** short＝短開機（只有 B3＋B4，≤ 1s）；省略或 false＝完整開機（≤ 4s）。b1＝還停在 B1（PRESS ANY KEY，等第一次手勢，X4）。見 boot.ts／transition/timing.ts */
+  | { kind: "BOOT"; dest: Place; gen: number; short?: boolean; b1?: true }
   | { kind: "HUB"; gen: number }
   | { kind: "ENTERING"; ch: ChannelId | null; handoff: boolean; gen: number }
   | { kind: "STATION"; ch: ChannelId | null; gen: number }
@@ -34,7 +34,12 @@ export type DirectorEvent =
    * swallowed＝輸入閘已經把這次輸入攔下來了（閘是以「已提交的畫面」為準，HANDOFF 的更新可能剛好排在它前面）：
    * 這次輸入已經被吃掉，所以不管交接旗標，一律跳到終點，不讓使用者的點擊「既被吞掉、轉場又沒跳」。
    */
-  | { type: "INPUT"; swallowed?: boolean };
+  | { type: "INPUT"; swallowed?: boolean }
+  /**
+   * B1 的那一次手勢（X4）：BOOT 且 b1 才有作用。instant（減少動態效果）＝直接顯示控制室；否則開始 B2（完整）或 B3（短）。
+   * B1 期間 INPUT／HANDOFF／DONE 都不會結束開機（沒有計時器；輸入閘把手勢轉成 GESTURE）。
+   */
+  | { type: "GESTURE"; instant?: boolean };
 
 export type Phase =
   | "boot"
@@ -62,8 +67,9 @@ export function initialState(place: Place, gen = 0): DirectorState {
 }
 
 /** 開機狀態（X2：控制室第一次顯示時由 boot.ts 的 decideBoot 決定是否進入）。 */
-export function bootState(dest: Place, gen = 0, short = false): DirectorState {
-  return short ? { kind: "BOOT", dest, gen, short: true } : { kind: "BOOT", dest, gen };
+export function bootState(dest: Place, gen = 0, short = false, b1 = false): DirectorState {
+  const base = short ? { kind: "BOOT" as const, dest, gen, short: true } : { kind: "BOOT" as const, dest, gen };
+  return b1 ? { ...base, b1: true } : base;
 }
 
 /**
@@ -173,14 +179,20 @@ export function reduce(state: DirectorState, event: DirectorEvent): DirectorStat
         : { kind: "SWITCHING", from: from.ch, to: to.ch, handoff: false, gen: from.gen + 1 };
     }
     case "HANDOFF":
-      if (state.kind === "BOOT") return initialState(state.dest, state.gen);
+      if (state.kind === "BOOT") return state.b1 ? state : initialState(state.dest, state.gen);
       if (isTransition(state) && !state.handoff && state.gen === event.gen) return { ...state, handoff: true };
       return state;
     case "DONE":
-      if (state.kind === "BOOT") return initialState(state.dest, state.gen);
+      if (state.kind === "BOOT") return state.b1 ? state : initialState(state.dest, state.gen);
       return isTransition(state) && state.gen === event.gen ? endOf(state) : state;
     case "INPUT":
-      if (state.kind === "BOOT") return initialState(state.dest, state.gen);
+      if (state.kind === "BOOT") return state.b1 ? state : initialState(state.dest, state.gen);
       return event.swallowed || isPreHandoff(state) ? endOf(state) : state;
+    case "GESTURE": {
+      if (state.kind !== "BOOT" || !state.b1) return state;
+      if (event.instant) return initialState(state.dest, state.gen);
+      const { b1: _b1, ...rest } = state;
+      return rest;
+    }
   }
 }
