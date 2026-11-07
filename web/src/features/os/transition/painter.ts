@@ -548,9 +548,7 @@ export class OverlayPainter {
         ctx.clearRect(0, 0, OVERLAY_W, OVERLAY_H);
         this.handedOff = true;
       } else applyAlphaTrail(ctx, this.o.level, dt, OVERLAY_W, OVERLAY_H, false);
-      ctx.fillStyle = rgbCss(WHITE, g.alpha * 0.25);
-      ctx.fillRect(g.x - 6, g.y - 3, g.w + 12, g.h + 6);
-      // 暗暈（X5）：亮點底下是控制室剛現身的明亮特寫螢幕面，白點會被吃掉；先在點周圍墊一圈 --page 色，亮點對周圍的對比才夠
+      // 暗暈（X5）：亮點底下是控制室剛現身的明亮特寫螢幕面，白點會被吃掉；先在點周圍墊一圈 --page 色，亮點對周圍的對比才夠（原本的白色外光矩形比暗暈寬，會在暗暈兩側露出灰色細條，已移除）
       ctx.fillStyle = rgbCss(p.page, g.alpha);
       ctx.fillRect(g.x - EXIT_HALO, g.y - EXIT_HALO, g.w + EXIT_HALO * 2, g.h + EXIT_HALO * 2);
       ctx.fillStyle = rgbCss(mixRgb(WHITE, p.accent, 0.15), g.alpha);
