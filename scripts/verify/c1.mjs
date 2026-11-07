@@ -63,16 +63,16 @@ const ST = {
   dashboard: { route: '#/dashboard' }, records: { route: '#/records' }, new: { route: '#/records/new' },
   calendar: { route: '#/calendar?month=2026-01' }, trash: { route: '#/trash' }, settings: { route: '#/settings' },
   report: { route: '#/report?from=2026-01-01&to=2026-01-12', wait: `document.querySelector('#report-output')` },
-  detail: { route: '#/records?open=3', wait: `document.querySelector('[role=dialog]')` },
-  'more-panel': { route: '#/dashboard', ws: [375], act: async (p) => { await clickIn(p, byText('nav[aria-label="底部導覽"] button', '更多')); await p.waitFor(`document.querySelector('[role=dialog]')`); } },
+  detail: { route: '#/records?open=3', wait: `document.querySelector('[role=dialog]')`, opened: `document.querySelector('[role=dialog]')` },
+  'more-panel': { route: '#/dashboard', ws: [375], act: async (p) => { await clickIn(p, byText('nav[aria-label="底部導覽"] button', '更多')); await p.waitFor(`document.querySelector('[role=dialog]')`); }, opened: `document.querySelector('[role=dialog]')` },
   'form-validation': { route: '#/records/new', act: async (p) => { await clickIn(p, `document.querySelector('main button[type=submit]')`); await p.waitFor(`document.querySelector('[aria-invalid="true"],[role=alert],[data-testid="form-errors"]')`, 4000); } },
   // data-dependent -------------------------------------------------------------
   lightbox: {
-    seed: (url) => seedPhoto(url, A.scratch, SEED_PHOTO_ID), route: '#/records?open=3', wait: `document.querySelector('[data-photo-index="0"]')`,
+    seed: (url) => seedPhoto(url, A.scratch, SEED_PHOTO_ID), route: '#/records?open=3', wait: `document.querySelector('[data-photo-index="0"]')`, opened: `document.querySelector('[aria-label="關閉照片"]')`,
     act: async (p) => { await p.eval(`document.querySelector('[data-photo-index="0"]').scrollIntoView({block:'center'})`); await sleep(400); await p.clickEl(`document.querySelector('[data-photo-index="0"]')`); await p.waitFor(`document.querySelector('[aria-label="關閉照片"]')`); },
   },
   dialog: {
-    seed: (url) => seedTrash(url, A.scratch, SEED_TRASH_ID), route: '#/trash', wait: `${byText('main button', '永久刪除')}`,
+    seed: (url) => seedTrash(url, A.scratch, SEED_TRASH_ID), route: '#/trash', wait: `${byText('main button', '永久刪除')}`, opened: `document.querySelector('[role=alertdialog]')`,
     act: async (p) => { await clickIn(p, byText('main button', '永久刪除')); await p.waitFor(`document.querySelector('[role=alertdialog]')`); },
   },
 };
@@ -145,6 +145,8 @@ async function capture(b, side, themeName, w, name) {
   await sleep(settleMs);
   if (!err && sc.act) { try { await sc.act(p); } catch (e) { err = ('act: ' + e.message).slice(0, 160); } }
   await sleep(settleAfter);
+  // X5 §5.3: the overlay must STILL be present after settling (a dialog that flashed open and closed, or never opened, is a FAILURE, never a silent pass)
+  if (!err && sc.opened) { const ok = await p.eval(`!!(${sc.opened})`).catch(() => false); if (!ok) err = 'opened: overlay not present after settle (' + sc.opened.slice(0, 60) + ')'; }
   await p.eval('document.fonts.ready.then(()=>true)', true);
   const anim = await p.eval(`({n:document.getAnimations().length,names:document.getAnimations().map(a=>a.animationName||a.transitionProperty||a.constructor.name).sort()})`);
   const froze = await freeze(p);

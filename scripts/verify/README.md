@@ -79,14 +79,15 @@ node scripts/verify/c1.mjs --base http://localhost:3115/ --new http://localhost:
   **`--ignore-offset-y`** (needs `--scope`) subtracts the scope root's own y from every rect y, i.e. ignores the vertical offset of the whole
   `<main>` caused by the OS frame bar (56 px) while still comparing the layout inside it.
 - **Determinism (new)**: before each snapshot every finite animation/transition is finished and every infinite one (cyber cursor blink, scanlines…) is
-  paused at t=0 (`--freeze js`, default; `--freeze css` additionally injects `animation-play-state:paused; transition:none; caret-color:transparent` which
-  also hides differences in those properties; `--freeze none`). `Date` is pinned to 2026-01-12 09:00 +08:00 and the timezone to Asia/Taipei
+  paused at t=0. Default `--freeze all` first injects a style that forces `animation-duration/-delay` and `transition-duration/-delay` to `0s` on every element and pseudo-element
+  (X5 §5.2, no timing-induced false diffs), then runs the JS finish/hold pass; `--freeze css` = CSS only, `--freeze js` = JS only, `--freeze none`. `Date` is pinned to 2026-01-12 09:00 +08:00 and the timezone to Asia/Taipei
   (`--no-freeze-time` to disable) – removes the minute-rollover flake of the new-record form and "today" highlighting.
 - **Act failures fail (new)**: a `wait`/`act` step that cannot be performed prints `ACTFAIL`, counts as a failure and the exit code is 1; it is never compared silently un-acted.
   (X0 clicked without scrolling and silently missed off-screen buttons, e.g. `form-validation`; clicks now scroll into view first.)
 - **Data-dependent scenarios (new)**: `dialog` needs a trashed record, `lightbox` needs a record with a photo. The example data has neither, so right before those scenarios
   c1 seeds both servers identically via the API (`seedTrash` record 4, `seedPhoto` record 3), **only on servers proven to be serve.mjs scratch servers** (`--scratch`).
-  Without proof the scenarios ACTFAIL (they never run silently). `--no-seed` disables seeding (data must already exist).
+  Without proof the scenarios ACTFAIL (they never run silently).
+  X5 §5.3: every overlay scenario (`dialog`, `lightbox`, `detail`, `more-panel`) has an `opened` check that is re-evaluated after the settle delay: if the dialog/lightbox is not really open, the scenario is an ACTFAIL (a failure), not a pass. `--no-seed` disables seeding (data must already exist).
 - OS mode on the `--new` side: pass `--new-query "?mode=os"`; the capture waits for `data-os-phase="station"`.
 - `--ax` / `--no-ax` AX-tree comparison (default: on only when not scoped). `--shots`, `--settle`, `--settle-after`, `--verbose`, `--cdp-port`, `--headed`.
 - Output: one line per scenario (`OK` / `DIFF` / `ACTFAIL`), JSON in `<out>/c1-result.json`. Exit 1 if any style/rect/pseudo/text/missing/extra/AX diff or any ACTFAIL
@@ -137,7 +138,7 @@ Exit 1 on any FAIL. SKIP (e.g. mutating check without scratch proof) and MANUAL 
 | `E3.history` | back/forward: hub→ch enter, ch→hub exit, ch→ch switching, same channel none | |
 | `E3.direct` | direct `#/records/<id>/edit` → station, edit form, no entry transition | id from the served data |
 | `E5.drill`, `E5.detail`, `E5.save-toast` | chart drill, detail 編輯 (same channel: no transition per §3.3) / 複製為新紀錄 (switching), save redirect + toast 「查看」 | `E5.save-toast` creates a record (scratch proof required) |
-| `E6.*` | one Esc closes only: detail sheet (+ a second Esc leaves), confirm dialog, popover, combobox, lightbox, palette | lightbox seeds a photo (scratch proof required) |
+| `E6.*` | one Esc closes only: detail sheet (+ a second Esc leaves), confirm dialog, popover, combobox, lightbox, palette | lightbox: photo seeded on a proven scratch server; otherwise the photo must already exist. If the lightbox does not open the check FAILS (never SKIP) |
 | `E7.focus/title/skip-link/print` | focus on `#main` after every page change (not on first load), `document.title` for 7 routes + edit, skip link, print layout (OS chrome hidden, `<main>` rect and PDF page count equal to web mode) | print PDF count needs headless |
 | `GATE` | device gate at 1000×700, 1280×500, 1023×768 (shown) / 1024×600, 1280×720 (hidden); no hub/HUD/outlet/canvas while gated; button → web persisted; cold gated load enters without transition | |
 | `PERSIST` | `pld.mode` in localStorage, reload, new tab (same profile), `?mode=` override + URL cleanup (other query kept), X0 `sessionStorage` key removal, no cross-tab sync, throwing storage | |
