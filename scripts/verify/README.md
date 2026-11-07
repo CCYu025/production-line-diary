@@ -53,6 +53,7 @@ node process listening on the port).
 | `os-e2e.mjs` | E2 E3 E5 E6 E7, device gate, mode persistence, EXIT TO WEB, sidebar button, WebGL fallback, E1 export guard. | yes |
 | `os-shots.mjs` | design-review material (hub, strips, stations, palette, gate). | yes |
 | `os-perf.mjs` | P1 fps (headed, real GPU) and P2 rAF attribution. | yes |
+| `os-p6.mjs` | P6 heap growth (forced GC) + WebGL resource release, branch and main side by side. | yes |
 | `os-common.mjs` | selectors (`SEL`, `hudCh(n)`), page hook, helpers (`waitPhase` auto-passes B1, `passB1(page)`), `Reporter`. | – |
 | `serve.mjs` | safe server launcher. | – |
 
@@ -148,7 +149,7 @@ Exit 1 on any FAIL. SKIP (e.g. mutating check without scratch proof) and MANUAL 
 | `E1` | **MANUAL** (see below) + export guard report + export click only if the guard passes and a 匯出 Excel control exists in the OS shell | |
 
 Not automatable / left to the independent verifier by hand: **E1** (new record with photo upload, edit, delete/restore/permanent delete, report printing, settings save – compare with web mode; photo capture and print dialogs are unreliable over CDP),
-**E4** final judgement (the script reports print rects, PDF page counts and screenshot hashes as proxies), **S5** moiré at 100/125/150 % Windows scaling, **P1/P6** on the real GPU (`os-perf.mjs --headed`), audio/UX feel (§9.7), real touch behaviour, screen-reader announcements of the live region
+**E4** final judgement (the script reports print rects, PDF page counts and screenshot hashes as proxies), **S5** moiré at 100/125/150 % Windows scaling, **P1/P6** on the real GPU (`os-perf.mjs` headed; `os-p6.mjs`), audio/UX feel (§9.7), real touch behaviour, screen-reader announcements of the live region
 (the script only checks DOM text), design-review judgement of the shots.
 
 ## os-shots.mjs — design review material (§9.6)
@@ -188,3 +189,21 @@ node scripts/verify/os-perf.mjs --url http://localhost:3114/ [--only p1,p2] [--d
   `[data-os="hud-ch"][aria-current="true"]`), waits for phase `station`, records stacks for 3 s and counts calls whose stack contains a file of an OS lazy chunk
   (computed from `--dist`, or `--os-chunks a.js,b.js`). Expect 0; other callers (react, entry, radix, sonner…) are listed for information.
 - Results in `<out>/result.json`. Exit 1 on failure.
+
+## os-p6.mjs — P6 (X5 §5.4 fixed method)
+
+```
+# 3114 = branch, 3115 = main/baseline (both started with serve.mjs); headed Chrome on the GPU machine
+node scripts/verify/os-p6.mjs --url http://localhost:3114/ --base http://localhost:3115/ [--cycles 20] [--warmup 1] [--rounds 1]
+```
+
+- One script, one Chrome launch, both servers measured (separate browser contexts, interleaved; `--rounds N` alternates the order, medians are used).
+- **Every heap read is preceded by `HeapProfiler.collectGarbage`** (3 passes) and read with `Runtime.getHeapUsage().usedSize`. Heap baseline = post-GC heap at the hub after
+  `--warmup` enter/exit cycles (default 1: the first enter loads the lazy OS chunks, which is not growth); heap after `--cycles` (default 20) further cycles is compared to it.
+  Growth vs the cold first hub is printed too (informational).
+- Cycle = click the selected HUD channel button, wait `station`, click ◀ HUB, wait `hub` (`--settle` ms pause after each phase).
+- **Pass (branch)**: post-GC growth <= `--max-growth` (10 %) **or** <= main's growth + `--max-over-main` (1 percentage point); **and** the WebGL counts from `window.__osGl()`
+  (page loaded with `?osdebug=gldebug`) — geometries, textures, renderTargets — are back to (<=) the baseline taken at the hub before the cycles. A missing `__osGl`/counter is a FAIL, not a skip.
+  Without `--base` only the absolute 10 % rule applies (printed).
+- The WebGL renderer is recorded; software renderer or `--headless` ⇒ `INVALID`, exit 2 (spec §9.4), unless `--allow-software` (then informational, e.g. smoke runs).
+- Exit 0 pass / 1 fail / 2 invalid. Results in `<out>/result.json` (all raw heap/GL numbers per round and side).
