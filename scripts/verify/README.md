@@ -79,6 +79,10 @@ node scripts/verify/c1.mjs --base http://localhost:3115/ --new http://localhost:
   `--ignore-width-related` skips width-derived props and rect x/w (S4(b): OS frame has a different width).
   **`--ignore-offset-y`** (needs `--scope`) subtracts the scope root's own y from every rect y, i.e. ignores the vertical offset of the whole
   `<main>` caused by the OS frame bar (56 px) while still comparing the layout inside it.
+  **`--ignore-vertical`** skips every height-related difference (rect y/h, `height`/`block-size`/`min-/max-height`, `top`/`bottom`/`inset-block`, `grid-template-rows`, origins) so each element is compared by computed style keyed by DOM path,
+  independent of the height/offset difference of `<main>` (OS frame bar + different viewport height stretch every descendant vertically; `--ignore-offset-y` alone left ~525 vertical diffs). Width-related diffs are still reported
+  unless `--ignore-width-related` is also given. Self-test: the same server on both sides must give 0 diffs.
+  `--new-storage k=v,k2=v2` sets localStorage entries on the `--new` side only (new-document script), e.g. `pld.os.crt=off|std|max` for the three CRT intensities.
 - **Determinism (new)**: before each snapshot every finite animation/transition is finished and every infinite one (cyber cursor blink, scanlines…) is
   paused at t=0. Default `--freeze all` first injects a style that forces `animation-duration/-delay` and `transition-duration/-delay` to `0s` on every element and pseudo-element
   (X5 §5.2, no timing-induced false diffs), then runs the JS finish/hold pass; `--freeze css` = CSS only, `--freeze js` = JS only, `--freeze none`. `Date` is pinned to 2026-01-12 09:00 +08:00 and the timezone to Asia/Taipei
@@ -96,7 +100,9 @@ node scripts/verify/c1.mjs --base http://localhost:3115/ --new http://localhost:
 - With `--scope main`, portal content (dialogs, lightbox, more-panel) is outside `main` and not compared.
 
 S1 (web mode must be identical): `--base :3115 --new :3114 --theme all --widths 375,900,1280` (expect 0 diffs, 0 ACTFAIL).
-S4(b): `--base http://localhost:3115/ --base-query "?theme=cyber" --new http://localhost:3114/ --new-query "?mode=os" --theme standard-light --scope main --ignore-width-related --ignore-offset-y --widths 1280`.
+S4(b), once per CRT level (`off`, `std`, `max`):
+`--base http://localhost:3114/ --base-query "?theme=cyber" --new http://localhost:3114/ --new-query "?mode=os" --new-storage pld.os.crt=std --theme standard-light --scope main --ignore-offset-y --ignore-vertical --ignore-width-related --widths 1280 --scenarios dashboard,records,new,calendar,trash,settings,report,detail,form-validation`
+(web Cyber = `?theme=cyber`; the base and new sides may be the same server because mode is chosen by query). Drop `--ignore-width-related` to list the width-related differences (OS `<main>` is 1100 px wide vs 1056/1041 px next to the web sidebar; every element inside shifts x / changes w accordingly).
 (At 1280 only: the OS shell needs ≥1024 wide, below that the device gate replaces the station.)
 
 ## os-handoff.mjs — I1–I4

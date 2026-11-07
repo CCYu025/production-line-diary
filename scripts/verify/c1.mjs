@@ -26,6 +26,8 @@ const { values: A } = parseArgs({
     scope: { type: 'string' },
     'ignore-width-related': { type: 'boolean', default: false },
     'ignore-offset-y': { type: 'boolean', default: false },
+    'ignore-vertical': { type: 'boolean', default: false },
+    'new-storage': { type: 'string', default: '' },
     'base-query': { type: 'string', default: '' },
     'new-query': { type: 'string', default: '' },
     settle: { type: 'string', default: '800' },
@@ -43,7 +45,7 @@ const { values: A } = parseArgs({
 });
 if (A.help || !A.base || !A.new) {
   console.log(`node scripts/verify/c1.mjs --base <url> --new <url> [--theme standard-light|standard-dark|cyber|cyber-light|all]
-  [--widths 375,900,1280] [--scenarios a,b,...] [--out dir] [--shots] [--scope main] [--ignore-width-related] [--ignore-offset-y]
+  [--widths 375,900,1280] [--scenarios a,b,...] [--out dir] [--shots] [--scope main] [--ignore-width-related] [--ignore-offset-y] [--ignore-vertical] [--new-storage pld.os.crt=off]
   [--base-query "?theme=cyber"] [--new-query "?mode=os"] [--settle ms] [--settle-after ms] [--ax|--no-ax]
   [--freeze all|css|js|none] [--no-freeze-time] [--scratch dir] [--no-seed] [--headed] [--cdp-port 9501] [--verbose]`);
   process.exit(A.help ? 0 : 2);
@@ -91,6 +93,9 @@ for (const n of only) if (!ST[n]) { console.error('unknown scenario', n, '; know
 const useAx = A.ax ? true : A['no-ax'] ? false : !A.scope;
 const settleMs = +A.settle, settleAfter = +A['settle-after'];
 
+/** --new-storage "k=v,k2=v2": localStorage entries set (new-document script) on the --new side only, e.g. pld.os.crt=off|std|max. */
+const storageScripts = A['new-storage'] ? A['new-storage'].split(',').filter(Boolean).map((kv) => { const i = kv.indexOf('='); return `try{localStorage.setItem(${JSON.stringify(kv.slice(0, i))},${JSON.stringify(kv.slice(i + 1))})}catch(e){}`; }) : [];
+
 /** base URL + query (merged with theme=cyber) + route (hash). Query goes BEFORE the hash. */
 function buildUrl(root, extraQuery, cyber, route) {
   const u = new URL(root);
@@ -133,7 +138,7 @@ async function capture(b, side, themeName, w, name) {
   const sc = ST[name]; const th = THEMES[themeName];
   const root = side === 'base' ? A.base : A.new;
   const url = buildUrl(root, side === 'base' ? A['base-query'] : A['new-query'], th.cyber, sc.route);
-  const p = await b.newPage({ width: w, height: w === 375 ? 812 : 900, scheme: th.scheme, mobile: w === 375, preScripts: A['no-freeze-time'] ? [] : [FREEZE_TIME_SRC] });
+  const p = await b.newPage({ width: w, height: w === 375 ? 812 : 900, scheme: th.scheme, mobile: w === 375, preScripts: [...(A['no-freeze-time'] ? [] : [FREEZE_TIME_SRC]), ...(side === 'new' ? storageScripts : [])] });
   if (!A['no-freeze-time']) await p.send('Emulation.setTimezoneOverride', { timezoneId: 'Asia/Taipei' });
   await p.send('Accessibility.enable');
   await p.goto(url, { settle: 200 });
@@ -188,7 +193,7 @@ try {
       const key = `${themeName}_${w}_${name}`;
       const SA = await capture(b, 'base', themeName, w, name), SB = await capture(b, 'new', themeName, w, name);
       const actErr = SA.err || SB.err;
-      const d = diffSnaps(SA.snap, SB.snap, { ignoreWidthRelated: A['ignore-width-related'], ignoreCustoms: !!A.scope, ignoreOffsetY: A['ignore-offset-y'] });
+      const d = diffSnaps(SA.snap, SB.snap, { ignoreWidthRelated: A['ignore-width-related'], ignoreCustoms: !!A.scope, ignoreOffsetY: A['ignore-offset-y'], ignoreVertical: A['ignore-vertical'] });
       const styleDiffs = d.filter((x) => x.kind !== 'custom-extra');
       const axd = [];
       if (useAx) { const n = Math.max(SA.axl.length, SB.axl.length); for (let i = 0; i < n; i++) if (SA.axl[i] !== SB.axl[i]) axd.push([i, SA.axl[i], SB.axl[i]]); }
