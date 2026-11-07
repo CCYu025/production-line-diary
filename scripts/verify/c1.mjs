@@ -2,7 +2,7 @@
 // Usage: node scripts/verify/c1.mjs --base http://localhost:3115/ --new http://localhost:3114/ [flags]   (see README.md)
 //
 // Hardening vs X0:
-//  * animations are frozen before every snapshot (--freeze js|css|none; default js) and Date is pinned (--no-freeze-time to disable);
+//  * animations are frozen before every snapshot (--freeze all|css|js|none; default all = css zeroing + JS finish/hold) and Date is pinned (--no-freeze-time to disable);
 //  * a scenario whose act/wait step fails is a FAILURE (marked ACTFAIL, exit 1), never silently compared un-acted;
 //  * `dialog` / `lightbox` use real data: the scratch copy of the example data is seeded identically on BOTH servers right before them
 //    (record 4 -> trash; a 1x1 photo on record 3). Seeding only happens on servers proven to be serve.mjs scratch servers (safety.mjs);
@@ -30,7 +30,7 @@ const { values: A } = parseArgs({
     'new-query': { type: 'string', default: '' },
     settle: { type: 'string', default: '800' },
     'settle-after': { type: 'string', default: '1200' },
-    freeze: { type: 'string', default: 'js' },
+    freeze: { type: 'string', default: 'all' },
     'no-freeze-time': { type: 'boolean', default: false },
     scratch: { type: 'string', default: DEFAULT_SCRATCH },
     'no-seed': { type: 'boolean', default: false },
@@ -45,11 +45,11 @@ if (A.help || !A.base || !A.new) {
   console.log(`node scripts/verify/c1.mjs --base <url> --new <url> [--theme standard-light|standard-dark|cyber|cyber-light|all]
   [--widths 375,900,1280] [--scenarios a,b,...] [--out dir] [--shots] [--scope main] [--ignore-width-related] [--ignore-offset-y]
   [--base-query "?theme=cyber"] [--new-query "?mode=os"] [--settle ms] [--settle-after ms] [--ax|--no-ax]
-  [--freeze js|css|none] [--no-freeze-time] [--scratch dir] [--no-seed] [--headed] [--cdp-port 9501] [--verbose]`);
+  [--freeze all|css|js|none] [--no-freeze-time] [--scratch dir] [--no-seed] [--headed] [--cdp-port 9501] [--verbose]`);
   process.exit(A.help ? 0 : 2);
 }
 if (A['ignore-offset-y'] && !A.scope) { console.error('--ignore-offset-y needs --scope'); process.exit(2); }
-if (!['js', 'css', 'none'].includes(A.freeze)) { console.error('--freeze must be js|css|none'); process.exit(2); }
+if (!['all', 'js', 'css', 'none'].includes(A.freeze)) { console.error('--freeze must be all|css|js|none'); process.exit(2); }
 
 const byText = (sel, t) => `[...document.querySelectorAll(${JSON.stringify(sel)})].find(e=>(e.getAttribute('aria-label')||e.textContent).trim().startsWith(${JSON.stringify(t)}))`;
 /** scroll the element into view (center), then click it with a real mouse event. X0 clicked without scrolling and silently missed off-screen buttons. */
@@ -105,13 +105,14 @@ const FIXED_NOW = Date.parse('2026-01-12T09:00:00+08:00');
 const FREEZE_TIME_SRC = `(()=>{ const R=Date, base=${FIXED_NOW};
   function D(...a){ if(!new.target) return new R(base).toString(); return a.length? new R(...a) : new R(base); }
   D.prototype=R.prototype; D.now=()=>base; D.parse=R.parse; D.UTC=R.UTC; Object.setPrototypeOf(D,R); window.Date=D; })()`;
-const FREEZE_CSS = '*,*::before,*::after{animation-play-state:paused!important;animation-delay:0s!important;transition:none!important;caret-color:transparent!important}';
+/** X5 §5.2: animation/transition durations and delays forced to 0 on every element (+ pseudo-elements) before comparing; infinite loops are held by FREEZE_ANIM. */
+const FREEZE_CSS = '*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:0s!important;transition-delay:0s!important;scroll-behavior:auto!important;caret-color:transparent!important}';
 /** Finish finite animations/transitions, hold infinite ones (cyber cursor blink, scanlines, ...) at t=0. */
 const FREEZE_ANIM = `(()=>{ const o={finished:0,held:0,cancelled:0}; for(const a of document.getAnimations()){ try{ const t=a.effect&&a.effect.getComputedTiming(); if(t&&Number.isFinite(t.endTime)){ a.finish(); o.finished++; } else { a.pause(); a.currentTime=0; o.held++; } }catch(e){ try{a.cancel(); o.cancelled++}catch(_){} } } return o; })()`;
 async function freeze(p) {
   if (A.freeze === 'none') return null;
-  if (A.freeze === 'css') await p.eval(`(()=>{ if(!document.getElementById('__c1freeze')){ const s=document.createElement('style'); s.id='__c1freeze'; s.textContent=${JSON.stringify(FREEZE_CSS)}; document.head.appendChild(s); } })()`);
-  const r = await p.eval(FREEZE_ANIM);
+  if (A.freeze === 'css' || A.freeze === 'all') await p.eval(`(()=>{ if(!document.getElementById('__c1freeze')){ const s=document.createElement('style'); s.id='__c1freeze'; s.textContent=${JSON.stringify(FREEZE_CSS)}; document.head.appendChild(s); } })()`);
+  const r = A.freeze === 'css' ? null : await p.eval(FREEZE_ANIM);
   await p.eval('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))', true);
   return r;
 }
