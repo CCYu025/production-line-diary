@@ -123,6 +123,8 @@ export function CopyPicker({ records, onPick }: CopyPickerProps) {
             setOpen(true);
           }}
           onKeyDown={(e) => {
+            // 輸入法選字中的 Enter／↑↓／Esc 交給輸入法，不選取、不移動、不收合
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (e.key === "Escape") {
               if (open) {
                 e.preventDefault();

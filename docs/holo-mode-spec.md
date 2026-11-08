@@ -632,7 +632,7 @@ web/src/features/holo/
 4. 推上 GitHub、開 PR，在 3114 展示。
 5. 使用者明確同意後才合併；合併前由獨立代理做文件檢查。
 
-### 12.1 IME 修正（獨立小 PR，可與 H0 並行）
+### 12.1 IME 修正（獨立小 PR，可與 H0 並行）——已完成（2026-11-08，PR 編號待補）
 - `components/Combobox.tsx` 與 `form/CopyPicker.tsx`：keydown 處理先檢查 `event.isComposing`（以及 `keyCode === 229`），選字中的 Enter、↑、↓、Esc 不做任何事。
 - 加入測試，模擬 composition 事件。
 - 網頁模式的行為只差在「選字中按 Enter 不再誤選」，S1 仍需零差異。

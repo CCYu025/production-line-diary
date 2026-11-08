@@ -119,6 +119,8 @@ export function Combobox({
         onKeyDown={(e) => {
           onKeyDown?.(e);
           if (e.defaultPrevented) return;
+          // 輸入法選字中（注音、倉頡等）的 Enter／↑↓／Esc 是給輸入法用的，不當成選取、移動或收合，也不 preventDefault
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
           if (e.key === "ArrowDown") {
             e.preventDefault();
             if (!open) setOpen(true);

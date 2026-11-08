@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -106,5 +106,74 @@ describe("Combobox（可輸入的下拉）", () => {
     await u.click(box());
     expect(box()).toHaveAttribute("aria-expanded", "true");
     expect(document.getElementById(box().getAttribute("aria-controls")!)).toBe(screen.getByRole("listbox"));
+  });
+});
+
+describe("Combobox：輸入法選字中的按鍵交給輸入法", () => {
+  function setup() {
+    const submitted = vi.fn((e: React.FormEvent) => e.preventDefault());
+    render(
+      <form onSubmit={submitted}>
+        <Harness />
+      </form>,
+    );
+    return submitted;
+  }
+  const activeIndex = () => screen.getAllByRole("option").findIndex((o) => o.getAttribute("aria-selected") === "true");
+
+  it("compositionstart 之後（isComposing）按 Enter：不選取、清單不收、值不變、不送出", async () => {
+    const u = userEvent.setup();
+    const submitted = setup();
+    await u.click(box());
+    await u.keyboard("{ArrowDown}");
+    fireEvent.compositionStart(box());
+    const ev = fireEvent.keyDown(box(), { key: "Enter", isComposing: true });
+    expect(ev).toBe(true); // 沒有 preventDefault
+    expect(box().value).toBe("");
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    expect(submitted).not.toHaveBeenCalled();
+  });
+
+  it("keyCode 229 的 Enter 同上", async () => {
+    const u = userEvent.setup();
+    const submitted = setup();
+    await u.click(box());
+    await u.keyboard("{ArrowDown}");
+    const ok = fireEvent.keyDown(box(), { key: "Enter", keyCode: 229 });
+    expect(ok).toBe(true);
+    expect(box().value).toBe("");
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    expect(submitted).not.toHaveBeenCalled();
+  });
+
+  it("選字中按 ↓／↑ 反白不移動；按 Esc 清單不收", async () => {
+    const u = userEvent.setup();
+    setup();
+    await u.click(box());
+    await u.keyboard("{ArrowDown}");
+    const before = activeIndex();
+    expect(before).toBe(0);
+    fireEvent.keyDown(box(), { key: "ArrowDown", isComposing: true });
+    expect(activeIndex()).toBe(before);
+    fireEvent.keyDown(box(), { key: "ArrowUp", keyCode: 229 });
+    expect(activeIndex()).toBe(before);
+    const ok = fireEvent.keyDown(box(), { key: "Escape", isComposing: true });
+    expect(ok).toBe(true);
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+
+  it("compositionend 之後 Enter 照原本規則選取（迴歸）", async () => {
+    const u = userEvent.setup();
+    const submitted = setup();
+    await u.click(box());
+    await u.keyboard("{ArrowDown}");
+    fireEvent.compositionStart(box());
+    fireEvent.keyDown(box(), { key: "Enter", isComposing: true });
+    expect(box().value).toBe("");
+    fireEvent.compositionEnd(box());
+    await u.keyboard("{Enter}");
+    expect(box().value).toBe("F3");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(submitted).not.toHaveBeenCalled();
   });
 });
