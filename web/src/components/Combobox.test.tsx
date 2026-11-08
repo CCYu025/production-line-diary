@@ -162,6 +162,25 @@ describe("Combobox：輸入法選字中的按鍵交給輸入法", () => {
     expect(screen.getByRole("listbox")).toBeInTheDocument();
   });
 
+  it("選字中 ↓／↑ 沒有 preventDefault（留給輸入法切換候選字）", async () => {
+    const u = userEvent.setup();
+    setup();
+    await u.click(box());
+    expect(fireEvent.keyDown(box(), { key: "ArrowDown", isComposing: true })).toBe(true);
+    expect(fireEvent.keyDown(box(), { key: "ArrowUp", keyCode: 229 })).toBe(true);
+  });
+
+  it.each(["Process", "Unidentified", "Enter"])("在 <form> 裡：keydown key=%s（keyCode 229）之後的 keypress Enter 被 preventDefault，不隱式送出", async (key) => {
+    const u = userEvent.setup();
+    const submitted = setup();
+    await u.click(box());
+    fireEvent.keyDown(box(), { key, keyCode: 229 });
+    const ok = fireEvent.keyPress(box(), { key: "Enter", code: "Enter", charCode: 13 });
+    expect(ok).toBe(false);
+    expect(submitted).not.toHaveBeenCalled();
+    expect(box().value).toBe("");
+  });
+
   it("compositionend 之後 Enter 照原本規則選取（迴歸）", async () => {
     const u = userEvent.setup();
     const submitted = setup();

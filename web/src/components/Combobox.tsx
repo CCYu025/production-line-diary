@@ -45,6 +45,7 @@ export function Combobox({
   maxOptions = 50,
   className,
   onKeyDown,
+  onKeyPress,
   onFocus,
   onBlur,
   autoComplete = "off",
@@ -115,6 +116,12 @@ export function Combobox({
         onBlur={(e) => {
           close();
           onBlur?.(e);
+        }}
+        onKeyPress={(e) => {
+          onKeyPress?.(e);
+          // 阻止隱式送出表單的根本防線：keydown 的 key 在選字時可能是 "Process"／"Unidentified"（keyCode 229），
+          // 瀏覽器之後仍可能送 keypress Enter；Enter 在這裡永遠不送出表單
+          if (e.key === "Enter") e.preventDefault();
         }}
         onKeyDown={(e) => {
           onKeyDown?.(e);
