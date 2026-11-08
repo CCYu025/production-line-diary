@@ -2,7 +2,7 @@
 
 > 來源：2026-11-08 設計師前端盤點。本檔是 `docs/holo-mode-spec.md` 附錄 A 的全文，各期驗收引用這裡的條文編號。行號為盤點當時（main cb27e86）的位置，實作時以程式現況為準。
 
-## A1 外殼與全域（盤點 1）
+## A1 外殼與全域
 
 資料／API
 1. 所有非 GET 請求帶 `X-Requested-With: production-line-diary`；只能經 `lib/api.ts`；錯誤統一 `ApiError`（保留 `errors[]`）；AbortError 不跳錯誤 toast。
@@ -14,10 +14,10 @@
 7. 匯出 Excel：進行中 loading toast＋原地換成功／失敗（description 顯示檔案路徑）；同時只允許一個請求（模組層級旗標）。
 
 路由／導覽
-8. 所有路由路徑、參數、query 語意（§1）原樣保留；`#/records?status=待處理` 等深連結、書籤、上一頁可用；未知網址 → `/dashboard`；`/` 依模式導向；`/records/new?copy=<id>`、`/records/:id/edit`、`/records?open=<id>`、`sort=asc`、`/calendar?month=`、`/dashboard?range=`、`/report?from=&to=` 全部支援。
+8. 所有路由路徑、參數、query 語意原樣保留；`#/records?status=待處理` 等深連結、書籤、上一頁可用；未知網址 → `/dashboard`；`/` 依模式導向；`/records/new?copy=<id>`、`/records/:id/edit`、`/records?open=<id>`、`sort=asc`、`/calendar?month=`、`/dashboard?range=`、`/report?from=&to=` 全部支援。
 9. 篩選 ⇄ URL 的全部規則（重複 key、不 trim、`""` 保留、無效值忽略、push vs replace、同 tick 連續更新不互蓋）；drill 一律「先清空再帶單一值」。
-10. 所有導覽（含模式切換、離開全像）走 router，讓 `useBlocker` 攔得到；POP 不切換模式；幽靈 `/os` 紀錄需處理（若全像模式也以 `/os` 或新路徑 PUSH 進入）。
-11. 未儲存變更：RecordForm 與 Settings 兩個 blocker＋`beforeunload` 的條件、文案、焦點歸還逐字保留（見 G6）。
+10. 所有導覽（含模式切換、離開全像）走 router，讓 `useBlocker` 攔得到；POP 不切換模式；全像模式與 OS 共用 `/os`，幽靈 `/os` 紀錄的跳過規則（`ModeShell` 的 `ghostStep`）同樣適用（規格 §3.1）。
+11. 未儲存變更：RecordForm 與 Settings 兩個 blocker＋`beforeunload` 的條件、文案、焦點歸還逐字保留。
 
 全域 UI 行為
 12. document.title 規則；換頁後聚焦 `#main`（首載不搶）；跳過連結；OS→web 後聚焦。
@@ -32,11 +32,11 @@
 21. a11y：`aria-current="page"`、`aria-pressed`（主題切換、Segmented）、`role="group"`／`aria-label`、`role="status" aria-busy`＋「載入中…」、sr-only 數字替代（徽章／計數／ScrambleNumber）、tooltip 只在平板、Combobox ARIA 1.2、燈箱標題「照片 i / n」。
 22. 無障礙文字分身：任何只存在於 canvas／3D 的資訊，都必須有等價的 DOM 文字與可鍵盤操作的控制項（OS 模式以 `sr-only role="status" aria-live` 公告，`OsShell.tsx:~558`）。
 23. 既有測試／自動化依賴：`data-fx`／`data-os` 屬性、nav-item 個數（7／8）、`#main`、`aria-current`；新 UI 不得破壞既有元件的這些斷言（舊元件整體保留）。
-24. bundle 隔離：新模式只經動態 `import()`（比照 `osEntry.ts`），網頁入口不含 three／全像程式碼（`os-bundle.mjs` baseline）；各頻道分開載入（使用者決定 2）。
+24. bundle 隔離：新模式只經動態 `import()`（比照 `osEntry.ts`），網頁入口不含 three／全像程式碼（`os-bundle.mjs` baseline）；各頻道分開載入（規格 H-U3）。
 
 ---
 
-## A2 CH-01 儀表板（盤點 2 §1.10）
+## A2 CH-01 儀表板
 
 1. `?range=all|month|week` 語意與網址寫法（all 不寫、replace）；彙總必須用 `aggregate(records, range)`（含 week＝週一起算）。
 2. 兩級 KPI 及其精確公式/用語（累計時間、約 X.X 小時、照片建檔率四捨五入、「n 筆待補根本原因」含義、0 筆不可點）。
@@ -49,7 +49,7 @@
 9. Cyber 的 reduced-motion 時 DOM 與標準主題一致；FX 皆純視覺。
 10. 「（未填）」顯示規則。
 
-## A3 CH-04 日曆（盤點 2 §2.10）
+## A3 CH-04 日曆
 
 1. `?month=YYYY-MM` 解析規則、本月不寫網址、換月 push、跨年。
 2. 格子顯示「次數」（非分鐘）；色階比例用**全部資料**單日最大次數、門檻 0.7/0.4；0 筆不可互動。
@@ -62,7 +62,7 @@
 9. 對比度要求（STEP_CLASS 表在 contrast.test 把關，換色需重驗）。
 10. 換月動畫不重掛 DOM、焦點不掉。
 
-## A4 CH-05 報表（盤點 2 §3.8）
+## A4 CH-05 報表
 
 1. 範圍＝網址 `?from&to`（真實日期、起<=迄才自動產生；起>迄不自動產生並提示；push/replace 規則；側欄補回 `lastRange` 用 replace；預設為本地今天）。
 2. 驗證訊息文案：「請選擇起訖日期」「起始日期不能晚於結束日期」；產生失敗不產報表。
@@ -77,7 +77,7 @@
 11. 日期輸入手機高度 44px（`h-11`）。
 12. 載入失敗仍顯示頁首，提供重試；產生鈕在資料載入中 disabled。
 
-## A5 CH-02／03／06 紀錄、表單、回收桶（盤點 3，第 1–46 條）
+## A5 CH-02／03／06 紀錄、表單、回收桶（第 1–46 條）
 
 **路由／網址**
 1. `#/records` 的 `equipment`、`category` 用重複 key 表示多選；`severity`／`status` 只接受合法值，非法值被忽略不報錯。
@@ -135,11 +135,11 @@
 **通用**
 44. 所有動作失敗都用 `notify.error`（`role=alert`，9 秒）；成功用 3.5 秒；PUT 只送要改的欄位時不影響舊資料的怪值。
 45. 輸入類控制項必須是真正的 `input/textarea/select`（IME、手機鍵盤、OS 模式的全域快速鍵守衛都依賴）。
-46. cyber 主題屬性掛勾（§7）與 `prefers-reduced-motion` 降級（`useFx`）。
+46. cyber 主題屬性掛勾（`docs/cyber-theme-spec.md` §3.3）與 `prefers-reduced-motion` 降級（`useFx`）。
 
 ---
 
-## A6 CH-07 與 API 不變量（盤點 4 §7(b)）
+## A6 CH-07 與 API 不變量
 
 **資料與刪除**
 1. 永久刪除前**必須先軟刪除**（伺服器 409 把關，UI 也不得提供繞過）；永久刪除**必有確認對話框**（說明無法復原＋照片一併從硬碟刪除［沒有其他紀錄使用的］）；復原直接執行（toast 告知）；列表／詳情的刪除＝直接移到回收桶＋可復原 toast。**3D 手勢（拖到垃圾桶等）不得一步完成永久刪除。**
