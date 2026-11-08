@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { CHANNELS } from "../channels";
 import {
@@ -15,6 +18,7 @@ import {
   HUD_CLEARANCE_FRAC,
   HUD_CONSOLE_MAX_FRAC,
   hudKeyPx,
+  HUD_FOCUS_RING_PX,
   HUD_STATUS_PX,
   hudArcDepthPx,
   hudInsets,
@@ -258,6 +262,23 @@ describe("HUD 納入構圖（H0：控制台與狀態列不遮住螢幕牆與雷�
       const x = hudInsets(h);
       expect(Math.abs(x.top * 200 - Math.round(x.top * 200))).toBeLessThan(1e-9);
       expect(Math.abs(x.bottom * 200 - Math.round(x.bottom * 200))).toBeLessThan(1e-9);
+    }
+  });
+});
+
+describe("控制台底部留給焦點環（H0 r4）", () => {
+  it("HUD_FOCUS_RING_PX 等於 index.css 的 :focus-visible 的 outline 寬度加 offset（不寫死魔術數字）", () => {
+    const css = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../styles/index.css"), "utf8");
+    const block = /:focus-visible\s*\{([^}]*)\}/.exec(css)![1]!;
+    const width = Number(/outline:\s*(\d+(?:\.\d+)?)px/.exec(block)![1]);
+    const offset = Number(/outline-offset:\s*(\d+(?:\.\d+)?)px/.exec(block)![1]);
+    expect(HUD_FOCUS_RING_PX).toBe(width + offset);
+  });
+  it("各種視窗高度（含 < 700）：最低的鍵下緣加焦點環外擴不超過視窗高度；最高的鍵離特寫螢幕面仍 ≥ 8px", () => {
+    for (const h of [600, 640, 699, 700, 720, 1080]) {
+      const keyBottom = h - hudBasePx(h);
+      expect(keyBottom + HUD_FOCUS_RING_PX, `h=${h}`).toBeLessThanOrEqual(h);
+      expect(h * HUD_CONSOLE_MAX_FRAC - (hudBasePx(h) + hudKeyPx(h) + hudArcDepthPx(h)), `h=${h}`).toBeGreaterThanOrEqual(HUD_FACE_GAP_PX);
     }
   });
 });

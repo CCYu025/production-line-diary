@@ -221,11 +221,17 @@ export function wallExtents(cam: CamPose, fovDeg: number, aspect: number): WallE
 
 /** 狀態列高度（px） */
 export const HUD_STATUS_PX = 48;
-/** 頻道鍵高度（px；兩排字）與最低的鍵離畫面下緣的距離：視窗高度 ≥ HUD_TALL_PX 用寬鬆值，較矮用緊湊值（CSS 的 --hud-key／--hud-base 同源） */
-export const HUD_KEY_PX = 44;
-export const HUD_BASE_PX = 4;
-export const HUD_KEY_COMPACT_PX = 40;
-export const HUD_BASE_COMPACT_PX = 0;
+/**
+ * 焦點環往外伸出多少（px）：index.css 的 `:focus-visible { outline: 2px; outline-offset: 2px }` ＝ 4px。
+ * 最低的鍵離畫面下緣要留這麼多再加 HUD_RING_SLACK_PX，焦點環才不會被視窗裁掉（layout.test 讀 index.css 驗證這個值）。
+ */
+export const HUD_FOCUS_RING_PX = 4;
+export const HUD_RING_SLACK_PX = 2;
+/** 頻道鍵高度（px；兩排字）：視窗高度 ≥ HUD_TALL_PX 用寬鬆值，較矮用緊湊值（CSS 的 --hud-key 同源）；最低的鍵離畫面下緣的距離（--hud-base）兩者相同 */
+export const HUD_KEY_PX = 42;
+export const HUD_BASE_PX = HUD_FOCUS_RING_PX + HUD_RING_SLACK_PX;
+export const HUD_KEY_COMPACT_PX = 34;
+export const HUD_BASE_COMPACT_PX = HUD_BASE_PX;
 export const HUD_TALL_PX = 700;
 export function hudKeyPx(heightPx: number): number {
   return heightPx >= HUD_TALL_PX ? HUD_KEY_PX : HUD_KEY_COMPACT_PX;

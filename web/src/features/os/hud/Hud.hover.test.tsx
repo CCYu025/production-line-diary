@@ -4,7 +4,7 @@ import { createHoverStore } from "../hub/hover";
 import { computeSignals } from "../hub/signals";
 import { Hud } from "./Hud";
 import { A_ZONE } from "../crt/zones";
-import { getCrtLevel } from "../crt/settings";
+import { getCrtLevel, setCrtLevel } from "../crt/settings";
 import { keyLayout, keyTarget } from "./leader";
 import { selectYawDeg } from "../hub/layout";
 
@@ -156,6 +156,37 @@ describe("引線", () => {
     lay = keyLayout(1280, 720, BARREL, selectYawDeg(5))!;
     expect(Math.abs(n("x2") - lay.x[5]!)).toBeLessThanOrEqual(1);
     expect(Math.abs(n("y2") - (keyTarget(lay, 5, 720).top - 3))).toBeLessThanOrEqual(1);
+  });
+
+  it("視窗縮放、CRT 強度改變（鍵會移動）時引線也先隱藏、過場後才顯示；減少動態效果時不隱藏", () => {
+    vi.useFakeTimers();
+    try {
+      fakeRects();
+      const hover = createHoverStore();
+      const props = { signals, active: true, onEnter: () => {}, onExit: () => {}, hover, settled: true } as const;
+      render(<Hud selected="CH-02" {...props} />);
+      const lead = () => document.querySelector('[data-os="hud-lead"]')!;
+      expect(lead().getAttribute("data-ready")).toBe("true");
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 1280 });
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: 720 });
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(lead().getAttribute("data-ready")).toBe("false");
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(lead().getAttribute("data-ready")).toBe("true");
+      act(() => setCrtLevel("max"));
+      expect(lead().getAttribute("data-ready")).toBe("false");
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(lead().getAttribute("data-ready")).toBe("true");
+    } finally {
+      vi.useRealTimers();
+      setCrtLevel("std");
+    }
   });
 
   it("選取改變後引線先隱藏（等鏡頭偏航到位），過了 SELECT_YAW_MS 才顯示；減少動態效果時立即顯示", () => {

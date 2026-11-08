@@ -89,7 +89,7 @@ describe("精簡文字依鍵寬（H0 r3）", () => {
     const { keyLayout, keyTarget } = await import("./leader");
     const l = keyLayout(1920, 1080, 0)!;
     expect(keyTarget(l, 3, 1080).top).toBeLessThan(keyTarget(l, 0, 1080).top);
-    expect(keyTarget(l, 0, 1080).top).toBe(1080 - 4 - 44);
+    expect(keyTarget(l, 0, 1080).top).toBe(1080 - 6 - 42);
     expect(keyTarget(l, 2, 1080).left).toBeCloseTo(l.x[2]! - l.w / 2, 6);
   });
 });

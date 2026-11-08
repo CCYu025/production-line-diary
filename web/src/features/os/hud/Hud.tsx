@@ -135,18 +135,20 @@ export const Hud = React.forwardRef<HudHandle, HudProps>(function Hud({ selected
     if (!active) hover?.clear();
   }, [active, hover]);
 
-  // 引線：選取改變後等鏡頭的選取偏航到位（SELECT_YAW_MS）才顯示；其餘時機（視窗、CRT 強度）立即重算
+  // 引線：會讓鍵移動的任何改變（選取、視窗大小、CRT 強度）之後，鍵有 250ms 的 left 過場、鏡頭有選取偏航的緩動：
+  // 先隱藏，等它們到位（SELECT_YAW_MS）才淡入；端點本身一直是最終座標（keyTarget），不量 DOM
   const [leader, setLeader] = React.useState<Leader | null>(null);
   const [leaderReady, setLeaderReady] = React.useState(true);
-  const seenSelected = React.useRef(selected);
+  const moveSig = `${selected}|${layout ? `${layout.w}:${layout.x.map((v) => Math.round(v)).join(",")}` : "avg"}`;
+  const seenSig = React.useRef(moveSig);
   React.useLayoutEffect(() => {
-    if (seenSelected.current === selected) return;
-    seenSelected.current = selected;
+    if (seenSig.current === moveSig) return;
+    seenSig.current = moveSig;
     if (reduced) return;
     setLeaderReady(false);
     const t = window.setTimeout(() => setLeaderReady(true), SELECT_YAW_MS + 30);
     return () => window.clearTimeout(t);
-  }, [selected, reduced]);
+  }, [moveSig, reduced]);
   React.useLayoutEffect(() => {
     const key = listRef.current?.querySelector<HTMLButtonElement>(`[data-ch="${selected}"]`);
     const root = hudRef.current;

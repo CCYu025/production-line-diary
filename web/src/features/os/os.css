@@ -195,7 +195,7 @@
   position: relative;
   display: block;
   width: 100%;
-  height: calc(var(--hud-arc, 0px) + var(--hud-key, 44px));
+  height: calc(var(--hud-arc, 0px) + var(--hud-key, 42px));
   padding: 0;
 }
 
@@ -252,7 +252,7 @@
   justify-content: center;
   gap: 1px;
   width: 100%;
-  min-height: var(--hud-key, 44px);
+  min-height: var(--hud-key, 42px);
   padding: 5px 12px;
   text-align: center;
   border: 0;
@@ -338,11 +338,12 @@
 /* 矮視窗（< 700px 高）：鍵與內距更緊，最高的鍵才離特寫螢幕面下緣 ≥ 8px（hub/layout.ts 的 hudKeyPx） */
 @media (max-height: 699.98px) {
   :root[data-mode="os"] .os-hud-button {
-    padding-block: 3px;
+    padding-block: 2px;
+    font-size: 11.5px;
   }
 
   :root[data-mode="os"] .os-hud-id {
-    font-size: 14px;
+    font-size: 13px;
   }
 }
 
