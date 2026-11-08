@@ -15,9 +15,9 @@ import { CHANNELS, type ChannelId } from "../channels";
 import { CRT_LABEL, CRT_LEVELS, setCrtLevel, useCrtLevel } from "../crt/settings";
 import { A_ZONE } from "../crt/zones";
 import { useHovered, type HoverStore } from "../hub/hover";
-import { hudArcDepthPx, SELECT_YAW_MS, selectYawDeg } from "../hub/layout";
+import { hudArcDepthPx, hudBasePx, hudKeyPx, SELECT_YAW_MS, selectYawDeg } from "../hub/layout";
 import type { HubSignals } from "../hub/signals";
-import { keyLayout, leaderGeometry, type Leader } from "./leader";
+import { keyLayout, keyTarget, leaderGeometry, needsCompact, type Leader } from "./leader";
 
 export interface HudHandle {
   /** 把焦點移到選中頻道的按鈕 */
@@ -39,6 +39,11 @@ export interface HudProps {
   settled?: boolean;
   /** 減少動態效果：選取偏航直接到位，引線不必等鏡頭 */
   reduced?: boolean;
+}
+
+/** 去掉 "CH-0x " 前綴的名稱（"儀表板 · 待處理 3"） */
+function fullName(name: string, id: ChannelId): string {
+  return name.startsWith(`${id} `) ? name.slice(id.length + 1) : name;
 }
 
 /** 視窗大小（resize 時更新）；HUD 的弧度與引線都由它算 */
@@ -119,9 +124,15 @@ export const Hud = React.forwardRef<HudHandle, HudProps>(function Hud({ selected
   // 鍵的水平對位：中心對齊各螢幕的投影（只在視窗大小、CRT 強度、選取（偏航）改變時重算）；算不出來或空間不夠就退回平均排列
   const layout = React.useMemo(() => keyLayout(vp.w, vp.h, barrelK, selectYawDeg(CHANNELS.findIndex((c) => c.id === selected))), [vp.w, vp.h, barrelK, selected]);
 
+  // 完整／精簡文字依「鍵寬」決定（不只看視窗寬）：放不下任何一個完整文字就精簡；平均排列（沒有對位）時交給 < 1440px 的媒體查詢
+  const compact = React.useMemo(
+    () => (layout ? needsCompact(layout.w, CHANNELS.map((c) => fullName(signals[c.id].name, c.id))) : false),
+    [layout, signals],
+  );
+
   // HUD 不作用（轉場、進入工作站）時清掉懸停：隱藏的鍵收不到 pointerleave，3D 的預覽框不能留著
   React.useEffect(() => {
-    if (!active) hover?.set(null);
+    if (!active) hover?.clear();
   }, [active, hover]);
 
   // 引線：選取改變後等鏡頭的選取偏航到位（SELECT_YAW_MS）才顯示；其餘時機（視窗、CRT 強度）立即重算
@@ -143,9 +154,15 @@ export const Hud = React.forwardRef<HudHandle, HudProps>(function Hud({ selected
       setLeader(null);
       return;
     }
-    const kr = key.getBoundingClientRect();
-    const rr = root.getBoundingClientRect();
-    setLeader(leaderGeometry({ width: vp.w, height: vp.h, channel: selected, barrelK, key: { left: kr.left - rr.left, top: kr.top - rr.top, width: kr.width } }));
+    // 對位排列：鍵有 250ms 的 left 過場，不量 DOM，直接用 keyLayout 算出的最終位置；平均排列（沒有過場）才量
+    let rect: { left: number; top: number; width: number };
+    if (layout) rect = keyTarget(layout, CHANNELS.findIndex((c) => c.id === selected), vp.h);
+    else {
+      const kr = key.getBoundingClientRect();
+      const rr = root.getBoundingClientRect();
+      rect = { left: kr.left - rr.left, top: kr.top - rr.top, width: kr.width };
+    }
+    setLeader(leaderGeometry({ width: vp.w, height: vp.h, channel: selected, barrelK, key: rect }));
   }, [settled, active, selected, vp.w, vp.h, barrelK, signals, layout]);
   const focusInside = React.useRef(false);
 
@@ -170,7 +187,7 @@ export const Hud = React.forwardRef<HudHandle, HudProps>(function Hud({ selected
       className="os-hud"
       data-os="hud"
       data-active={active ? "true" : "false"}
-      style={{ "--hud-arc": `${hudArcDepthPx(vp.h)}px` } as React.CSSProperties}
+      style={{ "--hud-arc": `${hudArcDepthPx(vp.h)}px`, "--hud-key": `${hudKeyPx(vp.h)}px`, "--hud-base": `${hudBasePx(vp.h)}px` } as React.CSSProperties}
       {...(inert as object)}
     >
       <h1 className="sr-only">PLD/OS 1995 控制室</h1>
@@ -183,7 +200,7 @@ export const Hud = React.forwardRef<HudHandle, HudProps>(function Hud({ selected
           EXIT TO WEB
         </button>
       </div>
-      <nav className="os-channels" aria-label="頻道" data-placed={layout ? "true" : "false"}>
+      <nav className="os-channels" aria-label="頻道" data-placed={layout ? "true" : "false"} data-compact={compact ? "true" : "false"}>
         <ul
           ref={listRef}
           data-os="hud-list"
@@ -211,10 +228,8 @@ export const Hud = React.forwardRef<HudHandle, HudProps>(function Hud({ selected
                   {...(hovered === ch.id ? { "data-hover": "true" as const } : {})}
                   aria-label={signals[ch.id].name}
                   onClick={() => onEnter(ch.id)}
-                  onPointerEnter={() => hover?.set(ch.id)}
-                  onPointerLeave={() => {
-                    if (hover?.get() === ch.id) hover.set(null);
-                  }}
+                  onPointerEnter={() => hover?.set(ch.id, "hud")}
+                  onPointerLeave={() => hover?.release("hud", ch.id)}
                 >
                   {/* accessible name 永遠是完整的 name（aria-label）；視窗 < 1440px 時 CSS 改顯示精簡文字 */}
                   <KeyText id={ch.id} text={signals[ch.id].name} className="os-hud-full" />

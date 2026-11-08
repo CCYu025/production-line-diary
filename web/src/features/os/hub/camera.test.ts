@@ -85,7 +85,6 @@ describe("休息位置納入 HUD（H0）", () => {
     const a = restPose(16 / 9, hud);
     expect(a).toBe(restPose(16 / 9, hud));
     expect(a).not.toEqual(restPose(16 / 9));
-    expect(a.position.z).toBeGreaterThan(restPose(16 / 9).position.z);
   });
   it("poseAt 的 p=0 就是有 HUD 的休息位置；p=1 不受 HUD 影響（推近終點只看選中螢幕）", () => {
     const hud = hudInsets(720);

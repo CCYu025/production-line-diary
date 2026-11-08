@@ -5,7 +5,7 @@ import { cardFrameRect, type Rect } from "../transition/choreo";
 import { ENTER } from "../transition/timing";
 import { cameraProgress } from "./camera";
 import { barrelDisplay, baseAnchorAt, faceRectAt } from "./faceRect";
-import { CLOSE_DISTANCE, FACE_FILL_FRAC, HUD_BASE_PX, HUD_KEY_PX, hudArcDepthPx, hudInsets, selectYawDeg } from "./layout";
+import { CLOSE_DISTANCE, FACE_FILL_FRAC, HUD_FACE_GAP_PX, hudBasePx, hudKeyPx, hudArcDepthPx, hudInsets, selectYawDeg } from "./layout";
 
 const ASPECTS: Array<[string, number]> = [
   ["1920×1080", 1920 / 1080],
@@ -81,8 +81,8 @@ describe("H0：控制台不碰特寫螢幕面（X3 r4 的 D4）", () => {
     ] as const) {
       for (const ch of CHANNELS) {
         const r = faceRectAt(w / h, ch.id, 1, 0, hudInsets(h));
-        const consoleTop = 1 - (HUD_BASE_PX + HUD_KEY_PX + hudArcDepthPx(h)) / h;
-        expect(r.y + r.h).toBeLessThanOrEqual(consoleTop + 1e-9);
+        const consoleTop = 1 - (hudBasePx(h) + hudKeyPx(h) + hudArcDepthPx(h)) / h;
+        expect(consoleTop * h - (r.y + r.h) * h).toBeGreaterThanOrEqual(HUD_FACE_GAP_PX - 1e-6);
         // 狀態列（48px）也不碰
         expect(r.y).toBeGreaterThanOrEqual(48 / h - 1e-9);
       }

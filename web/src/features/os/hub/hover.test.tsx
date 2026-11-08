@@ -1,6 +1,6 @@
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { createHoverProbe, createHoverStore, useHovered, type HoverStore } from "./hover";
+import { bindCanvasHover, createHoverProbe, createHoverStore, useHovered, type HoverStore } from "./hover";
 
 describe("createHoverStore（H0）", () => {
   it("get／set／subscribe；同值不通知；取消訂閱後不再通知", () => {
@@ -107,5 +107,74 @@ describe("createHoverProbe（3D 懸停射線的 rAF 節流）", () => {
     expect(t.queue.size).toBe(0);
     t.frame();
     expect(t.hitFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("懸停來源（H0 r3：指標從畫布移到 HUD 鍵時 enter 先於 leave）", () => {
+  it("release 只清自己來源的懸停；set 覆蓋任何來源；clear 無條件", () => {
+    const s = createHoverStore();
+    s.set("CH-05", "hud");
+    s.release("3d");
+    expect(s.get()).toBe("CH-05");
+    expect(s.getSource()).toBe("hud");
+    s.set("CH-03", "3d");
+    s.release("hud");
+    expect(s.get()).toBe("CH-03");
+    s.release("3d", "CH-01");
+    expect(s.get()).toBe("CH-03");
+    s.release("3d", "CH-03");
+    expect(s.get()).toBeNull();
+    s.set("CH-02", "hud");
+    s.clear();
+    expect(s.get()).toBeNull();
+    expect(s.getSource()).toBeNull();
+  });
+
+  function wire() {
+    const store = createHoverStore();
+    const canvas = document.createElement("canvas");
+    document.body.appendChild(canvas);
+    let target: "CH-06" | null = "CH-06";
+    const off = bindCanvasHover(canvas, {
+      hit: () => target,
+      hover: () => store,
+      pickable: () => true,
+      setCursor: (c) => {
+        canvas.style.cursor = c;
+      },
+      schedule: (cb) => {
+        cb();
+        return 1;
+      },
+      cancel: () => {},
+    });
+    return { store, canvas, off, setTarget: (t: "CH-06" | null) => (target = t) };
+  }
+
+  it("整合：同一個 DOM 裡先派發 HUD 鍵 pointerenter、再派發畫布 pointerleave，懸停仍是 CH-05", async () => {
+    const { Hud } = await import("../hud/Hud");
+    const { computeSignals } = await import("./signals");
+    const w = wire();
+    render(<Hud selected="CH-02" signals={computeSignals(undefined, new Date())} active onEnter={() => {}} onExit={() => {}} hover={w.store} />);
+    const key = document.querySelector('[data-os="hud-ch"][data-ch="CH-05"]')!;
+    w.canvas.dispatchEvent(new Event("pointermove"));
+    fireEvent.pointerEnter(key);
+    expect(w.store.get()).toBe("CH-05");
+    w.canvas.dispatchEvent(new Event("pointerleave"));
+    expect(w.store.get()).toBe("CH-05");
+    expect(w.store.getSource()).toBe("hud");
+    // 反方向：離開鍵 → 進入畫布懸停另一台
+    fireEvent.pointerLeave(key);
+    expect(w.store.get()).toBeNull();
+    const ev = new Event("pointermove");
+    w.canvas.dispatchEvent(ev);
+    expect(w.store.get()).toBe("CH-06");
+    expect(w.store.getSource()).toBe("3d");
+    // 畫布 3D 懸停中，HUD 鍵的 leave（沒有 enter 過）不清掉它
+    fireEvent.pointerLeave(key);
+    expect(w.store.get()).toBe("CH-06");
+    w.canvas.dispatchEvent(new Event("pointerleave"));
+    expect(w.store.get()).toBeNull();
+    w.off();
   });
 });

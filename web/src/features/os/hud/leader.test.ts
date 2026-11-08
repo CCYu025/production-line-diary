@@ -75,3 +75,21 @@ describe("keyLayout 隨選取偏航", () => {
     expect(a.x[3]!).toBeGreaterThan(b.x[3]!);
   });
 });
+
+describe("精簡文字依鍵寬（H0 r3）", () => {
+  it("1920×600（很寬很矮）鍵寬不夠放完整文字 → 精簡；1920×1080 放得下 → 完整；多位數訊號放不下就精簡", async () => {
+    const { keyLayout, needsCompact, fullTextNeedPx } = await import("./leader");
+    const texts = ["儀表板 · 待處理 0", "紀錄 · 今日 0", "新增 · READY", "日曆 · 今日 0", "報表 · 本月 0", "回收桶 · 0 筆", "設定 · 2 台"];
+    expect(needsCompact(keyLayout(1920, 1080, 0)!.w, texts)).toBe(false);
+    expect(needsCompact(keyLayout(1920, 600, 0)!.w, texts)).toBe(true);
+    expect(fullTextNeedPx("儀表板 · 待處理 128")).toBeGreaterThan(fullTextNeedPx("儀表板 · 待處理 0"));
+    expect(needsCompact(176, [...texts.slice(1), "儀表板 · 待處理 12345"])).toBe(true);
+  });
+  it("keyTarget：中間鍵最高、兩端貼底（上緣 = 視窗高 − base − key − 抬升）", async () => {
+    const { keyLayout, keyTarget } = await import("./leader");
+    const l = keyLayout(1920, 1080, 0)!;
+    expect(keyTarget(l, 3, 1080).top).toBeLessThan(keyTarget(l, 0, 1080).top);
+    expect(keyTarget(l, 0, 1080).top).toBe(1080 - 4 - 44);
+    expect(keyTarget(l, 2, 1080).left).toBeCloseTo(l.x[2]! - l.w / 2, 6);
+  });
+});

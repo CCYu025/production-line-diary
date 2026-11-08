@@ -6,22 +6,43 @@
 import * as React from "react";
 import type { ChannelId } from "../channels";
 
+/** 懸停的來源：HUD 頻道鍵，或 3D 螢幕。兩邊各自的「離開」只清掉自己來源的懸停（指標從畫布移到鍵時，事件順序是鍵的 enter 先、畫布的 leave 後）。 */
+export type HoverSource = "hud" | "3d";
+
 export interface HoverStore {
   get(): ChannelId | null;
-  set(id: ChannelId | null): void;
+  getSource(): HoverSource | null;
+  /** 設定懸停（覆蓋任何來源）；id 為 null 等於 clear() */
+  set(id: ChannelId | null, source?: HoverSource): void;
+  /** 只在目前懸停的來源是 source 時清除（可再指定必須是這個頻道） */
+  release(source: HoverSource, id?: ChannelId): void;
+  /** 無條件清除（HUD 變成不作用時） */
+  clear(): void;
   subscribe(listener: () => void): () => void;
 }
 
 export function createHoverStore(): HoverStore {
   let value: ChannelId | null = null;
+  let src: HoverSource | null = null;
   const listeners = new Set<() => void>();
-  return {
+  const notify = () => {
+    for (const l of [...listeners]) l();
+  };
+  const store: HoverStore = {
     get: () => value,
-    set(id) {
-      if (id === value) return;
+    getSource: () => src,
+    set(id, source = "hud") {
+      const nextSrc = id === null ? null : source;
+      if (id === value && nextSrc === src) return;
+      const changed = id !== value;
       value = id;
-      for (const l of [...listeners]) l();
+      src = nextSrc;
+      if (changed) notify();
     },
+    release(source, id) {
+      if (src === source && (id === undefined || id === value)) store.set(null);
+    },
+    clear: () => store.set(null),
     subscribe(listener) {
       listeners.add(listener);
       return () => {
@@ -29,6 +50,7 @@ export function createHoverStore(): HoverStore {
       };
     },
   };
+  return store;
 }
 
 /** 目前懸停的頻道（沒有 store 時永遠是 null）。 */
@@ -80,5 +102,47 @@ export function createHoverProbe(opts: HoverProbeOptions) {
     dispose() {
       clear();
     },
+  };
+}
+
+export interface CanvasHoverOptions {
+  hit: (clientX: number, clientY: number) => ChannelId | null;
+  hover: () => HoverStore | undefined;
+  /** 游標：有打到且可點時為 "pointer"，否則 "" */
+  setCursor: (cursor: string) => void;
+  pickable: () => boolean;
+  schedule: (cb: () => void) => number;
+  cancel: (handle: number) => void;
+}
+
+/** 把 3D 畫布的 pointermove／pointerleave 接上懸停 store（來源 "3d"）。回傳解除函式。 */
+export function bindCanvasHover(el: HTMLElement, o: CanvasHoverOptions): () => void {
+  const probe = createHoverProbe({
+    hit: o.hit,
+    schedule: o.schedule,
+    cancel: o.cancel,
+    onResult: (ch) => {
+      o.setCursor(o.pickable() && ch ? "pointer" : "");
+      const h = o.hover();
+      if (ch) h?.set(ch, "3d");
+      else h?.release("3d");
+    },
+  });
+  const onMove = (e: Event) => {
+    const pe = e as PointerEvent;
+    probe.move(pe.clientX, pe.clientY);
+  };
+  const onLeave = () => {
+    probe.leave();
+    o.setCursor("");
+  };
+  el.addEventListener("pointermove", onMove);
+  el.addEventListener("pointerleave", onLeave);
+  return () => {
+    el.removeEventListener("pointermove", onMove);
+    el.removeEventListener("pointerleave", onLeave);
+    probe.dispose();
+    o.setCursor("");
+    o.hover()?.release("3d");
   };
 }

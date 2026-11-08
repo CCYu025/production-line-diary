@@ -221,23 +221,34 @@ export function wallExtents(cam: CamPose, fovDeg: number, aspect: number): WallE
 
 /** 狀態列高度（px） */
 export const HUD_STATUS_PX = 48;
-/** 頻道鍵高度（px；兩排字） */
+/** 頻道鍵高度（px；兩排字）與最低的鍵離畫面下緣的距離：視窗高度 ≥ HUD_TALL_PX 用寬鬆值，較矮用緊湊值（CSS 的 --hud-key／--hud-base 同源） */
 export const HUD_KEY_PX = 44;
-/** 控制台最低的鍵離畫面下緣的距離（px） */
 export const HUD_BASE_PX = 4;
+export const HUD_KEY_COMPACT_PX = 40;
+export const HUD_BASE_COMPACT_PX = 0;
+export const HUD_TALL_PX = 700;
+export function hudKeyPx(heightPx: number): number {
+  return heightPx >= HUD_TALL_PX ? HUD_KEY_PX : HUD_KEY_COMPACT_PX;
+}
+export function hudBasePx(heightPx: number): number {
+  return heightPx >= HUD_TALL_PX ? HUD_BASE_PX : HUD_BASE_COMPACT_PX;
+}
 /** 控制台弧度（中間鍵比兩側高多少）的上限（px） */
 export const HUD_ARC_MAX_PX = 22;
 /**
- * 控制台最高的鍵（中間）的上緣，最多占畫面高度這個比例：離開轉場交接點（300ms）HUD 就啟用，
+ * 控制台最高的鍵（中間）的上緣，加上 HUD_FACE_GAP_PX 之後，最多占畫面高度這個比例：離開轉場交接點（300ms）HUD 就啟用，
  * 此時鏡頭仍在特寫位置，螢幕面下緣在畫面高度 (1 + FACE_FILL_FRAC) / 2 ＝ 92%——8% 以內不碰到特寫畫面（X3 r4 的 D4）。
  */
 export const HUD_CONSOLE_MAX_FRAC = (1 - FACE_FILL_FRAC) / 2;
+/** 特寫螢幕面下緣與最高鍵上緣之間至少留的空隙（px；容得下焦點環外擴） */
+export const HUD_FACE_GAP_PX = 8;
 /** 牆（與雷達台）的下緣與控制台上緣之間至少留的空隙（占畫面高度） */
 export const HUD_CLEARANCE_FRAC = 0.01;
 
-/** 控制台的弧度（px）：視窗越矮越淺，使最高的鍵不超過 HUD_CONSOLE_MAX_FRAC；CSS 用同一個公式（Hud 以 --hud-arc 傳入）。 */
+/** 控制台的弧度（px）：視窗越矮越淺，使最高的鍵離特寫螢幕面下緣至少 HUD_FACE_GAP_PX；CSS 用同一個公式（Hud 以 --hud-arc 傳入）。 */
 export function hudArcDepthPx(heightPx: number): number {
-  return Math.min(HUD_ARC_MAX_PX, Math.max(0, Math.floor(HUD_CONSOLE_MAX_FRAC * heightPx - HUD_KEY_PX - HUD_BASE_PX)));
+  const room = HUD_CONSOLE_MAX_FRAC * heightPx - HUD_FACE_GAP_PX - hudKeyPx(heightPx) - hudBasePx(heightPx);
+  return Math.min(HUD_ARC_MAX_PX, Math.max(0, Math.floor(room)));
 }
 
 export interface HudInsets {
@@ -251,7 +262,7 @@ export interface HudInsets {
 export function hudInsets(heightPx: number): HudInsets {
   const h = Math.max(1, heightPx);
   const q = (x: number) => Math.round(x * 200) / 200;
-  return { top: q(HUD_STATUS_PX / h), bottom: q((HUD_BASE_PX + HUD_KEY_PX + hudArcDepthPx(h)) / h) };
+  return { top: q(HUD_STATUS_PX / h), bottom: q((hudBasePx(h) + hudKeyPx(h) + hudArcDepthPx(h)) / h) };
 }
 
 /** 雷達台最靠近鏡頭的點（與 hubLines 的 RADAR.z + RADAR.radius 一致；layout.test 檢查）：休息構圖要讓它在控制台之上 */

@@ -4,7 +4,7 @@
  */
 import type { ChannelId } from "../channels";
 import { baseAnchorAt, faceRectAt } from "../hub/faceRect";
-import { hudInsets, selectYawDeg } from "../hub/layout";
+import { hudArcDepthPx, hudBasePx, hudInsets, hudKeyPx, selectYawDeg } from "../hub/layout";
 import { channelIndex, CHANNELS } from "../channels";
 
 export interface LeaderInput {
@@ -82,4 +82,29 @@ export function keyLayout(width: number, height: number, barrelK: number, yawDeg
   const x = cx.map((v) => Math.min(hi, Math.max(lo, v)));
   for (let i = 1; i < x.length; i++) if (x[i]! - x[i - 1]! < w + KEY_GAP_PX - 1e-6) return null;
   return { x, w };
+}
+
+/** 第 1–7 個鍵的抬升比例（二次曲線；與 os.css 的 li:nth-child 的 --lift 同值，osCss.test 檢查） */
+export const KEY_LIFT = [0, 0.556, 0.889, 1, 0.889, 0.556, 0] as const;
+
+/**
+ * 對位排列時，第 index 個鍵的最終矩形（視窗座標，px）——用 keyLayout 的數學與 CSS 的 --hud-arc／--hud-key／--hud-base 同一組公式算出，
+ * 不量 DOM：鍵的 left 有 250ms 過場，在過場開始時量 DOM 會量到舊位置。
+ */
+export function keyTarget(layout: KeyLayout, index: number, height: number): { left: number; top: number; width: number } {
+  const arc = hudArcDepthPx(height);
+  const top = height - hudBasePx(height) - hudKeyPx(height) - KEY_LIFT[index]! * arc;
+  return { left: layout.x[index]! - layout.w / 2, top, width: layout.w };
+}
+
+/** 完整文字（"儀表板 · 待處理 128"）在鍵裡需要的寬度估計（px）：CJK 全形字約 12.5px，其餘約 8px，加上左右內距 24px 與 6px 餘裕。 */
+export function fullTextNeedPx(text: string): number {
+  let w = 0;
+  for (const ch of text) w += /[　-鿿＀-￯]/.test(ch) ? 12.5 : 8;
+  return Math.ceil(w) + 24 + 6;
+}
+
+/** 鍵寬放不下任何一個完整文字就該改顯示精簡文字（texts＝各頻道去掉 "CH-0x " 之後的完整文字）。 */
+export function needsCompact(keyWidth: number, texts: readonly string[]): boolean {
+  return texts.some((t) => fullTextNeedPx(t) > keyWidth);
 }

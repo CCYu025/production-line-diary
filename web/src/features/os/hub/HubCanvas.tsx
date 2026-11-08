@@ -28,7 +28,7 @@ import { buildHubLines, type HubParts } from "./hubLines";
 import { RadarAnimator } from "./radarAnim";
 import type { HubAnomalies } from "./useHubAnomalies";
 import { hudInsets, MONITOR_COUNT, SCREEN_LOCAL, SCREEN_SIZE } from "./layout";
-import { createHoverProbe, useHovered, type HoverStore } from "./hover";
+import { bindCanvasHover, useHovered, type HoverStore } from "./hover";
 import { pickChannel } from "./pick";
 import { BLIP_TOKEN, DIM_BLIP_HUE_MAX, DIM_BLIP_MIX, DIM_BLIP_MIX_MAX, SWEEP_OMEGA, type Blip, type BlipColorKey } from "./radar";
 import { drawMonitorScreen, TEX_H, TEX_W, UNSELECTED_BRIGHTNESS, type CursorRect } from "./screenTexture";
@@ -530,32 +530,25 @@ function Picker({ pickable, onPick, level, hover }: Pick<HubCanvasProps, "pickab
       raycaster.setFromCamera(ndc, get().camera);
       return pickChannel({ origin: raycaster.ray.origin, direction: raycaster.ray.direction });
     };
-    const probe = createHoverProbe({
+    const unbind = bindCanvasHover(el, {
       hit: hitAt,
+      hover: () => live.current.hover,
+      pickable: () => live.current.pickable,
+      setCursor: (c) => {
+        el.style.cursor = c;
+      },
       schedule: (cb) => requestAnimationFrame(cb),
       cancel: (h) => cancelAnimationFrame(h),
-      onResult: (ch) => {
-        el.style.cursor = live.current.pickable && ch ? "pointer" : "";
-        live.current.hover?.set(ch);
-      },
     });
-    const onMove = (e: PointerEvent) => probe.move(e.clientX, e.clientY);
-    const onLeave = () => probe.leave();
     const onClick = (e: MouseEvent) => {
       if (!live.current.pickable) return;
       const ch = hitAt(e.clientX, e.clientY);
       if (ch) live.current.onPick(ch);
     };
-    el.addEventListener("pointermove", onMove);
-    el.addEventListener("pointerleave", onLeave);
     el.addEventListener("click", onClick);
     return () => {
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerleave", onLeave);
       el.removeEventListener("click", onClick);
-      probe.dispose();
-      el.style.cursor = "";
-      live.current.hover?.set(null);
+      unbind();
     };
   }, [gl, get]);
   React.useEffect(() => {

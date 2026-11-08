@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHoverStore } from "../hub/hover";
 import { computeSignals } from "../hub/signals";
 import { Hud } from "./Hud";
+import { A_ZONE } from "../crt/zones";
+import { getCrtLevel } from "../crt/settings";
+import { keyLayout, keyTarget } from "./leader";
+import { selectYawDeg } from "../hub/layout";
 
 /*
  * H0：HUD 控制台——DOM 結構與無障礙不變、雙向 hover 連動、引線。
@@ -110,6 +114,7 @@ describe("雙向 hover 連動", () => {
 });
 
 describe("引線", () => {
+  const BARREL = A_ZONE[getCrtLevel()].effects ? A_ZONE[getCrtLevel()].barrel : 0;
   function fakeRects() {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       const isKey = this.dataset?.os === "hud-ch";
@@ -119,15 +124,38 @@ describe("引線", () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 1080 });
   }
 
-  it("settled 時畫一條線，下端在選中鍵的上緣正中央；沒有 settled（巡視、轉場）不畫", () => {
+  const line = () => document.querySelector('[data-os="hud-lead"] line')!;
+  const n = (name: string) => Number(line().getAttribute(name));
+
+  it("settled 時畫一條線，下端是 keyLayout 算出的鍵上緣正中央（不量 DOM）；沒有 settled（巡視、轉場）不畫", () => {
     fakeRects();
     const { rerender } = mount({ settled: true });
-    const line = document.querySelector('[data-os="hud-lead"] line')!;
-    expect(line).not.toBeNull();
-    expect(Number(line.getAttribute("x2"))).toBeCloseTo(575, 3);
-    expect(Number(line.getAttribute("y2"))).toBeCloseTo(997, 3);
+    const lay = keyLayout(1920, 1080, BARREL, selectYawDeg(1))!;
+    const t = keyTarget(lay, 1, 1080);
+    expect(line()).not.toBeNull();
+    expect(n("x2")).toBeCloseTo(lay.x[1]!, 3);
+    expect(n("y2")).toBeCloseTo(t.top - 3, 3);
     rerender(<Hud selected="CH-02" signals={signals} active settled={false} onEnter={() => {}} onExit={() => {}} />);
     expect(document.querySelector('[data-os="hud-lead"] line')).toBeNull();
+  });
+
+  it("選取改變、視窗縮放後，引線下端立刻等於該鍵的最終中心（±1px），不受 left 過場影響", () => {
+    fakeRects();
+    const hover = createHoverStore();
+    const props = { signals, active: true, onEnter: () => {}, onExit: () => {}, hover, settled: true } as const;
+    const { rerender } = render(<Hud selected="CH-02" {...props} />);
+    rerender(<Hud selected="CH-06" {...props} />);
+    let lay = keyLayout(1920, 1080, BARREL, selectYawDeg(5))!;
+    expect(Math.abs(n("x2") - lay.x[5]!)).toBeLessThanOrEqual(1);
+    expect(Math.abs(n("y2") - (keyTarget(lay, 5, 1080).top - 3))).toBeLessThanOrEqual(1);
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1280 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 720 });
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    lay = keyLayout(1280, 720, BARREL, selectYawDeg(5))!;
+    expect(Math.abs(n("x2") - lay.x[5]!)).toBeLessThanOrEqual(1);
+    expect(Math.abs(n("y2") - (keyTarget(lay, 5, 720).top - 3))).toBeLessThanOrEqual(1);
   });
 
   it("選取改變後引線先隱藏（等鏡頭偏航到位），過了 SELECT_YAW_MS 才顯示；減少動態效果時立即顯示", () => {

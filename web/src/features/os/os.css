@@ -168,7 +168,7 @@
 :root[data-mode="os"] .os-channels {
   position: relative;
   flex: none;
-  padding: 4px var(--hud-pad) 4px;
+  padding: 4px var(--hud-pad) var(--hud-base, 4px);
   background: transparent;
   -webkit-mask-image: linear-gradient(90deg, transparent 0, black 3%, black 97%, transparent 100%);
   mask-image: linear-gradient(90deg, transparent 0, black 3%, black 97%, transparent 100%);
@@ -195,7 +195,7 @@
   position: relative;
   display: block;
   width: 100%;
-  height: calc(var(--hud-arc, 0px) + 44px);
+  height: calc(var(--hud-arc, 0px) + var(--hud-key, 44px));
   padding: 0;
 }
 
@@ -252,7 +252,7 @@
   justify-content: center;
   gap: 1px;
   width: 100%;
-  min-height: 44px;
+  min-height: var(--hud-key, 44px);
   padding: 5px 12px;
   text-align: center;
   border: 0;
@@ -323,6 +323,26 @@
 
   :root[data-mode="os"] .os-hud-compact {
     display: inline;
+  }
+}
+
+/* 鍵寬放不下完整文字（Hud 依 keyLayout 的鍵寬判斷，例如很寬很矮的視窗）：改顯示精簡文字，不論視窗寬度 */
+:root[data-mode="os"] .os-channels[data-compact="true"] .os-hud-full {
+  display: none;
+}
+
+:root[data-mode="os"] .os-channels[data-compact="true"] .os-hud-compact {
+  display: inline;
+}
+
+/* 矮視窗（< 700px 高）：鍵與內距更緊，最高的鍵才離特寫螢幕面下緣 ≥ 8px（hub/layout.ts 的 hudKeyPx） */
+@media (max-height: 699.98px) {
+  :root[data-mode="os"] .os-hud-button {
+    padding-block: 3px;
+  }
+
+  :root[data-mode="os"] .os-hud-id {
+    font-size: 14px;
   }
 }
 

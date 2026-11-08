@@ -10,10 +10,11 @@ import {
   facing,
   fitRestCamera,
   FACE_FILL_FRAC,
-  HUD_BASE_PX,
+  hudBasePx,
+  HUD_FACE_GAP_PX,
   HUD_CLEARANCE_FRAC,
   HUD_CONSOLE_MAX_FRAC,
-  HUD_KEY_PX,
+  hudKeyPx,
   HUD_STATUS_PX,
   hudArcDepthPx,
   hudInsets,
@@ -238,11 +239,11 @@ describe("HUD 納入構圖（H0：控制台與狀態列不遮住螢幕牆與雷�
     });
   }
 
-  it("控制台最高的鍵（中間）上緣不超過畫面高度的 8%（離開轉場交接點的特寫螢幕面下緣在 92%，D4）", () => {
+  it("控制台最高的鍵（中間）上緣離特寫螢幕面下緣（畫面高度 92%）至少 8px（D4）", () => {
     expect(HUD_CONSOLE_MAX_FRAC).toBeCloseTo((1 - FACE_FILL_FRAC) / 2, 12);
     for (const h of [600, 640, 720, 800, 900, 1080, 1440]) {
-      const centerTop = HUD_BASE_PX + HUD_KEY_PX + hudArcDepthPx(h);
-      expect(centerTop / h).toBeLessThanOrEqual(HUD_CONSOLE_MAX_FRAC + 1e-9);
+      const centerTop = hudBasePx(h) + hudKeyPx(h) + hudArcDepthPx(h);
+      expect(h * HUD_CONSOLE_MAX_FRAC - centerTop, `h=${h}`).toBeGreaterThanOrEqual(HUD_FACE_GAP_PX);
     }
     // 視窗夠高才有弧度；最矮時是平的
     expect(hudArcDepthPx(600)).toBe(0);
@@ -251,7 +252,8 @@ describe("HUD 納入構圖（H0：控制台與狀態列不遮住螢幕牆與雷�
 
   it("hudInsets：狀態列 48px；比例取到 0.005 的格子；視窗越矮占比越大", () => {
     expect(Math.abs(hudInsets(1080).top - HUD_STATUS_PX / 1080)).toBeLessThan(0.003);
-    expect(hudInsets(600).bottom).toBeGreaterThan(hudInsets(1080).bottom);
+    expect(hudInsets(600).top).toBeGreaterThan(hudInsets(1080).top);
+    expect(hudInsets(600).bottom).toBeGreaterThanOrEqual(hudInsets(1080).bottom);
     for (const h of [600, 721, 1079]) {
       const x = hudInsets(h);
       expect(Math.abs(x.top * 200 - Math.round(x.top * 200))).toBeLessThan(1e-9);
