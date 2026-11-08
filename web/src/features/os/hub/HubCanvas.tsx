@@ -27,7 +27,8 @@ import { createContextGuard } from "./contextGuard";
 import { buildHubLines, type HubParts } from "./hubLines";
 import { RadarAnimator } from "./radarAnim";
 import type { HubAnomalies } from "./useHubAnomalies";
-import { MONITOR_COUNT, SCREEN_LOCAL, SCREEN_SIZE } from "./layout";
+import { hudInsets, MONITOR_COUNT, SCREEN_LOCAL, SCREEN_SIZE } from "./layout";
+import { createHoverProbe, useHovered, type HoverStore } from "./hover";
 import { pickChannel } from "./pick";
 import { BLIP_TOKEN, DIM_BLIP_HUE_MAX, DIM_BLIP_MIX, DIM_BLIP_MIX_MAX, SWEEP_OMEGA, type Blip, type BlipColorKey } from "./radar";
 import { drawMonitorScreen, TEX_H, TEX_W, UNSELECTED_BRIGHTNESS, type CursorRect } from "./screenTexture";
@@ -59,6 +60,8 @@ export interface HubCanvasProps {
   pickable: boolean;
   /** 點到某台螢幕：呼叫端走和 HUD 按鈕相同的「選取＋進入」路徑 */
   onPick: (id: ChannelId) => void;
+  /** 懸停預覽（H0）：HUD 鍵懸停時 3D 對應螢幕出現淡四角框；3D 螢幕懸停時寫入，HUD 對應鍵亮起。只是預覽，不改變選取 */
+  hover?: HoverStore;
   /** WebGL 無法使用（不支援、初始化失敗、context 遺失後沒恢復）：呼叫端改用網頁模式 */
   onFailure: () => void;
 }
@@ -133,7 +136,8 @@ function HubScene({
   reduced,
   level,
   motion,
-}: Pick<HubCanvasProps, "channel" | "signals" | "blips" | "alerts" | "reduced" | "level"> & { motion: React.MutableRefObject<Motion | null> }) {
+  hover,
+}: Pick<HubCanvasProps, "channel" | "signals" | "blips" | "alerts" | "reduced" | "level" | "hover"> & { motion: React.MutableRefObject<Motion | null> }) {
   const scene = useThree((s) => s.scene);
   const latest = React.useRef({ channel, signals, reduced, level });
   latest.current = { channel, signals, reduced, level };
@@ -230,6 +234,12 @@ function HubScene({
     built.cursorMat.color.set(built.colors.accent).multiplyScalar(selectedIndex === CURSOR_INDEX ? 1 : UNSELECTED_BRIGHTNESS);
   }, [built, selectedIndex]);
 
+  // 懸停預覽（H0）：淡的四角框，靜態（沒有動畫，減少動態效果也一樣）；選取改變時重新套用（懸停的剛好是新選中的就不重複畫）
+  const hovered = useHovered(hover);
+  React.useEffect(() => {
+    built.parts.setHover(hovered === null ? null : channelIndex(hovered));
+  }, [built, hovered, selectedIndex]);
+
   // E1／X4：兩側螢幕沿弧線滑開並融進霧色（只改群組位置／朝向與顏色亮度；不配置物件）。p＝0 時完全回到原位與原亮度。
   React.useEffect(() => {
     const tmp: SlidePose = { x: 0, z: 0, yaw: 0 };
@@ -325,7 +335,8 @@ function Rig({
       if (!pinned.current || pinned.current.mode !== m) pinned.current = { mode: m, ch: ch.id };
     } else pinned.current = null;
     const target = pinned.current?.ch ?? ch.id;
-    const pose = poseAt(aspect, target, p);
+    const hud = hudInsets(size.height);
+    const pose = poseAt(aspect, target, p, hud);
     if (!inited.current) {
       // 第一幀：選取偏航直接到位（不從 0 緩動）
       inited.current = true;
@@ -355,7 +366,7 @@ function Rig({
       dbgTime(elapsed);
       dbgSet({
         camera: { position: [pose.position.x, pose.position.y, pose.position.z], lookAt: [pose.lookAt.x, pose.lookAt.y, pose.lookAt.z], progress: p },
-        faceRect: faceRectAt(aspect, target, p, A_ZONE[level].effects ? A_ZONE[level].barrel : 0),
+        faceRect: faceRectAt(aspect, target, p, A_ZONE[level].effects ? A_ZONE[level].barrel : 0, hud, p === 0 ? r.yawDeg : 0),
       });
     }
   });
@@ -493,21 +504,25 @@ function Pipeline({
   return null;
 }
 
-/** 螢幕點選：只在 pickable（HUB）時作用。懸停只改游標；點擊呼叫 onPick。 */
-function Picker({ pickable, onPick, level }: Pick<HubCanvasProps, "pickable" | "onPick" | "level">) {
+/**
+ * 螢幕點選與懸停。點擊只在 pickable（HUB）時作用，呼叫 onPick；游標也只在 pickable 時變手指。
+ * 懸停預覽（H0）：以 rAF 節流（一幀最多一次射線），沿用 pickChannel；轉場中、HUD 非作用中、減少動態效果時照常算
+ * （預覽四角框沒有動畫）。指標離開畫布就清掉。
+ */
+function Picker({ pickable, onPick, level, hover }: Pick<HubCanvasProps, "pickable" | "onPick" | "level" | "hover">) {
   const gl = useThree((s) => s.gl);
   const get = useThree((s) => s.get);
-  const live = React.useRef({ pickable, onPick, level });
-  live.current = { pickable, onPick, level };
+  const live = React.useRef({ pickable, onPick, level, hover });
+  live.current = { pickable, onPick, level, hover };
   React.useEffect(() => {
     const el = gl.domElement;
     const raycaster = new THREE.Raycaster();
     const ndc = new THREE.Vector2();
-    const hit = (e: MouseEvent): ChannelId | null => {
+    const hitAt = (clientX: number, clientY: number): ChannelId | null => {
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) return null;
-      const x = ((e.clientX - r.left) / r.width) * 2 - 1;
-      const y = -((e.clientY - r.top) / r.height) * 2 + 1;
+      const x = ((clientX - r.left) / r.width) * 2 - 1;
+      const y = -((clientY - r.top) / r.height) * 2 + 1;
       // CRT 桶狀弧面把場景往外推：螢幕上看到的位置 c 對應場景座標 c·(1 + k|c|²)（強度「關」時 k＝0）
       const k = A_ZONE[live.current.level].effects ? A_ZONE[live.current.level].barrel : 0;
       const s = 1 + k * (x * x + y * y);
@@ -515,15 +530,20 @@ function Picker({ pickable, onPick, level }: Pick<HubCanvasProps, "pickable" | "
       raycaster.setFromCamera(ndc, get().camera);
       return pickChannel({ origin: raycaster.ray.origin, direction: raycaster.ray.direction });
     };
-    const onMove = (e: PointerEvent) => {
-      el.style.cursor = live.current.pickable && hit(e) ? "pointer" : "";
-    };
-    const onLeave = () => {
-      el.style.cursor = "";
-    };
+    const probe = createHoverProbe({
+      hit: hitAt,
+      schedule: (cb) => requestAnimationFrame(cb),
+      cancel: (h) => cancelAnimationFrame(h),
+      onResult: (ch) => {
+        el.style.cursor = live.current.pickable && ch ? "pointer" : "";
+        live.current.hover?.set(ch);
+      },
+    });
+    const onMove = (e: PointerEvent) => probe.move(e.clientX, e.clientY);
+    const onLeave = () => probe.leave();
     const onClick = (e: MouseEvent) => {
       if (!live.current.pickable) return;
-      const ch = hit(e);
+      const ch = hitAt(e.clientX, e.clientY);
       if (ch) live.current.onPick(ch);
     };
     el.addEventListener("pointermove", onMove);
@@ -533,7 +553,9 @@ function Picker({ pickable, onPick, level }: Pick<HubCanvasProps, "pickable" | "
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerleave", onLeave);
       el.removeEventListener("click", onClick);
+      probe.dispose();
       el.style.cursor = "";
+      live.current.hover?.set(null);
     };
   }, [gl, get]);
   React.useEffect(() => {
@@ -645,6 +667,7 @@ export default function HubCanvas({
   level,
   pickable,
   onPick,
+  hover,
   onFailure,
 }: HubCanvasProps) {
   const flags = React.useMemo(debugFlags, []);
@@ -679,10 +702,10 @@ export default function HubCanvas({
         gl={{ antialias: false, alpha: false, powerPreference: "high-performance" }}
         camera={{ fov: CAMERA_FOV, near: 0.1, far: 120, position: [restPose(16 / 9).position.x, restPose(16 / 9).position.y, restPose(16 / 9).position.z] }}
       >
-        <HubScene channel={channel} signals={signals} blips={blips} alerts={alerts} reduced={reduced} level={level} motion={motion} />
+        <HubScene channel={channel} signals={signals} blips={blips} alerts={alerts} reduced={reduced} level={level} motion={motion} hover={hover} />
         <Rig mode={mode} clock={clock} reduced={reduced} sway={!flags.has("nosway")} channel={channel} patrolling={patrolling} level={level} motion={motion} />
         <Pipeline reduced={reduced} bloom={!flags.has("nobloom")} level={level} boot={boot} bootCounts={bootCounts} clock={clock} mode={mode} />
-        <Picker pickable={pickable} onPick={onPick} level={level} />
+        <Picker pickable={pickable} onPick={onPick} level={level} hover={hover} />
         <GlLifecycle onFailure={notifyFailure} debug={debugGl} />
       </Canvas>
     </HubErrorBoundary>

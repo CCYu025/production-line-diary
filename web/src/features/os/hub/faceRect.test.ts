@@ -4,8 +4,8 @@ import { A_ZONE } from "../crt/zones";
 import { cardFrameRect, type Rect } from "../transition/choreo";
 import { ENTER } from "../transition/timing";
 import { cameraProgress } from "./camera";
-import { barrelDisplay, faceRectAt } from "./faceRect";
-import { CLOSE_DISTANCE, FACE_FILL_FRAC } from "./layout";
+import { barrelDisplay, baseAnchorAt, faceRectAt } from "./faceRect";
+import { CLOSE_DISTANCE, FACE_FILL_FRAC, HUD_BASE_PX, HUD_KEY_PX, hudArcDepthPx, hudInsets, selectYawDeg } from "./layout";
 
 const ASPECTS: Array<[string, number]> = [
   ["1920×1080", 1920 / 1080],
@@ -69,5 +69,45 @@ describe("螢幕面投影矩形（E1 結束＝台標卡外框起點）", () => {
         expect(card).toEqual(face);
       }
     }
+  });
+});
+
+describe("H0：控制台不碰特寫螢幕面（X3 r4 的 D4）", () => {
+  it("1920×1080、1280×720、1024×600：離開轉場交接點（鏡頭仍在特寫）時，最高的鍵上緣在螢幕面下緣之下", () => {
+    for (const [w, h] of [
+      [1920, 1080],
+      [1280, 720],
+      [1024, 600],
+    ] as const) {
+      for (const ch of CHANNELS) {
+        const r = faceRectAt(w / h, ch.id, 1, 0, hudInsets(h));
+        const consoleTop = 1 - (HUD_BASE_PX + HUD_KEY_PX + hudArcDepthPx(h)) / h;
+        expect(r.y + r.h).toBeLessThanOrEqual(consoleTop + 1e-9);
+        // 狀態列（48px）也不碰
+        expect(r.y).toBeGreaterThanOrEqual(48 / h - 1e-9);
+      }
+    }
+  });
+});
+
+describe("baseAnchorAt（引線的螢幕端）", () => {
+  const hud = hudInsets(1080);
+  it("在螢幕面矩形的下方、水平位置落在該螢幕面的左右範圍內", () => {
+    CHANNELS.forEach((ch, i) => {
+      const yaw = selectYawDeg(i);
+      const face = faceRectAt(16 / 9, ch.id, 0, 0, hud, yaw);
+      const a = baseAnchorAt(16 / 9, ch.id, 0, hud, yaw)!;
+      expect(a.y).toBeGreaterThan(face.y + face.h);
+      expect(a.x).toBeGreaterThan(face.x - 0.01);
+      expect(a.x).toBeLessThan(face.x + face.w + 0.01);
+    });
+  });
+  it("左邊的頻道在左、右邊的在右；桶狀弧面把點往內拉", () => {
+    const l = baseAnchorAt(16 / 9, "CH-01", 0, hud)!;
+    const r = baseAnchorAt(16 / 9, "CH-07", 0, hud)!;
+    expect(l.x).toBeLessThan(0.5);
+    expect(r.x).toBeGreaterThan(0.5);
+    const lb = baseAnchorAt(16 / 9, "CH-01", A_ZONE.max.barrel, hud)!;
+    expect(lb.x).toBeGreaterThan(l.x);
   });
 });

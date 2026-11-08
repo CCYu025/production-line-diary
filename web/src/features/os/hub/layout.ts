@@ -217,39 +217,101 @@ export function wallExtents(cam: CamPose, fovDeg: number, aspect: number): WallE
   };
 }
 
+/* ---------- HUD 構圖（docs/holo-mode-spec.md §7；H0） ---------- */
+
+/** 狀態列高度（px） */
+export const HUD_STATUS_PX = 48;
+/** 頻道鍵高度（px；兩排字） */
+export const HUD_KEY_PX = 44;
+/** 控制台最低的鍵離畫面下緣的距離（px） */
+export const HUD_BASE_PX = 4;
+/** 控制台弧度（中間鍵比兩側高多少）的上限（px） */
+export const HUD_ARC_MAX_PX = 22;
+/**
+ * 控制台最高的鍵（中間）的上緣，最多占畫面高度這個比例：離開轉場交接點（300ms）HUD 就啟用，
+ * 此時鏡頭仍在特寫位置，螢幕面下緣在畫面高度 (1 + FACE_FILL_FRAC) / 2 ＝ 92%——8% 以內不碰到特寫畫面（X3 r4 的 D4）。
+ */
+export const HUD_CONSOLE_MAX_FRAC = (1 - FACE_FILL_FRAC) / 2;
+/** 牆（與雷達台）的下緣與控制台上緣之間至少留的空隙（占畫面高度） */
+export const HUD_CLEARANCE_FRAC = 0.01;
+
+/** 控制台的弧度（px）：視窗越矮越淺，使最高的鍵不超過 HUD_CONSOLE_MAX_FRAC；CSS 用同一個公式（Hud 以 --hud-arc 傳入）。 */
+export function hudArcDepthPx(heightPx: number): number {
+  return Math.min(HUD_ARC_MAX_PX, Math.max(0, Math.floor(HUD_CONSOLE_MAX_FRAC * heightPx - HUD_KEY_PX - HUD_BASE_PX)));
+}
+
+export interface HudInsets {
+  /** 上方狀態列占畫面高度的比例 */
+  top: number;
+  /** 下方控制台（含弧度）占畫面高度的比例 */
+  bottom: number;
+}
+
+/** 視窗高度 → HUD 上下占的比例（休息鏡頭構圖用）。比例取到 0.005 的格子，鏡頭快取才不會因為拖曳視窗而暴增。 */
+export function hudInsets(heightPx: number): HudInsets {
+  const h = Math.max(1, heightPx);
+  const q = (x: number) => Math.round(x * 200) / 200;
+  return { top: q(HUD_STATUS_PX / h), bottom: q((HUD_BASE_PX + HUD_KEY_PX + hudArcDepthPx(h)) / h) };
+}
+
+/** 雷達台最靠近鏡頭的點（與 hubLines 的 RADAR.z + RADAR.radius 一致；layout.test 檢查）：休息構圖要讓它在控制台之上 */
+export const RADAR_FRONT_Z = 10;
+
 /**
  * 休息位置：鏡頭高度 REST_CAM_Y、水平置中；往後退到整面牆占視窗寬度 REST_WALL_WIDTH_FRAC，
  * 再把看向點的高度調到「中間那台螢幕面中心」落在畫面高度 REST_FACE_Y_FRAC（所以畫面上方不會空一大塊）。
  * 與選取偏航搭配：偏航上限 ≤ 3°、不位移，牆兩側仍有 ≥ 4% 邊距（layout.test 以投影驗證 1920×1080／1280×720／1024×640）。
+ * hud（H0）：上方狀態列與下方控制台占的比例。有的話，REST_FACE_Y_FRAC 對應的是「扣掉 HUD 之後剩下的區域」，
+ * 且整面牆與雷達台的下緣都要落在控制台上緣之上、牆的上緣在狀態列之下；做不到就把牆縮小（鏡頭往後退）直到做得到。
  * fovDeg 是垂直視角。
  */
-export function fitRestCamera(fovDeg: number, aspect: number, opts: { y?: number; widthFrac?: number; faceY?: number } = {}): { position: Vec3; lookAt: Vec3 } {
+export function fitRestCamera(
+  fovDeg: number,
+  aspect: number,
+  opts: { y?: number; widthFrac?: number; faceY?: number; hud?: HudInsets } = {},
+): { position: Vec3; lookAt: Vec3 } {
   const y = opts.y ?? REST_CAM_Y;
-  const widthFrac = opts.widthFrac ?? REST_WALL_WIDTH_FRAC;
-  const faceY = opts.faceY ?? REST_FACE_Y_FRAC;
-  let camZ = 20;
-  let lookY = 0.5;
-  for (let iter = 0; iter < 5; iter++) {
-    let lo = 4;
-    let hi = 80;
-    for (let k = 0; k < 40; k++) {
-      const mid = (lo + hi) / 2;
-      const e = wallExtents({ position: { x: 0, y, z: mid }, lookAt: { x: 0, y: lookY, z: 0 } }, fovDeg, aspect);
-      if (e.maxX - e.minX > widthFrac) lo = mid;
-      else hi = mid;
+  const hud = opts.hud;
+  const top = hud?.top ?? 0;
+  const bottom = hud?.bottom ?? 0;
+  const faceY = top + (opts.faceY ?? REST_FACE_Y_FRAC) * (1 - top - bottom);
+  const solve = (widthFrac: number) => {
+    let camZ = 20;
+    let lookY = 0.5;
+    for (let iter = 0; iter < 5; iter++) {
+      let lo = 4;
+      let hi = 80;
+      for (let k = 0; k < 40; k++) {
+        const mid = (lo + hi) / 2;
+        const e = wallExtents({ position: { x: 0, y, z: mid }, lookAt: { x: 0, y: lookY, z: 0 } }, fovDeg, aspect);
+        if (e.maxX - e.minX > widthFrac) lo = mid;
+        else hi = mid;
+      }
+      camZ = (lo + hi) / 2;
+      let l2 = -3;
+      let h2 = y;
+      for (let k = 0; k < 40; k++) {
+        const mid = (l2 + h2) / 2;
+        const e = wallExtents({ position: { x: 0, y, z: camZ }, lookAt: { x: 0, y: mid, z: 0 } }, fovDeg, aspect);
+        if (e.faceCenterY > faceY) h2 = mid;
+        else l2 = mid;
+      }
+      lookY = (l2 + h2) / 2;
     }
-    camZ = (lo + hi) / 2;
-    let l2 = -3;
-    let h2 = y;
-    for (let k = 0; k < 40; k++) {
-      const mid = (l2 + h2) / 2;
-      const e = wallExtents({ position: { x: 0, y, z: camZ }, lookAt: { x: 0, y: mid, z: 0 } }, fovDeg, aspect);
-      if (e.faceCenterY > faceY) h2 = mid;
-      else l2 = mid;
-    }
-    lookY = (l2 + h2) / 2;
+    return { position: { x: 0, y, z: camZ }, lookAt: { x: 0, y: lookY, z: 0 } };
+  };
+  let widthFrac = opts.widthFrac ?? REST_WALL_WIDTH_FRAC;
+  let cam = solve(widthFrac);
+  if (!hud) return cam;
+  const limit = 1 - bottom - HUD_CLEARANCE_FRAC;
+  for (let n = 0; n < 40; n++) {
+    const e = wallExtents(cam, fovDeg, aspect);
+    const radar = makeProjector(cam, fovDeg, aspect)({ x: 0, y: 0, z: RADAR_FRONT_Z });
+    if (e.maxY <= limit && (!radar || radar.y <= limit) && e.minY >= top + HUD_CLEARANCE_FRAC) break;
+    widthFrac -= 0.01;
+    cam = solve(widthFrac);
   }
-  return { position: { x: 0, y, z: camZ }, lookAt: { x: 0, y: lookY, z: 0 } };
+  return cam;
 }
 
 /** 世界點是否落在鏡頭水平視角內（測試與除錯用；鏡頭看向 -z，不含俯仰）。 */

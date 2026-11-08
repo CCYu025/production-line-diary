@@ -162,7 +162,7 @@ function buildMonitors(colors: HubLineColors): MonitorParts[] {
 }
 
 /** 選中螢幕的四角框（Line2 系列：可以比 1 像素粗）。四個角各兩條邊，共 8 段。 */
-export function buildBracket(color: THREE.ColorRepresentation): LineSegments2 {
+export function buildBracket(color: THREE.ColorRepresentation, opts: { linewidth?: number; opacity?: number } = {}): LineSegments2 {
   const hw = SCREEN_SIZE.width / 2 + 0.12;
   const hh = SCREEN_SIZE.height / 2 + 0.12;
   const len = 0.42;
@@ -178,7 +178,11 @@ export function buildBracket(color: THREE.ColorRepresentation): LineSegments2 {
   }
   const geo = new LineSegmentsGeometry();
   geo.setPositions(pts);
-  const mat = new LineMaterial({ color: new THREE.Color(color).getHex(), linewidth: 3, worldUnits: false, depthTest: false, fog: false });
+  const mat = new LineMaterial({ color: new THREE.Color(color).getHex(), linewidth: opts.linewidth ?? 3, worldUnits: false, depthTest: false, fog: false });
+  if (opts.opacity !== undefined && opts.opacity < 1) {
+    mat.transparent = true;
+    mat.opacity = opts.opacity;
+  }
   const bracket = new LineSegments2(geo, mat);
   bracket.frustumCulled = false;
   bracket.renderOrder = 3;
@@ -336,6 +340,10 @@ export interface HubParts {
   radar: RadarParts;
   /** 選中第 index 台：外框變選中色、四角框移過去、其餘外框回到一般色；不碰貼圖。亮度由 setBrightness 負責。 */
   select(index: number): void;
+  /** 懸停預覽（H0）：在第 index 台（null＝沒有）畫一組淡的、較細的四角框；選中的那台已經有選取框，不重複畫。第一次需要時才建立。 */
+  setHover(index: number | null): void;
+  /** 目前的懸停四角框（測試用；還沒建立過是 null） */
+  hoverBracket(): LineSegments2 | null;
   /** 第 index 台融進霧色的程度 0..1（X3，E1／X4 的兩側螢幕）：外殼與外框的顏色往 --page 混；0＝原色。不碰貼圖與亮度。 */
   fade(index: number, amount: number): void;
   /** 填入光點（最多 MAX_BLIPS）；回傳實際畫出的數量 */
@@ -383,6 +391,15 @@ export function buildHubLines(colors: HubLineColors): HubParts {
     monitors[index]?.group.add(bracket);
   };
   select(selectedIndex);
+  let hoverBracket: LineSegments2 | null = null;
+  const setHover = (index: number | null) => {
+    if (index === null || index === selectedIndex || !monitors[index]) {
+      hoverBracket?.removeFromParent();
+      return;
+    }
+    hoverBracket ??= buildBracket(colors.accent, { linewidth: 1.5, opacity: 0.5 });
+    monitors[index]!.group.add(hoverBracket);
+  };
   const fade = (index: number, amount: number) => {
     const m = monitors[index];
     if (!m || fades[index] === amount) return;
@@ -439,7 +456,11 @@ export function buildHubLines(colors: HubLineColors): HubParts {
     });
     kill(bracket.geometry);
     kill(bracket.material as THREE.Material);
+    if (hoverBracket) {
+      kill(hoverBracket.geometry);
+      kill(hoverBracket.material as THREE.Material);
+    }
   };
 
-  return { group, segments, monitors, bracket, radar, select, fade, setBlips, dispose };
+  return { group, segments, monitors, bracket, radar, select, setHover, hoverBracket: () => hoverBracket, fade, setBlips, dispose };
 }

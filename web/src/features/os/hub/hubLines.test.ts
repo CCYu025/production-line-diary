@@ -56,6 +56,31 @@ describe("hubLines（X2：7 台螢幕＋雷達台）", () => {
     expect(parts.monitors.filter((m) => m.group.children.includes(parts.bracket))).toHaveLength(1);
   });
 
+  it("懸停預覽（H0）：淡的四角框掛在被懸停的螢幕下（選中的那台不重複畫）；null 或換台就移走；不計入建立時的線段總數", () => {
+    const parts = buildHubLines(colors);
+    const base = countSegments(parts.group);
+    parts.select(3);
+    const baseSel = countSegments(parts.group);
+    expect(baseSel).toBe(base);
+    expect(parts.hoverBracket()).toBeNull();
+    parts.setHover(1);
+    const hb = parts.hoverBracket()!;
+    expect(hb.parent).toBe(parts.monitors[1]!.group);
+    expect(hb).not.toBe(parts.bracket);
+    expect((hb.material as unknown as { opacity: number }).opacity).toBeLessThan(1);
+    expect(countSegments(parts.group)).toBe(base + 8);
+    parts.setHover(5);
+    expect(parts.hoverBracket()!.parent).toBe(parts.monitors[5]!.group);
+    expect(parts.monitors.filter((m) => m.group.children.includes(hb))).toHaveLength(1);
+    parts.setHover(3); // 選中的那台：不重複畫
+    expect(hb.parent).toBeNull();
+    parts.setHover(2);
+    parts.setHover(null);
+    expect(hb.parent).toBeNull();
+    expect(countSegments(parts.group)).toBe(base);
+    parts.dispose();
+  });
+
   it("選取：只有選中螢幕的外框是選中色", () => {
     const parts = buildHubLines(colors);
     parts.select(3);

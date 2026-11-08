@@ -36,6 +36,7 @@ import { useHubAnomalies } from "./hub/useHubAnomalies";
 import { useHubData } from "./hub/useHubSignals";
 import { CommandPalette } from "./hud/CommandPalette";
 import { Hud, type HudHandle } from "./hud/Hud";
+import { createHoverStore } from "./hub/hover";
 import "./os.css";
 import { StationFrame } from "./station/StationFrame";
 import { TransitionOverlay } from "./transition/TransitionOverlay";
@@ -244,6 +245,8 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
   const bVars = React.useMemo(() => bZoneVars(crtLevel, dpr), [crtLevel, dpr]);
   const mainRef = React.useRef<HTMLElement>(null);
   const hudRef = React.useRef<HudHandle>(null);
+  // 懸停預覽（H0）：HUD 頻道鍵與 3D 螢幕雙向連動；外部 store，懸停改變不重繪整個外殼
+  const [hover] = React.useState(createHoverStore);
 
   // ---- 選中的頻道：控制室記住最後一個「顯示過工作站」的頻道 ----
   const [selected, setSelected] = React.useState<ChannelId>(() => stationChOf(state) ?? channelForPath(pathname) ?? DEFAULT_SELECTED);
@@ -512,10 +515,21 @@ function OsStage({ suspended, onExitWeb, onWebglFailure }: OsStageProps) {
           level={crtLevel}
           pickable={hudActive && !suspended}
           onPick={enterChannel}
+          hover={hover}
           onFailure={onWebglFailure}
         />
       </div>
-      <Hud ref={hudRef} selected={selected} signals={hubData.signals} active={hudActive && !suspended} onEnter={enterChannel} onExit={onExitWeb} />
+      <Hud
+        ref={hudRef}
+        selected={selected}
+        signals={hubData.signals}
+        active={hudActive && !suspended}
+        onEnter={enterChannel}
+        onExit={onExitWeb}
+        hover={hover}
+        settled={inHub && !suspended && !patrolling}
+        reduced={reduced}
+      />
       {showStation ? (
         <div ref={stationRef} className="os-station" data-os="station" data-hidden={stationHidden ? "true" : "false"} data-prep={enterPre && prep ? "true" : "false"} {...(stationInert as object)}>
           <StationFrame tag={stationCh ?? ""} onBack={() => void navigate(HUB_PATH)} onSkipToMain={() => mainRef.current?.focus()}>
