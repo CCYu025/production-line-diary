@@ -181,6 +181,16 @@ describe("Combobox：輸入法選字中的按鍵交給輸入法", () => {
     expect(box().value).toBe("");
   });
 
+  it("在 <form> 裡：keypress 本身的 key 是 Process、charCode 13 也被 preventDefault，不隱式送出", async () => {
+    const u = userEvent.setup();
+    const submitted = setup();
+    await u.click(box());
+    const ok = fireEvent.keyPress(box(), { key: "Process", charCode: 13 });
+    expect(ok).toBe(false);
+    expect(submitted).not.toHaveBeenCalled();
+    expect(box().value).toBe("");
+  });
+
   it("compositionend 之後 Enter 照原本規則選取（迴歸）", async () => {
     const u = userEvent.setup();
     const submitted = setup();

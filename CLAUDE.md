@@ -388,7 +388,7 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
   - **字型自行託管，不連 Google Fonts**（`@fontsource`，只打包用到的字重）——這是離線／內網也要能用的本機工具。
   - **文字色 token 對比度 ≥ 4.5:1**（淺色、深色都是；`ink-muted` 曾經只有約 3.4:1）。`web/src/test/contrast.test.ts` 直接讀 `index.css` 的色票把關，調色票時不要把它改回難讀的顏色。
   - **`#/_ui` 元件預覽只在 `import.meta.env.DEV`**（`npm run dev:web`）存在，正式建置不含。
-  - **可輸入的下拉（`components/Combobox.tsx`，設備／分類）按 Enter 永遠不會送出整張表單**：有反白的建議就選它，否則只是確認目前打的值並收起清單；使用者在欄位裡打完字按 Enter，不該意外送出還沒填完的紀錄（`Combobox.test.tsx` 有測）；選字中（`isComposing` 或 keyCode 229）的 Enter／↑↓／Esc 交給輸入法（Combobox 與 CopyPicker 都不選取、不移動、不收合）；Combobox 另外擋掉 Enter 的 keypress（選字時 keydown 的 key 可能是 `Process`／`Unidentified`），所以任何輸入法下 Enter 都不會隱式送出表單。
+  - **可輸入的下拉（`components/Combobox.tsx`，設備／分類）按 Enter 永遠不會送出整張表單**：有反白的建議就選它，否則只是確認目前打的值並收起清單；使用者在欄位裡打完字按 Enter，不該意外送出還沒填完的紀錄（`Combobox.test.tsx` 有測）；選字中（`isComposing` 或 keyCode 229）的 Enter／↑↓／Esc 交給輸入法（Combobox 與 CopyPicker 都不選取、不移動、不收合）；Combobox 另外擋掉 Enter 的 keypress（`key` 為 Enter 或 `charCode` 為 13；選字時 keydown 的 key 可能是 `Process`／`Unidentified`），所以任何輸入法下 Enter 都不會隱式送出表單。
   - **舊資料的設備／分類可能是空字串**：儀表板長條圖與篩選 chip 顯示「（未填）」（`labelOrUnfilled()`），但點下去帶入的仍是精確的 `""`（網址是 `equipment=`，解析時保留空字串、只忽略純空白）。
   - **所有 toast 走 `lib/feedback.ts`**（成功綠色勾、錯誤紅色且停留較久且是 `role="alert"`、可撤銷操作 `toastUndoable`），不要直接 import sonner。
   - **觸控目標 ≥ 44px（手機）、所有可點元素可用鍵盤操作且有可見焦點環、詳情面板／對話框有焦點鎖定且關閉後焦點回到觸發元素**——別用不可聚焦的 `div` 當按鈕。

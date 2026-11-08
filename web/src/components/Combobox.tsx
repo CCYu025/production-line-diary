@@ -33,7 +33,7 @@ export interface ComboboxProps extends Omit<React.ComponentProps<"input">, "valu
 
 /**
  * 可輸入的 Combobox（ARIA 1.2 combobox + listbox）：可選既有建議，也可以直接輸入新值。
- * 鍵盤：↓↑ 移動、Enter 選取目前高亮的項目（沒有高亮就照一般輸入框處理）、Esc 收合、Tab 離開。
+ * 鍵盤：↓↑ 移動、Enter 選取目前高亮的項目（沒有高亮就收起清單，不送出表單）、Esc 收合、Tab 離開。
  * 輸入框一直保有焦點（選項用 aria-activedescendant 指向），所以手機上不會因為點選項而收起鍵盤。
  */
 export function Combobox({
@@ -121,7 +121,7 @@ export function Combobox({
           onKeyPress?.(e);
           // 阻止隱式送出表單的根本防線：keydown 的 key 在選字時可能是 "Process"／"Unidentified"（keyCode 229），
           // 瀏覽器之後仍可能送 keypress Enter；Enter 在這裡永遠不送出表單
-          if (e.key === "Enter") e.preventDefault();
+          if (e.key === "Enter" || e.charCode === 13) e.preventDefault();
         }}
         onKeyDown={(e) => {
           onKeyDown?.(e);
