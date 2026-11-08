@@ -498,11 +498,11 @@ describe("複製既有紀錄", () => {
       }
       const activeIdx = () => screen.getAllByRole("option").findIndex((o) => o.getAttribute("aria-selected") === "true");
 
-      it("compositionstart 之後（isComposing）按 Enter：不帶入、清單不收、不 preventDefault", async () => {
+      it("compositionstart 之後（isComposing）按 Enter：不帶入、清單不收、清單開著時有 preventDefault", async () => {
         const { box } = await openPicker();
         fireEvent.compositionStart(box);
         const ok = fireEvent.keyDown(box, { key: "Enter", isComposing: true });
-        expect(ok).toBe(true);
+        expect(ok).toBe(false);
         expect(screen.queryByTestId("copy-banner")).toBeNull();
         expect(screen.getByRole("listbox", { name: "最近紀錄" })).toBeInTheDocument();
       });
@@ -510,7 +510,7 @@ describe("複製既有紀錄", () => {
       it("keyCode 229 的 Enter 同上", async () => {
         const { box } = await openPicker();
         const ok = fireEvent.keyDown(box, { key: "Enter", keyCode: 229 });
-        expect(ok).toBe(true);
+        expect(ok).toBe(false);
         expect(screen.queryByTestId("copy-banner")).toBeNull();
         expect(screen.getByRole("listbox", { name: "最近紀錄" })).toBeInTheDocument();
       });

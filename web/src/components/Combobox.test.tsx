@@ -128,7 +128,7 @@ describe("Combobox：輸入法選字中的按鍵交給輸入法", () => {
     await u.keyboard("{ArrowDown}");
     fireEvent.compositionStart(box());
     const ev = fireEvent.keyDown(box(), { key: "Enter", isComposing: true });
-    expect(ev).toBe(true); // 沒有 preventDefault
+    expect(ev).toBe(false); // 有 preventDefault（Enter 永遠不隱式送出）
     expect(box().value).toBe("");
     expect(screen.getByRole("listbox")).toBeInTheDocument();
     expect(submitted).not.toHaveBeenCalled();
@@ -140,7 +140,7 @@ describe("Combobox：輸入法選字中的按鍵交給輸入法", () => {
     await u.click(box());
     await u.keyboard("{ArrowDown}");
     const ok = fireEvent.keyDown(box(), { key: "Enter", keyCode: 229 });
-    expect(ok).toBe(true);
+    expect(ok).toBe(false); // 有 preventDefault
     expect(box().value).toBe("");
     expect(screen.getByRole("listbox")).toBeInTheDocument();
     expect(submitted).not.toHaveBeenCalled();

@@ -108,7 +108,7 @@
    - 照片 300 張，中位數約 240KB。
    - 處理狀態目前全部是「已解決」。
    - **設計負載訂為 5,000 筆（正常）、20,000 筆（壓力上限）。**
-5. 網頁元件沒有 `isComposing` 保護：Combobox 的 Enter 一律 `preventDefault` 並選取目前那一列，CopyPicker 也一樣（§12.1）。OS 的 `escapeRule.ts`、`keymap.ts` 已有保護。
+5. 網頁元件原本沒有 `isComposing` 保護（已由 §12.1 修正）：Combobox 的 Enter 一律 `preventDefault` 並選取目前那一列，CopyPicker 也一樣（§12.1）。OS 的 `escapeRule.ts`、`keymap.ts` 已有保護。
 6. OS 頻道列突兀的六個原因見 §7.1。
 
 ---

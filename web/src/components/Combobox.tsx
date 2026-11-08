@@ -119,8 +119,12 @@ export function Combobox({
         onKeyDown={(e) => {
           onKeyDown?.(e);
           if (e.defaultPrevented) return;
-          // 輸入法選字中（注音、倉頡等）的 Enter／↑↓／Esc 是給輸入法用的，不當成選取、移動或收合，也不 preventDefault
-          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+          // 輸入法選字中（注音、倉頡等）的 Enter／↑↓／Esc 是給輸入法用的，不當成選取、移動或收合。
+          // 只有 Enter 仍 preventDefault：Enter 永遠不隱式送出表單（Android 虛擬鍵盤常把按鍵回報成 229，之後還會送 keypress）
+          if (e.nativeEvent.isComposing || e.keyCode === 229) {
+            if (e.key === "Enter") e.preventDefault();
+            return;
+          }
           if (e.key === "ArrowDown") {
             e.preventDefault();
             if (!open) setOpen(true);
