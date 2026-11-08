@@ -120,7 +120,7 @@ export function Combobox({
         onKeyPress={(e) => {
           onKeyPress?.(e);
           // 阻止隱式送出表單的根本防線：keydown 的 key 在選字時可能是 "Process"／"Unidentified"（keyCode 229），
-          // 瀏覽器之後仍可能送 keypress Enter；Enter 在這裡永遠不送出表單
+          // 瀏覽器之後仍可能送 keypress Enter，而且 keypress 本身的 key 也可能是 "Process"，所以另外看 charCode 13；Enter 在這裡永遠不送出表單
           if (e.key === "Enter" || e.charCode === 13) e.preventDefault();
         }}
         onKeyDown={(e) => {
