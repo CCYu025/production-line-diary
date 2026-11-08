@@ -15,9 +15,9 @@ import { CHANNELS, type ChannelId } from "../channels";
 import { CRT_LABEL, CRT_LEVELS, setCrtLevel, useCrtLevel } from "../crt/settings";
 import { A_ZONE } from "../crt/zones";
 import { useHovered, type HoverStore } from "../hub/hover";
-import { hudArcDepthPx, SELECT_YAW_MS } from "../hub/layout";
+import { hudArcDepthPx, SELECT_YAW_MS, selectYawDeg } from "../hub/layout";
 import type { HubSignals } from "../hub/signals";
-import { leaderGeometry, type Leader } from "./leader";
+import { keyLayout, leaderGeometry, type Leader } from "./leader";
 
 export interface HudHandle {
   /** 把焦點移到選中頻道的按鈕 */
@@ -116,6 +116,9 @@ export const Hud = React.forwardRef<HudHandle, HudProps>(function Hud({ selected
   const level = useCrtLevel();
   const barrelK = A_ZONE[level].effects ? A_ZONE[level].barrel : 0;
 
+  // 鍵的水平對位：中心對齊各螢幕的投影（只在視窗大小、CRT 強度、選取（偏航）改變時重算）；算不出來或空間不夠就退回平均排列
+  const layout = React.useMemo(() => keyLayout(vp.w, vp.h, barrelK, selectYawDeg(CHANNELS.findIndex((c) => c.id === selected))), [vp.w, vp.h, barrelK, selected]);
+
   // HUD 不作用（轉場、進入工作站）時清掉懸停：隱藏的鍵收不到 pointerleave，3D 的預覽框不能留著
   React.useEffect(() => {
     if (!active) hover?.set(null);
@@ -143,7 +146,7 @@ export const Hud = React.forwardRef<HudHandle, HudProps>(function Hud({ selected
     const kr = key.getBoundingClientRect();
     const rr = root.getBoundingClientRect();
     setLeader(leaderGeometry({ width: vp.w, height: vp.h, channel: selected, barrelK, key: { left: kr.left - rr.left, top: kr.top - rr.top, width: kr.width } }));
-  }, [settled, active, selected, vp.w, vp.h, barrelK, signals]);
+  }, [settled, active, selected, vp.w, vp.h, barrelK, signals, layout]);
   const focusInside = React.useRef(false);
 
   const buttonOf = React.useCallback(
@@ -180,7 +183,7 @@ export const Hud = React.forwardRef<HudHandle, HudProps>(function Hud({ selected
           EXIT TO WEB
         </button>
       </div>
-      <nav className="os-channels" aria-label="頻道">
+      <nav className="os-channels" aria-label="頻道" data-placed={layout ? "true" : "false"}>
         <ul
           ref={listRef}
           data-os="hud-list"
@@ -194,7 +197,10 @@ export const Hud = React.forwardRef<HudHandle, HudProps>(function Hud({ selected
           {CHANNELS.map((ch) => {
             const isSelected = ch.id === selected;
             return (
-              <li key={ch.id}>
+              <li
+                key={ch.id}
+                style={layout ? ({ "--key-x": `${layout.x[CHANNELS.indexOf(ch)]}px`, "--key-w": `${layout.w}px` } as React.CSSProperties) : undefined}
+              >
                 <button
                   type="button"
                   className="os-hud-button"

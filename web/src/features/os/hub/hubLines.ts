@@ -397,7 +397,7 @@ export function buildHubLines(colors: HubLineColors): HubParts {
       hoverBracket?.removeFromParent();
       return;
     }
-    hoverBracket ??= buildBracket(colors.accent, { linewidth: 1.5, opacity: 0.5 });
+    hoverBracket ??= buildBracket(colors.accent, { opacity: 0.7 });
     monitors[index]!.group.add(hoverBracket);
   };
   const fade = (index: number, amount: number) => {

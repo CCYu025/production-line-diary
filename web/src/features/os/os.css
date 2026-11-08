@@ -186,6 +186,34 @@
   list-style: none;
 }
 
+:root[data-mode="os"] .os-channels[data-placed="true"] {
+  padding-inline: 0;
+}
+
+/* 對位排列：每個鍵的水平中心與寬度由 --key-x／--key-w（Hud 依螢幕投影算出，px）決定；算不出來時沒有 data-placed，沿用下面的平均排列 */
+:root[data-mode="os"] .os-channels[data-placed="true"] ul {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: calc(var(--hud-arc, 0px) + 44px);
+  padding: 0;
+}
+
+:root[data-mode="os"] .os-channels[data-placed="true"] li {
+  position: absolute;
+  bottom: 0;
+  left: calc(var(--key-x) - var(--key-w) / 2);
+  width: var(--key-w);
+  max-width: none;
+  transition: left 250ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mode="os"] .os-channels[data-placed="true"] li {
+    transition: none;
+  }
+}
+
 :root[data-mode="os"] .os-channels li {
   flex: 1 1 0;
   min-width: 0;
@@ -214,7 +242,8 @@
 /* 鍵：切角線框（右上、左下切角）。按鈕本身不加 clip-path（焦點環不被裁）：線在 ::before、底襯在 ::after（clip-path 都在偽元素上） */
 :root[data-mode="os"] .os-hud-button {
   --key-line: var(--line-strong);
-  --key-fill: var(--hud-backing);
+  /* 底襯 85%：線色從半透明的底襯透出來的部分（15%）很少，懸停與選取的線色才分得清 */
+  --key-fill: color-mix(in srgb, var(--page) 85%, transparent);
   position: relative;
   isolation: isolate;
   display: flex;
@@ -297,11 +326,10 @@
   }
 }
 
-/* 懸停（HUD 自己的 :hover，或 3D 螢幕懸停寫進來的 data-hover）：線與底襯亮起。純預覽，不是選取 */
+/* 懸停（HUD 自己的 :hover，或 3D 螢幕懸停寫進來的 data-hover）：只有線亮起（accent 70%），底襯與字重不變。純預覽，與選取（accent 實線＋wash 底襯＋粗體）一眼可分 */
 :root[data-mode="os"] .os-hud-button:hover,
 :root[data-mode="os"] .os-hud-button[data-hover="true"] {
-  --key-line: var(--accent);
-  --key-fill: color-mix(in srgb, var(--accent-wash), var(--page) 60%);
+  --key-line: color-mix(in srgb, var(--accent) 70%, transparent);
   color: var(--ink-1);
 }
 

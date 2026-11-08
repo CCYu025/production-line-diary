@@ -128,6 +128,21 @@ describe("os.css", () => {
       }
     });
 
+    it("懸停與選取可分：懸停只改線（不改底襯、字重），選取有 accent 線、wash 底襯與粗體", () => {
+      const hover = rules.find((r) => r.selectors.includes(`${OS_SCOPE} .os-hud-button[data-hover="true"]`))!;
+      expect(hover.declarations).toMatch(/--key-line:/);
+      expect(hover.declarations).not.toMatch(/--key-fill/);
+      expect(hover.declarations).not.toMatch(/font-weight/);
+      const sel = rules.find((r) => r.selectors.includes(`${OS_SCOPE} .os-hud-button[aria-current="true"]`))!;
+      expect(sel.declarations).toMatch(/--key-fill:[^;]*accent-wash/);
+      expect(sel.declarations).toMatch(/font-weight:\s*700/);
+    });
+
+    it("對位排列用 --key-x／--key-w 定位（data-placed），沒有時沿用平均排列", () => {
+      expect(decl('.os-channels[data-placed="true"] li')).toMatch(/left:\s*calc\(var\(--key-x\) - var\(--key-w\) \/ 2\)/);
+      expect(decl(".os-channels li")).toMatch(/flex:\s*1 1 0/);
+    });
+
     it("鍵沿弧排列：第 4 個（中間）抬升最多，兩端 0；弧度由 --hud-arc 決定", () => {
       expect(decl(".os-channels li")).toMatch(/translateY\(calc\(var\(--hud-arc, 0px\) \* var\(--lift, 0\) \* -1\)\)/);
       const lift = (n: number) => /--lift:\s*([\d.]+)/.exec(decl(`.os-channels li:nth-child(${n})`))?.[1];

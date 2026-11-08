@@ -417,7 +417,7 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
 npm run check      # 後端 node --check 語法檢查
 npm test           # 後端 node:test（test/**/*.test.js），目前 169 個測試
 npm run typecheck  # 前端 tsc --noEmit（strict）
-npm run test:web   # 前端 Vitest（jsdom + Testing Library），目前 1699 個測試（90 個檔案）
+npm run test:web   # 前端 Vitest（jsdom + Testing Library），目前 1705 個測試（90 個檔案）
 npm run build      # 前端 vite build → web/dist
 npm run verify:os-bundle  # A5：OS 模式延遲載入與大小檢查（需先 build）
 ```
