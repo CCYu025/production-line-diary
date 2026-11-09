@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ENTER, EXIT } from "../transition/timing";
 import { cameraProgress, dollyPose, patrolYawDeg, PATROL_RETURN_MS, PATROL_YAW_MAX_DEG, poseAt, restPose, stepRig } from "./camera";
-import { dollyTarget, monitorPoses, poseForChannel, selectYawDeg, SELECT_YAW_MAX_DEG } from "./layout";
+import { dollyTarget, hudInsets, monitorPoses, poseForChannel, selectYawDeg, SELECT_YAW_MAX_DEG } from "./layout";
 
 describe("cameraProgress（X1 時間不變）", () => {
   it("進入：E1 結束（600ms）到 1；離開：X4 區間拉回 0", () => {
@@ -76,5 +76,19 @@ describe("stepRig", () => {
   });
   it("巡視波形 ±PATROL_YAW_MAX_DEG", () => {
     for (let t = 0; t < 80; t += 1.3) expect(Math.abs(patrolYawDeg(t))).toBeLessThanOrEqual(PATROL_YAW_MAX_DEG + 1e-9);
+  });
+});
+
+describe("休息位置納入 HUD（H0）", () => {
+  it("有 HUD 時休息位置與沒有 HUD 不同（鏡頭較遠、整面牆往上讓出控制台），且同一組參數回傳同一個快取物件", () => {
+    const hud = hudInsets(720);
+    const a = restPose(16 / 9, hud);
+    expect(a).toBe(restPose(16 / 9, hud));
+    expect(a).not.toEqual(restPose(16 / 9));
+  });
+  it("poseAt 的 p=0 就是有 HUD 的休息位置；p=1 不受 HUD 影響（推近終點只看選中螢幕）", () => {
+    const hud = hudInsets(720);
+    expect(poseAt(16 / 9, "CH-02", 0, hud)).toEqual(restPose(16 / 9, hud));
+    expect(poseAt(16 / 9, "CH-02", 1, hud)).toEqual(poseAt(16 / 9, "CH-02", 1));
   });
 });

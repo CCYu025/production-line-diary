@@ -43,6 +43,7 @@ describe("os.css", () => {
       ".os-hud",
       ".os-statusbar",
       ".os-channels",
+      ".os-lead",
       ".os-gate",
       ".os-palette",
       ".os-palette-overlay",
@@ -78,6 +79,92 @@ describe("os.css", () => {
     it("≥ 1440px：精簡文字預設隱藏", () => {
       const base = rules.find((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} .os-hud-compact`));
       expect(base?.declarations).toMatch(/display: *none/);
+    });
+  });
+
+  describe("HUD 控制台重新設計（H0）", () => {
+    const base = (sel: string) => rules.filter((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} ${sel}`));
+    const decl = (sel: string) => base(sel).map((r) => r.declarations).join(";");
+
+    it("狀態列與頻道列是透明底（不再是 --surface 實心色帶），也沒有上下框線", () => {
+      for (const sel of [".os-statusbar", ".os-channels"]) {
+        expect(decl(sel), sel).toMatch(/background:\s*transparent/);
+        expect(decl(sel), sel).not.toMatch(/--surface/);
+        expect(decl(sel), sel).not.toMatch(/border-(top|bottom)/);
+      }
+    });
+
+    it("文字底襯是 --page 色、60% 不透明（只襯在字後面）", () => {
+      expect(decl(".os-hud")).toMatch(/--hud-backing:\s*color-mix\(in srgb, var\(--page\) 60%, transparent\)/);
+      for (const sel of [".os-statusbar-title", ".os-clock", ".os-crt", ".os-sound"]) {
+        const rule = rules.find((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} ${sel}`) && /background:\s*var\(--hud-backing\)/.test(r.declarations));
+        expect(rule, sel).toBeDefined();
+      }
+    });
+
+    it("頻道鍵：按鈕本身不加 clip-path（焦點環不被裁）；切角線框畫在 ::before／::after，右上與左下切角", () => {
+      expect(decl(".os-hud-button")).not.toMatch(/clip-path/);
+      for (const pseudo of ["::before", "::after"]) {
+        const d = decl(`.os-hud-button${pseudo}`);
+        expect(d, pseudo).toMatch(/clip-path:\s*polygon\(/);
+        expect(d, pseudo).toMatch(/pointer-events:\s*none/);
+      }
+      // 切角：右上（100% 與 cut）與左下（cut 與 100%）
+      expect(decl(".os-hud-button::before")).toMatch(/calc\(100% - var\(--hud-cut\)\) 0, 100% var\(--hud-cut\)/);
+      expect(decl(".os-hud-button::before")).toMatch(/var\(--hud-cut\) 100%, 0 calc\(100% - var\(--hud-cut\)\)/);
+    });
+
+    it("控制台容器與狀態列的空白處不吃指標（穿到下面的 3D 螢幕）；只有按鈕與控制項接收", () => {
+      for (const sel of [".os-hud > .os-statusbar", ".os-hud > .os-channels", ".os-hud > .os-lead"]) {
+        const rule = rules.find((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} ${sel}`));
+        expect(rule?.declarations, sel).toMatch(/pointer-events:\s*none/);
+      }
+      expect(decl(".os-channels button")).toMatch(/pointer-events:\s*auto/);
+    });
+
+    it("B 區暗角：狀態列與控制台的水平邊緣用遮罩淡出 3%（不經過 WebGL）", () => {
+      for (const sel of [".os-statusbar", ".os-channels"]) {
+        expect(decl(sel), sel).toMatch(/mask-image:\s*linear-gradient\(90deg, transparent 0, black 3%, black 97%, transparent 100%\)/);
+      }
+    });
+
+    it("懸停與選取可分：懸停只改線（不改底襯、字重），選取有 accent 線、wash 底襯與粗體", () => {
+      const hover = rules.find((r) => r.selectors.includes(`${OS_SCOPE} .os-hud-button[data-hover="true"]`))!;
+      expect(hover.declarations).toMatch(/--key-line:/);
+      expect(hover.declarations).not.toMatch(/--key-fill/);
+      expect(hover.declarations).not.toMatch(/font-weight/);
+      const sel = rules.find((r) => r.selectors.includes(`${OS_SCOPE} .os-hud-button[aria-current="true"]`))!;
+      expect(sel.declarations).toMatch(/--key-fill:[^;]*accent-wash/);
+      expect(sel.declarations).toMatch(/font-weight:\s*700/);
+    });
+
+    it("對位排列用 --key-x／--key-w 定位（data-placed），沒有時沿用平均排列", () => {
+      expect(decl('.os-channels[data-placed="true"] li')).toMatch(/left:\s*calc\(var\(--key-x\) - var\(--key-w\) \/ 2\)/);
+      expect(decl(".os-channels li")).toMatch(/flex:\s*1 1 0/);
+    });
+
+    it("鍵沿弧排列：第 4 個（中間）抬升最多，兩端 0；弧度由 --hud-arc 決定", () => {
+      expect(decl(".os-channels li")).toMatch(/translateY\(calc\(var\(--hud-arc, 0px\) \* var\(--lift, 0\) \* -1\)\)/);
+      const lift = (n: number) => /--lift:\s*([\d.]+)/.exec(decl(`.os-channels li:nth-child(${n})`))?.[1];
+      expect(lift(4)).toBe("1");
+      expect(Number(lift(3))).toBeLessThan(1);
+      expect(lift(3)).toBe(lift(5));
+      expect(Number(lift(2))).toBeLessThan(Number(lift(3)));
+      expect(lift(2)).toBe(lift(6));
+      expect(lift(1)).toBeUndefined();
+      expect(lift(7)).toBeUndefined();
+    });
+
+    it("引線：純裝飾（pointer-events: none）、1px、顏色取 token；減少動態效果時沒有淡入轉場", () => {
+      const lead = rules.find((r) => r.context.length === 0 && r.selectors.includes(`${OS_SCOPE} .os-lead line`));
+      expect(lead?.declarations).toMatch(/stroke-width:\s*1(?!\d)/);
+      expect(lead?.declarations).toMatch(/stroke:\s*var\(--/);
+      const reduced = rules.find((r) => r.context.some((c) => /prefers-reduced-motion:\s*reduce/.test(c)) && r.selectors.includes(`${OS_SCOPE} .os-lead`));
+      expect(reduced?.declarations).toMatch(/transition:\s*none/);
+    });
+
+    it("為 OS｜HOLO 切換鈕預留位置（H3）：音效按鈕後面留一段版面，H0 不輸出節點", () => {
+      expect(decl(".os-sound")).toMatch(/margin-inline-end:\s*var\(--hud-holo-slot/);
     });
   });
 

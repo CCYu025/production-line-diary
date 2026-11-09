@@ -6,7 +6,7 @@
  *  - 待機巡視：慢速左右偏航，進入時淡入、輸入時快速收回。
  */
 import { ENTER, EXIT } from "../transition/timing";
-import { CAMERA_FOV, dollyTarget, easeToward, fitRestCamera, poseForChannel, selectYawDeg, type Vec3 } from "./layout";
+import { CAMERA_FOV, dollyTarget, easeToward, fitRestCamera, poseForChannel, selectYawDeg, type HudInsets, type Vec3 } from "./layout";
 import type { ChannelId } from "../channels";
 import { channelIndex } from "../channels";
 
@@ -44,14 +44,15 @@ export interface CameraPose {
   lookAt: Vec3;
 }
 
-const restCache = new Map<number, CameraPose>();
-/** 休息位置（依長寬比；解算一次後快取，Rig 每幀呼叫）。 */
-export function restPose(aspect: number): CameraPose {
+const restCache = new Map<string, CameraPose>();
+/** 休息位置（依長寬比與 HUD 占的比例；解算一次後快取，Rig 每幀呼叫）。hud（H0）＝上方狀態列與下方控制台占的畫面比例。 */
+export function restPose(aspect: number, hud?: HudInsets): CameraPose {
   const a = Math.round(Math.max(MIN_REST_ASPECT, aspect) * 1000) / 1000;
-  let p = restCache.get(a);
+  const key = hud ? `${a}|${hud.top}|${hud.bottom}` : String(a);
+  let p = restCache.get(key);
   if (!p) {
-    p = fitRestCamera(CAMERA_FOV, a);
-    restCache.set(a, p);
+    p = fitRestCamera(CAMERA_FOV, a, { hud });
+    restCache.set(key, p);
   }
   return p;
 }
@@ -64,8 +65,8 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const lerpVec = (a: Vec3, b: Vec3, t: number): Vec3 => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t) });
 
 /** 進度 p（0＝休息位置、1＝選中螢幕前）的鏡頭位置與看向點。 */
-export function poseAt(aspect: number, ch: ChannelId, p: number): CameraPose {
-  const a = restPose(aspect);
+export function poseAt(aspect: number, ch: ChannelId, p: number, hud?: HudInsets): CameraPose {
+  const a = restPose(aspect, hud);
   const b = dollyPose(ch);
   return { position: lerpVec(a.position, b.position, p), lookAt: lerpVec(a.lookAt, b.lookAt, p) };
 }

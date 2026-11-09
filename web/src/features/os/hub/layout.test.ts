@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { CHANNELS } from "../channels";
 import {
@@ -9,7 +12,18 @@ import {
   easeToward,
   facing,
   fitRestCamera,
+  FACE_FILL_FRAC,
+  hudBasePx,
+  HUD_FACE_GAP_PX,
+  HUD_CLEARANCE_FRAC,
+  HUD_CONSOLE_MAX_FRAC,
+  hudKeyPx,
+  HUD_FOCUS_RING_PX,
+  HUD_STATUS_PX,
+  hudArcDepthPx,
+  hudInsets,
   makeProjector,
+  RADAR_FRONT_Z,
   MIN_CASING_GAP_FRAC,
   MIN_WALL_MARGIN_FRAC,
   wallExtents,
@@ -171,5 +185,100 @@ describe("投影工具", () => {
     const q = makeProjector({ ...cam, yawDeg: 3 }, 45, 16 / 9)({ x: 0, y: 2, z: 0 })!;
     expect(q.x).toBeLessThan(0.5);
     expect(makeProjector(cam, 45, 16 / 9)({ x: 0, y: 2, z: 20 })).toBeNull();
+  });
+});
+
+
+describe("HUD 納入構圖（H0：控制台與狀態列不遮住螢幕牆與雷達台）", () => {
+  const FOV = CAMERA_FOV;
+  const VIEWPORTS: Array<[number, number]> = [
+    [1920, 1080],
+    [1280, 720],
+    [1024, 600],
+  ];
+
+  it("RADAR_FRONT_Z 與雷達台最靠近鏡頭的點一致", () => {
+    expect(RADAR_FRONT_Z).toBeCloseTo(RADAR_Z + RADAR_R, 9);
+  });
+
+  it("沒有傳 hud 時，休息位置與 H0 之前完全相同（不改既有構圖）", () => {
+    for (const [w, h] of VIEWPORTS) {
+      expect(fitRestCamera(FOV, w / h)).toEqual(fitRestCamera(FOV, w / h, {}));
+    }
+  });
+
+  for (const [w, h] of VIEWPORTS) {
+    const aspect = w / h;
+    describe(`${w}×${h}`, () => {
+      const hud = hudInsets(h);
+      const rest = fitRestCamera(FOV, aspect, { hud });
+
+      it("螢幕牆投影的下緣在控制台上緣之上（含 1% 空隙）、上緣在狀態列之下", () => {
+        const e = wallExtents(rest, FOV, aspect);
+        expect(e.maxY).toBeLessThanOrEqual(1 - hud.bottom - HUD_CLEARANCE_FRAC + 1e-9);
+        expect(e.minY).toBeGreaterThanOrEqual(hud.top + HUD_CLEARANCE_FRAC - 1e-9);
+      });
+
+      it("雷達台最靠近鏡頭的點也在控制台上緣之上", () => {
+        const q = makeProjector(rest, FOV, aspect)({ x: 0, y: 0, z: RADAR_FRONT_Z })!;
+        expect(q.y).toBeLessThanOrEqual(1 - hud.bottom - HUD_CLEARANCE_FRAC + 1e-9);
+      });
+
+      it("選到每一台（含選取偏航）時牆都完整在視窗內、兩側邊距 ≥ 4%、下緣仍在控制台之上", () => {
+        for (let i = 0; i < 7; i++) {
+          const e = wallExtents({ ...rest, yawDeg: selectYawDeg(i) }, FOV, aspect);
+          expect(e.minX).toBeGreaterThanOrEqual(MIN_WALL_MARGIN_FRAC);
+          expect(1 - e.maxX).toBeGreaterThanOrEqual(MIN_WALL_MARGIN_FRAC);
+          expect(e.maxY).toBeLessThanOrEqual(1 - hud.bottom);
+        }
+      });
+
+      it("牆仍占寬度 60% 以上、相鄰外殼仍分開、螢幕面中心在可用區域的 45% 附近", () => {
+        const e = wallExtents(rest, FOV, aspect);
+        expect(e.maxX - e.minX).toBeGreaterThanOrEqual(0.6);
+        for (const g of e.gaps) expect(g).toBeGreaterThanOrEqual(MIN_CASING_GAP_FRAC - 1e-3);
+        const usable = hud.top + 0.45 * (1 - hud.top - hud.bottom);
+        expect(Math.abs(e.faceCenterY - usable)).toBeLessThan(0.03);
+      });
+    });
+  }
+
+  it("控制台最高的鍵（中間）上緣離特寫螢幕面下緣（畫面高度 92%）至少 8px（D4）", () => {
+    expect(HUD_CONSOLE_MAX_FRAC).toBeCloseTo((1 - FACE_FILL_FRAC) / 2, 12);
+    for (const h of [600, 640, 720, 800, 900, 1080, 1440]) {
+      const centerTop = hudBasePx(h) + hudKeyPx(h) + hudArcDepthPx(h);
+      expect(h * HUD_CONSOLE_MAX_FRAC - centerTop, `h=${h}`).toBeGreaterThanOrEqual(HUD_FACE_GAP_PX);
+    }
+    // 視窗夠高才有弧度；最矮時是平的
+    expect(hudArcDepthPx(600)).toBe(0);
+    expect(hudArcDepthPx(1080)).toBeGreaterThan(hudArcDepthPx(720));
+  });
+
+  it("hudInsets：狀態列 48px；比例取到 0.005 的格子；視窗越矮占比越大", () => {
+    expect(Math.abs(hudInsets(1080).top - HUD_STATUS_PX / 1080)).toBeLessThan(0.003);
+    expect(hudInsets(600).top).toBeGreaterThan(hudInsets(1080).top);
+    expect(hudInsets(600).bottom).toBeGreaterThanOrEqual(hudInsets(1080).bottom);
+    for (const h of [600, 721, 1079]) {
+      const x = hudInsets(h);
+      expect(Math.abs(x.top * 200 - Math.round(x.top * 200))).toBeLessThan(1e-9);
+      expect(Math.abs(x.bottom * 200 - Math.round(x.bottom * 200))).toBeLessThan(1e-9);
+    }
+  });
+});
+
+describe("控制台底部留給焦點環（H0 r4）", () => {
+  it("HUD_FOCUS_RING_PX 等於 index.css 的 :focus-visible 的 outline 寬度加 offset（不寫死魔術數字）", () => {
+    const css = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../styles/index.css"), "utf8");
+    const block = /:focus-visible\s*\{([^}]*)\}/.exec(css)![1]!;
+    const width = Number(/outline:\s*(\d+(?:\.\d+)?)px/.exec(block)![1]);
+    const offset = Number(/outline-offset:\s*(\d+(?:\.\d+)?)px/.exec(block)![1]);
+    expect(HUD_FOCUS_RING_PX).toBe(width + offset);
+  });
+  it("各種視窗高度（含 < 700）：最低的鍵下緣加焦點環外擴不超過視窗高度；最高的鍵離特寫螢幕面仍 ≥ 8px", () => {
+    for (const h of [600, 640, 699, 700, 720, 1080]) {
+      const keyBottom = h - hudBasePx(h);
+      expect(keyBottom + HUD_FOCUS_RING_PX, `h=${h}`).toBeLessThanOrEqual(h);
+      expect(h * HUD_CONSOLE_MAX_FRAC - (hudBasePx(h) + hudKeyPx(h) + hudArcDepthPx(h)), `h=${h}`).toBeGreaterThanOrEqual(HUD_FACE_GAP_PX);
+    }
   });
 });

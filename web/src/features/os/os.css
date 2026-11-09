@@ -52,9 +52,15 @@
   text-decoration: underline;
 }
 
-/* ---------- HUD（真實可操作的層）：上方狀態列、下方頻道清單，中間留給 3D 螢幕 ---------- */
+/* ---------- HUD（真實可操作的層，H0 重新設計）：上方狀態列（透明底，只有線與文字）、下方控制台（沿淺弧排列的切角線框鍵），中間留給 3D 螢幕 ----------
+ * 沒有實心色帶：文字底下只有一塊 60% 不透明的 --page 窄底襯（只襯在字後面）；狀態列與控制台的水平邊緣用遮罩跟著 3% 弧面淡出（B 區暗角）。
+ * 狀態列與控制台容器本身 pointer-events: none（空白處的點擊與懸停穿到下面的 3D 螢幕），只有按鈕與控制項接收。
+ * 控制台的弧度 --hud-arc 由 Hud 依視窗高度設定（hub/layout.ts 的 hudArcDepthPx，與鏡頭構圖用同一個公式）；中間鍵最高、兩側貼底。 */
 
 :root[data-mode="os"] .os-hud {
+  --hud-pad: max(16px, 3.5vw);
+  --hud-backing: color-mix(in srgb, var(--page) 60%, transparent);
+  --hud-cut: 10px;
   position: absolute;
   inset: 0;
   z-index: 20;
@@ -72,20 +78,53 @@
   pointer-events: auto;
 }
 
+:root[data-mode="os"] .os-hud > .os-statusbar,
+:root[data-mode="os"] .os-hud > .os-channels,
+:root[data-mode="os"] .os-hud > .os-lead {
+  pointer-events: none;
+}
+
+:root[data-mode="os"] .os-statusbar > *,
+:root[data-mode="os"] .os-channels button {
+  pointer-events: auto;
+}
+
 :root[data-mode="os"] .os-statusbar {
   display: flex;
   flex: none;
   align-items: center;
   gap: 16px;
   min-height: 48px;
-  padding: 6px 16px;
-  border-bottom: 1px solid var(--line-strong);
-  background: var(--surface);
+  padding: 6px var(--hud-pad);
+  background: transparent;
   color: var(--ink-1);
   font: 500 14px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, black 3%, black 97%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, black 3%, black 97%, transparent 100%);
+}
+
+/* 狀態列的線與角標：一條 1px 底線，兩端各一個往上的短角標 */
+:root[data-mode="os"] .os-statusbar::before {
+  content: "";
+  position: absolute;
+  inset: auto var(--hud-pad) 0;
+  height: 9px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--line-strong), var(--line-strong)) bottom / 100% 1px no-repeat,
+    linear-gradient(var(--line-strong), var(--line-strong)) bottom left / 1px 9px no-repeat,
+    linear-gradient(var(--line-strong), var(--line-strong)) bottom right / 1px 9px no-repeat;
+}
+
+:root[data-mode="os"] .os-statusbar-title,
+:root[data-mode="os"] .os-clock,
+:root[data-mode="os"] .os-crt,
+:root[data-mode="os"] .os-sound {
+  background: var(--hud-backing);
 }
 
 :root[data-mode="os"] .os-statusbar-title {
+  padding: 3px 8px;
   color: var(--accent-text);
   font-weight: 600;
   letter-spacing: 0.12em;
@@ -93,9 +132,15 @@
 
 :root[data-mode="os"] .os-clock {
   margin-left: auto;
-  color: var(--ink-2);
+  padding: 3px 8px;
+  color: var(--ink-1);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.08em;
+}
+
+/* OS｜HOLO 切換鈕（H3）的預留位置：H0 不輸出節點，只留下版面空間（音效按鈕與 EXIT 之間） */
+:root[data-mode="os"] .os-sound {
+  margin-inline-end: var(--hud-holo-slot, 88px);
 }
 
 :root[data-mode="os"] .os-exit,
@@ -110,48 +155,150 @@
   cursor: pointer;
 }
 
+:root[data-mode="os"] .os-exit {
+  background: var(--hud-backing);
+}
+
 :root[data-mode="os"] .os-exit:hover,
 :root[data-mode="os"] .os-gate-button:hover {
   background: var(--accent-wash);
 }
 
+/* 控制台：容器透明；鍵沿淺弧排列（中間最高、兩側貼底）。上方多留 4px，焦點環不被遮罩裁掉 */
 :root[data-mode="os"] .os-channels {
+  position: relative;
   flex: none;
-  padding: 12px 16px 20px;
-  border-top: 1px solid var(--line-strong);
-  background: var(--surface);
+  padding: 4px var(--hud-pad) var(--hud-base, 4px);
+  background: transparent;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, black 3%, black 97%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, black 3%, black 97%, transparent 100%);
 }
 
 :root[data-mode="os"] .os-channels ul {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 10px;
+  width: min(100%, 64vw);
+  margin: 0 auto;
+  padding: var(--hud-arc, 0px) 0 0;
   list-style: none;
 }
 
+:root[data-mode="os"] .os-channels[data-placed="true"] {
+  padding-inline: 0;
+}
+
+/* 對位排列：每個鍵的水平中心與寬度由 --key-x／--key-w（Hud 依螢幕投影算出，px）決定；算不出來時沒有 data-placed，沿用下面的平均排列 */
+:root[data-mode="os"] .os-channels[data-placed="true"] ul {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: calc(var(--hud-arc, 0px) + var(--hud-key, 42px));
+  padding: 0;
+}
+
+:root[data-mode="os"] .os-channels[data-placed="true"] li {
+  position: absolute;
+  bottom: 0;
+  left: calc(var(--key-x) - var(--key-w) / 2);
+  width: var(--key-w);
+  max-width: none;
+  transition: left 250ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mode="os"] .os-channels[data-placed="true"] li {
+    transition: none;
+  }
+}
+
+:root[data-mode="os"] .os-channels li {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 176px;
+}
+
+/* 弧：第 1–7 個鍵的抬升比例（二次曲線）：0、5/9、8/9、1、8/9、5/9、0 */
+:root[data-mode="os"] .os-channels li {
+  transform: translateY(calc(var(--hud-arc, 0px) * var(--lift, 0) * -1));
+}
+
+:root[data-mode="os"] .os-channels li:nth-child(2),
+:root[data-mode="os"] .os-channels li:nth-child(6) {
+  --lift: 0.556;
+}
+
+:root[data-mode="os"] .os-channels li:nth-child(3),
+:root[data-mode="os"] .os-channels li:nth-child(5) {
+  --lift: 0.889;
+}
+
+:root[data-mode="os"] .os-channels li:nth-child(4) {
+  --lift: 1;
+}
+
+/* 鍵：切角線框（右上、左下切角）。按鈕本身不加 clip-path（焦點環不被裁）：線在 ::before、底襯在 ::after（clip-path 都在偽元素上） */
 :root[data-mode="os"] .os-hud-button {
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid var(--line-strong);
-  background: var(--page);
-  color: var(--ink-2);
-  font: 500 13px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
+  --key-line: var(--line-strong);
+  /* 底襯 85%：線色從半透明的底襯透出來的部分（15%）很少，懸停與選取的線色才分得清 */
+  --key-fill: color-mix(in srgb, var(--page) 85%, transparent);
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 100%;
+  min-height: var(--hud-key, 42px);
+  padding: 5px 12px;
+  text-align: center;
+  border: 0;
+  background: transparent;
+  color: var(--ink-1);
+  font: 500 12.5px/1.2 "IBM Plex Mono", "Noto Sans TC", monospace;
   letter-spacing: 0.04em;
   white-space: nowrap;
   cursor: pointer;
 }
 
-/* 頻道按鈕一行排完（1024px 起）：< 1440px 顯示精簡文字 "CH-02 紀錄 3"、更緊的內距 */
+:root[data-mode="os"] .os-hud-button::before,
+:root[data-mode="os"] .os-hud-button::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+
+:root[data-mode="os"] .os-hud-button::before {
+  inset: 0;
+  background: var(--key-line);
+  clip-path: polygon(0 0, calc(100% - var(--hud-cut)) 0, 100% var(--hud-cut), 100% 100%, var(--hud-cut) 100%, 0 calc(100% - var(--hud-cut)));
+}
+
+:root[data-mode="os"] .os-hud-button::after {
+  inset: 1px;
+  background: var(--key-fill);
+  clip-path: polygon(0 0, calc(100% - var(--hud-cut) + 0.59px) 0, 100% calc(var(--hud-cut) - 0.59px), 100% 100%, calc(var(--hud-cut) - 0.59px) 100%, 0 calc(100% - var(--hud-cut) + 0.59px));
+}
+
+/* 上排 CH 代號（大字）；下排名稱加訊號。視窗 < 1440px 顯示精簡文字 "紀錄 3"、更緊的內距 */
+:root[data-mode="os"] .os-hud-id {
+  display: block;
+  color: var(--accent-text);
+  font: 700 16px/1.1 "IBM Plex Mono", "Noto Sans TC", monospace;
+  letter-spacing: 0.1em;
+}
+
 :root[data-mode="os"] .os-hud-compact {
   display: none;
 }
 
 @media (max-width: 1439.98px) {
-  :root[data-mode="os"] .os-channels {
-    padding: 10px 8px 16px;
+  :root[data-mode="os"] .os-hud {
+    --hud-cut: 8px;
   }
 
   :root[data-mode="os"] .os-channels ul {
@@ -161,9 +308,13 @@
 
   :root[data-mode="os"] .os-hud-button {
     min-width: 0;
-    padding: 8px 6px;
-    font-size: 12.5px;
+    padding: 5px 8px;
+    font-size: 12px;
     letter-spacing: 0.02em;
+  }
+
+  :root[data-mode="os"] .os-hud-id {
+    font-size: 14px;
   }
 
   :root[data-mode="os"] .os-hud-full {
@@ -175,16 +326,72 @@
   }
 }
 
-:root[data-mode="os"] .os-hud-button:hover {
-  background: var(--accent-wash);
+/* 鍵寬放不下完整文字（Hud 依 keyLayout 的鍵寬判斷，例如很寬很矮的視窗）：改顯示精簡文字，不論視窗寬度 */
+:root[data-mode="os"] .os-channels[data-compact="true"] .os-hud-full {
+  display: none;
+}
+
+:root[data-mode="os"] .os-channels[data-compact="true"] .os-hud-compact {
+  display: inline;
+}
+
+/* 矮視窗（< 700px 高）：鍵與內距更緊，最高的鍵才離特寫螢幕面下緣 ≥ 8px（hub/layout.ts 的 hudKeyPx） */
+@media (max-height: 699.98px) {
+  :root[data-mode="os"] .os-hud-button {
+    padding-block: 2px;
+    font-size: 11.5px;
+  }
+
+  :root[data-mode="os"] .os-hud-id {
+    font-size: 13px;
+  }
+}
+
+/* 懸停（HUD 自己的 :hover，或 3D 螢幕懸停寫進來的 data-hover）：只有線亮起（accent 70%），底襯與字重不變。純預覽，與選取（accent 實線＋wash 底襯＋粗體）一眼可分 */
+:root[data-mode="os"] .os-hud-button:hover,
+:root[data-mode="os"] .os-hud-button[data-hover="true"] {
+  --key-line: color-mix(in srgb, var(--accent) 70%, transparent);
   color: var(--ink-1);
 }
 
 :root[data-mode="os"] .os-hud-button[aria-current="true"] {
-  border-color: var(--accent);
-  background: var(--accent-wash);
+  --key-line: var(--accent);
+  --key-fill: color-mix(in srgb, var(--accent-wash), var(--page) 60%);
   color: var(--accent-text);
   font-weight: 700;
+}
+
+/* 引線：選中的鍵 → 3D 選中的螢幕（1px；純裝飾，aria-hidden，不接收指標；選取剛改變時先隱藏，等鏡頭偏航到位再淡入） */
+:root[data-mode="os"] .os-lead {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  opacity: 1;
+  transition: opacity 150ms ease-out;
+}
+
+:root[data-mode="os"] .os-lead[data-ready="false"] {
+  opacity: 0;
+  transition: none;
+}
+
+:root[data-mode="os"] .os-lead line {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-opacity: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+:root[data-mode="os"] .os-lead circle {
+  fill: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mode="os"] .os-lead {
+    transition: none;
+  }
 }
 
 /* ---------- 裝置門檻（視窗小於 1024×600） ---------- */
@@ -662,6 +869,7 @@
   :root[data-mode="os"] .os-hud,
   :root[data-mode="os"] .os-statusbar,
   :root[data-mode="os"] .os-channels,
+  :root[data-mode="os"] .os-lead,
   :root[data-mode="os"] .os-gate,
   :root[data-mode="os"] .os-palette,
   :root[data-mode="os"] .os-palette-overlay,
