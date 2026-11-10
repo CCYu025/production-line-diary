@@ -33,7 +33,7 @@ export interface ComboboxProps extends Omit<React.ComponentProps<"input">, "valu
 
 /**
  * 可輸入的 Combobox（ARIA 1.2 combobox + listbox）：可選既有建議，也可以直接輸入新值。
- * 鍵盤：↓↑ 移動、Enter 選取目前高亮的項目（沒有高亮就照一般輸入框處理）、Esc 收合、Tab 離開。
+ * 鍵盤：↓↑ 移動、Enter 選取目前高亮的項目（沒有高亮就收起清單，不送出表單）、Esc 收合、Tab 離開。
  * 輸入框一直保有焦點（選項用 aria-activedescendant 指向），所以手機上不會因為點選項而收起鍵盤。
  */
 export function Combobox({
@@ -45,6 +45,7 @@ export function Combobox({
   maxOptions = 50,
   className,
   onKeyDown,
+  onKeyPress,
   onFocus,
   onBlur,
   autoComplete = "off",
@@ -116,9 +117,21 @@ export function Combobox({
           close();
           onBlur?.(e);
         }}
+        onKeyPress={(e) => {
+          onKeyPress?.(e);
+          // 阻止隱式送出表單的根本防線：keydown 的 key 在選字時可能是 "Process"／"Unidentified"（keyCode 229），
+          // 瀏覽器之後仍可能送 keypress Enter，而且 keypress 本身的 key 也可能是 "Process"，所以另外看 charCode 13；Enter 在這裡永遠不送出表單
+          if (e.key === "Enter" || e.charCode === 13) e.preventDefault();
+        }}
         onKeyDown={(e) => {
           onKeyDown?.(e);
           if (e.defaultPrevented) return;
+          // 輸入法選字中（注音、倉頡等）的 Enter／↑↓／Esc 是給輸入法用的，不當成選取、移動或收合。
+          // 只有 Enter 仍 preventDefault：Enter 永遠不隱式送出表單（Android 虛擬鍵盤常把按鍵回報成 229，之後還會送 keypress）
+          if (e.nativeEvent.isComposing || e.keyCode === 229) {
+            if (e.key === "Enter") e.preventDefault();
+            return;
+          }
           if (e.key === "ArrowDown") {
             e.preventDefault();
             if (!open) setOpen(true);

@@ -486,6 +486,60 @@ describe("複製既有紀錄", () => {
       expect(await screen.findByTestId("copy-banner")).toHaveTextContent("10/19 F3");
     });
 
+    describe("輸入法選字中的按鍵交給輸入法", () => {
+      async function openPicker() {
+        const u = user();
+        renderForm();
+        await waitForNewForm();
+        await waitForHistory();
+        const box = screen.getByRole("combobox", { name: "搜尋過去紀錄" });
+        await u.click(box);
+        return { u, box };
+      }
+      const activeIdx = () => screen.getAllByRole("option").findIndex((o) => o.getAttribute("aria-selected") === "true");
+
+      it("compositionstart 之後（isComposing）按 Enter：不帶入、清單不收、清單開著時有 preventDefault", async () => {
+        const { box } = await openPicker();
+        fireEvent.compositionStart(box);
+        const ok = fireEvent.keyDown(box, { key: "Enter", isComposing: true });
+        expect(ok).toBe(false);
+        expect(screen.queryByTestId("copy-banner")).toBeNull();
+        expect(screen.getByRole("listbox", { name: "最近紀錄" })).toBeInTheDocument();
+      });
+
+      it("keyCode 229 的 Enter 同上", async () => {
+        const { box } = await openPicker();
+        const ok = fireEvent.keyDown(box, { key: "Enter", keyCode: 229 });
+        expect(ok).toBe(false);
+        expect(screen.queryByTestId("copy-banner")).toBeNull();
+        expect(screen.getByRole("listbox", { name: "最近紀錄" })).toBeInTheDocument();
+      });
+
+      it("選字中按 ↓／↑ 反白不移動；按 Esc 清單不收", async () => {
+        const { u, box } = await openPicker();
+        await u.keyboard("{ArrowDown}");
+        const before = activeIdx();
+        expect(before).toBe(1);
+        fireEvent.keyDown(box, { key: "ArrowDown", isComposing: true });
+        expect(activeIdx()).toBe(before);
+        fireEvent.keyDown(box, { key: "ArrowUp", keyCode: 229 });
+        expect(activeIdx()).toBe(before);
+        const ok = fireEvent.keyDown(box, { key: "Escape", isComposing: true });
+        expect(ok).toBe(true);
+        expect(screen.getByRole("listbox", { name: "最近紀錄" })).toBeInTheDocument();
+      });
+
+      it("compositionend 之後 Enter 照原本規則帶入（迴歸）", async () => {
+        const { u, box } = await openPicker();
+        fireEvent.compositionStart(box);
+        fireEvent.keyDown(box, { key: "Enter", isComposing: true });
+        expect(screen.queryByTestId("copy-banner")).toBeNull();
+        fireEvent.compositionEnd(box);
+        await u.keyboard("{Enter}");
+        expect(await screen.findByTestId("copy-banner")).toBeInTheDocument();
+      });
+    });
+
     it("常見問題分頁依「分類＋問題」歸併、顯示累計次數；搜尋涵蓋根本原因", async () => {
       const u = user();
       renderForm();
