@@ -12,6 +12,9 @@ import { PAGE_TITLES } from "./nav";
 
 const handle = (title: string): RouteHandle => ({ title });
 
+// 全像實驗室（H1 技術驗證）只在開發模式或 VITE_HOLO_LAB=1 建置時存在；預設建置整段（含 features/holo）會被移除。
+const HOLO_LAB = import.meta.env.DEV || import.meta.env.VITE_HOLO_LAB === "1";
+
 /**
  * Hash 路由（#/dashboard …）。用 hash 是因為 Express 不需要為前端路由做 fallback，
  * 而且網址可直接複製、書籤、瀏覽器上一頁都能用。
@@ -49,4 +52,14 @@ export const routes = [
   },
 ];
 
-export const createRouter = () => createHashRouter(routes);
+// 實驗室是全螢幕頁面，不進 ModeShell／AppShell（不改外殼）。
+const labRoutes = HOLO_LAB
+  ? [
+      {
+        path: "/_holo",
+        lazy: async () => ({ Component: (await import("@/features/holo/lab/HoloLabPage")).default }),
+      },
+    ]
+  : [];
+
+export const createRouter = () => createHashRouter([...routes, ...labRoutes]);
