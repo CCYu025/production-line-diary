@@ -632,7 +632,7 @@ web/src/features/holo/
 4. 推上 GitHub、開 PR，在 3114 展示。
 5. 使用者明確同意後才合併；合併前由獨立代理做文件檢查。
 
-### 12.1 IME 修正（獨立小 PR，可與 H0 並行）——已完成（2026-11-08，PR 編號待補）
+### 12.1 IME 修正（獨立小 PR，可與 H0 並行）——已完成（2026-11-10，PR #58）
 - `components/Combobox.tsx` 與 `form/CopyPicker.tsx`：keydown 處理先檢查 `event.isComposing`（以及 `keyCode === 229`），選字中的 Enter、↑、↓、Esc 不選取、不移動、不收合；選字中的 Enter 仍 `preventDefault`（CopyPicker 只在清單開著時），↑↓、Esc 不 `preventDefault`。Combobox 另加 `onKeyPress`：keypress 的 `key` 為 Enter 或 `charCode` 為 13 一律 `preventDefault`，因為選字時 keydown 的 `key` 可能是 `Process`／`Unidentified`，這是阻止隱式送出表單的根本防線。
 - 加入測試，模擬 composition 事件。
 - 網頁模式的行為差異僅有：選字中（含 `keyCode === 229`）的 Enter／↑↓／Esc 不再選取、移動、收合；Combobox 的 Enter 在任何輸入法下都不會隱式送出表單（keypress 的 `key` 為 Enter 或 `charCode` 為 13 一律 `preventDefault`）。其他（非選字、一般鍵盤）與原本相同，S1 仍需零差異。
