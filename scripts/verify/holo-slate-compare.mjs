@@ -1,11 +1,13 @@
 // H1: terminal-slate positioning, method P (projection, translate only) vs method C (CSS3DRenderer): numbers + screenshots for the six comparison points
 // (docs/holo-mode-spec.md section 3.3). Needs the LAB build served by serve.mjs. Writes nothing to the app's data.
 //   node scripts/verify/holo-slate-compare.mjs --url http://localhost:3114/ [--out dir] [--headless]
-//   1 sharpness   p99 / mean horizontal luminance gradient of the slate at DPR 1 and 1.5 (+ PNG crops to compare by eye; higher = crisper)
+//   1 sharpness   p99 / mean horizontal luminance gradient at DPR 1 and 1.5 over the SAME fixed-size crop (PROBE_W x PROBE_H device px, centred on a fixed test-text block
+//                 that the script puts into the slate; nothing else of the slate or the 3D world is in the crop). Higher = crisper. PNG crops are saved too.
 //   2 IME popup   NOT measurable with CDP (the OS candidate window). Reported: where the focused <input> and its caret box are on screen at each yaw,
 //                 which is what Chrome hands to the IME. Judge the popup itself in the manual Zhuyin session.
 //   3 focus ring  the ring box of each field stays inside the slate and the viewport (programmatic focus after a Tab, so :focus-visible applies)
-//   4 click hit   at several camera yaws: does elementFromPoint at each control's centre return that control, and does a real CDP click focus / press it
+//   4 click hit   at several camera yaws, reported separately: hitRateInView = of the controls whose centre is inside the viewport, how many are hit by
+//                 elementFromPoint AND focused by a real CDP click; offscreenFraction = share of the controls whose centre is outside the viewport (not clickable at all)
 //   5 frame cost  per second over 5 s with the world turning: style recalcs, layouts, their durations (CDP Performance), style mutations seen by a MutationObserver
 //   6 red lines   transform / filter / perspective on the root nodes and on every ancestor of the slate, print emulation, accessibility tree roles
 import fs from 'node:fs';
@@ -22,6 +24,18 @@ const FIELDS = ['holo-problem', 'holo-action', 'holo-equipment'];
 const YAWS = [0.45, 0, 0.9, 1.4, -0.6];
 const report = { url: A.url, variants: {} };
 const browser = await Browser.launch({ port: +A['cdp-port'], headless: A.headless });
+
+const PROBE_W = 240, PROBE_H = 40; // CSS px of the crop; identical for every method
+const PROBE_TEXT = 'ABCDEFGHIJKLM nopqrstuvwxyz 0123456789 設備異常 處理 iIl1|';
+// fixed-size test block appended inside the slate body (same DOM, same CSS for every method); returns its viewport rect
+const ADD_PROBE = `(() => {
+  const body = document.querySelector('.holo-slate-body');
+  let b = document.getElementById('holo-sharp-probe');
+  if (!b) { b = document.createElement('div'); b.id = 'holo-sharp-probe'; b.setAttribute('aria-hidden', 'true');
+    b.style.cssText = 'height:${PROBE_H}px;overflow:hidden;white-space:nowrap;font:14px/${PROBE_H}px "IBM Plex Mono","Noto Sans TC",monospace;color:var(--ink-1);background:var(--surface);';
+    b.textContent = ${JSON.stringify(PROBE_TEXT)}; body.appendChild(b); }
+  const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };
+})()`;
 
 const GRAD = `(async (b64) => {
   const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode();
@@ -45,11 +59,15 @@ try {
       await p.waitFor('window.__holoLab && window.__holoLab().frames > 10', 15000);
       await p.eval('window.__holoLab.setView(0.45, 0.3, 27)');
       await sleep(600);
-      const r = await p.rectOf(`document.querySelector('[data-holo="slate"]')`);
-      const clip = { x: Math.max(0, r.x), y: Math.max(0, r.y), width: Math.min(r.width, 1600 - r.x), height: Math.min(r.height, 900 - r.y) };
+      const r = await p.eval(ADD_PROBE);
+      await sleep(300);
+      const r2 = await p.eval(ADD_PROBE);
+      // fixed-size crop centred on the probe block (identical size for every method), clamped inside the viewport
+      const cx = r2.x + r2.width / 2, cy = r2.y + r2.height / 2;
+      const clip = { x: Math.max(0, Math.min(1600 - PROBE_W, cx - PROBE_W / 2)), y: Math.max(0, Math.min(900 - PROBE_H, cy - PROBE_H / 2)), width: PROBE_W, height: PROBE_H };
       const shot = await p.send('Page.captureScreenshot', { format: 'png', clip: { ...clip, scale: 1 } });
       fs.writeFileSync(path.join(A.out, `sharp-${v.id}-dpr${dpr}.png`), Buffer.from(shot.data, 'base64'));
-      R.sharpness[`dpr${dpr}`] = await p.eval(`(${GRAD})(${JSON.stringify(shot.data)})`, true);
+      R.sharpness[`dpr${dpr}`] = { ...(await p.eval(`(${GRAD})(${JSON.stringify(shot.data)})`, true)), probeRect: { x: +r2.x.toFixed(1), y: +r2.y.toFixed(1), w: +r2.width.toFixed(1), h: +r2.height.toFixed(1) }, cropCssPx: [PROBE_W, PROBE_H], probeMoved: Math.abs(r.x - r2.x) > 0.5 || Math.abs(r.y - r2.y) > 0.5 };
       await p.screenshot(path.join(A.out, `full-${v.id}-dpr${dpr}.png`));
       await p.close();
     }
@@ -80,9 +98,13 @@ try {
           await sleep(60);
           clicked = await p.eval(`document.activeElement===${sel}`);
         }
-        row.controls[id] = { visible: true, centre: [Math.round(cx), Math.round(cy)], size: [Math.round(r.width), Math.round(r.height)], elementFromPointHit: top, clickFocused: clicked };
+        row.controls[id] = { visible: true, centreInView: inView, centre: [Math.round(cx), Math.round(cy)], size: [Math.round(r.width), Math.round(r.height)], elementFromPointHit: top, clickFocused: clicked };
       }
-      row.hitRate = +(Object.values(row.controls).filter((c) => c.clickFocused).length / Object.keys(row.controls).length).toFixed(2);
+      const all = Object.values(row.controls);
+      const inV = all.filter((c) => c.visible && c.centreInView);
+      row.controlsInView = inV.length;
+      row.hitRateInView = inV.length ? +(inV.filter((c) => c.elementFromPointHit && c.clickFocused).length / inV.length).toFixed(2) : null;
+      row.offscreenFraction = +(all.filter((c) => !c.visible || !c.centreInView).length / all.length).toFixed(2);
       await p.key('Escape');
       await p.eval('document.activeElement && document.activeElement.blur()');
       R.hit.push(row);
@@ -151,8 +173,8 @@ try {
 
 // ---- summary
 const f = (n) => (typeof n === 'number' ? n : '-');
-console.log('\nvariant           | sharp p99 dpr1 / dpr1.5 | hit rate by yaw (0.45,0,0.9,1.4,-0.6) | recalc/s layout/s mutations/s | root clean | print slate');
+console.log('\nvariant           | sharp p99 dpr1 / dpr1.5 (fixed crop) | hit rate in view by yaw (0.45,0,0.9,1.4,-0.6) | offscreen fraction by yaw | recalc/s layout/s mutations/s | root clean | print slate');
 for (const [id, R] of Object.entries(report.variants)) {
-  console.log(`${id.padEnd(17)} | ${f(R.sharpness.dpr1.p99)} / ${f(R.sharpness['dpr1.5'].p99)} | ${R.hit.map((r) => r.hitRate).join(' ')} | ${R.frameCost.styleRecalcsPerSec} ${R.frameCost.layoutsPerSec} ${R.frameCost.styleMutationsPerSec} | ${R.redLines.rootNodesClean} | ${R.redLines.print.slate}`);
+  console.log(`${id.padEnd(17)} | ${f(R.sharpness.dpr1.p99)} / ${f(R.sharpness['dpr1.5'].p99)} | ${R.hit.map((r) => r.hitRateInView).join(' ')} | ${R.hit.map((r) => r.offscreenFraction).join(' ')} | ${R.frameCost.styleRecalcsPerSec} ${R.frameCost.layoutsPerSec} ${R.frameCost.styleMutationsPerSec} | ${R.redLines.rootNodesClean} | ${R.redLines.print.slate}`);
 }
 console.log(`\nfull result: ${path.join(A.out, 'result.json')}`);

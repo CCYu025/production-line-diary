@@ -1,7 +1,7 @@
 /*
  * 全像強度（docs/holo-mode-spec.md §4.2、H-D6）：讀 pld.os.crt（off｜std｜max）。
  *   關：只有線（沒有光暈、掃描線、閃爍）；標準：光暈 4px；濃：光暈 8px。
- * 減少動態效果時不閃爍（光暈與掃描線是靜態的，照常）。純函式，方便測試。
+ * 減少動態效果時不閃爍、場景內隨時間流動的效果也凍結（光暈與掃描線是靜態的，照常）。純函式，方便測試。
  */
 import type { CrtLevel } from "@/features/os/crt/settings";
 
@@ -16,6 +16,8 @@ export interface LevelParams {
   flicker: boolean;
   /** 光暈取樣數 */
   taps: number;
+  /** 場景裡隨時間流動的效果（例如追蹤中卡片的虛線外框）是否推進時間；減少動態效果或強度「關」時凍結 */
+  animate: boolean;
 }
 
 export const SCAN_PERIOD_PX = 2;
@@ -31,13 +33,16 @@ export const DPR_CAP = 1.5;
 export function levelParams(level: CrtLevel, reducedMotion: boolean): LevelParams {
   switch (level) {
     case "off":
-      return { blurPx: 0, glow: 0, scan: 0, flicker: false, taps: 0 };
+      return { blurPx: 0, glow: 0, scan: 0, flicker: false, taps: 0, animate: false };
     case "std":
-      return { blurPx: 4, glow: 0.9, scan: SCAN_STRENGTH, flicker: !reducedMotion, taps: 12 };
+      return { blurPx: 4, glow: 0.9, scan: SCAN_STRENGTH, flicker: !reducedMotion, taps: 12, animate: !reducedMotion };
     case "max":
-      return { blurPx: 8, glow: 1.15, scan: SCAN_STRENGTH, flicker: !reducedMotion, taps: 16 };
+      return { blurPx: 8, glow: 1.15, scan: SCAN_STRENGTH, flicker: !reducedMotion, taps: 16, animate: !reducedMotion };
   }
 }
+
+/** 場景動畫時間（秒）：animating 為 false 時完全不推進 */
+export const advanceAnimTime = (sec: number, dtMs: number, animating: boolean) => (animating ? sec + dtMs / 1000 : sec);
 
 export const effectiveDpr = (devicePixelRatio: number) => Math.min(DPR_CAP, Math.max(1, devicePixelRatio || 1));
 

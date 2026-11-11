@@ -9,7 +9,7 @@
  */
 import * as THREE from "three";
 import type { HoloEngine, HoloWorld } from "../engine/engine";
-import { FOG_MIN_BRIGHTNESS } from "../engine/level";
+import { advanceAnimTime, FOG_MIN_BRIGHTNESS } from "../engine/level";
 import {
   CARD_HEIGHT,
   clampDay,
@@ -251,6 +251,7 @@ export function createSpiralWorld(engine: HoloEngine, model: SpiralModel): Spira
   let lastRanges: LodRanges | null = null;
   const counts: SpiralCounts = { fullCards: 0, dots: 0, tickLines: 0, cursorDay };
   let sweepAt = 0;
+  let animSec = 0; // 只在 engine.animating 時推進：減少動態效果或強度「關」時虛線外框靜止
 
   const writeCard = (slot: number, i: number) => {
     const it = items[i]!;
@@ -368,7 +369,8 @@ export function createSpiralWorld(engine: HoloEngine, model: SpiralModel): Spira
       return { ...st, slots: slots.filter((s) => s.key).length, shown: slots.filter((s) => s.mesh.visible).length };
     },
     update(dtMs, nowMs) {
-      cardMat.uniforms.uTime!.value = nowMs / 1000;
+      animSec = advanceAnimTime(animSec, dtMs, engine.animating);
+      cardMat.uniforms.uTime!.value = animSec;
       // 游標在軸線上的位置平滑追隨（減少動態效果：直接到位）
       const k = engine.reducedMotion ? 1 : 1 - Math.exp(-dtMs / 140);
       smoothDay += (cursorDay - smoothDay) * k;

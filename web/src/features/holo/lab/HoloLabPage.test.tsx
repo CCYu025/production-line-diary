@@ -7,7 +7,7 @@ import HoloLabPage from "./HoloLabPage";
 
 /*
  * 實驗室外殼（jsdom 沒有 WebGL，所以只驗證外殼規則）：掛載時 <html data-mode="holo"> 與 Cyber 主題（只套用、不寫入偏好），
- * 卸載時還原；全像元件不輸出 data-fx（那是 Cyber 頁面特效的掛勾）。
+ * 卸載時還原；外殼元素不輸出 data-fx（那是 Cyber 頁面特效的掛勾）。
  */
 function mount(search = "") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -43,11 +43,14 @@ describe("HoloLabPage 外殼", () => {
     expect(getByRole("alert")).toHaveTextContent("WebGL");
   });
 
-  it("全像元件不輸出 data-fx、data-variant", () => {
+  it("外殼自己的元素（根、世界、控制條）不輸出 data-fx、data-variant（終端板內容見 slate/Slate.test.tsx，它在 WebGL 就緒後才掛進來）", () => {
     const { container } = mount("?scene=machine");
+    const root = container.querySelector('[data-holo="root"]');
+    expect(root).not.toBeNull();
+    expect(root!.querySelectorAll("*").length).toBeGreaterThan(5);
+    expect(root!.hasAttribute("data-fx")).toBe(false);
     expect(container.querySelector("[data-fx]")).toBeNull();
     expect(container.querySelector("[data-variant]")).toBeNull();
-    expect(container.querySelector('[data-holo="root"]')).not.toBeNull();
   });
 
   it("控制條有場景與強度的連結", () => {

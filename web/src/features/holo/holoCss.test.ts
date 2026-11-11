@@ -8,7 +8,7 @@ import { parseCss } from "@/test/cssRules";
  * holo.css 守門（docs/holo-mode-spec.md §11.1 HA2 雛形）：
  *   1. 每條規則的每個選擇器都以 :root[data-mode="holo"] 開頭。
  *   2. 檔尾是 @media print，且隱藏所有全像元素。
- *   3. 不寫死色碼；不使用 Cyber 頁面特效的 data-fx。
+ *   3. 不寫死色碼；data-fx 只出現在終端板內，用來蓋回共用元件（Combobox）的 Cyber 特效。
  */
 const SCOPE = ':root[data-mode="holo"]';
 const css = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "holo.css"), "utf8");
@@ -35,10 +35,17 @@ describe("holo.css", () => {
       .flatMap((r) => r.selectors);
     for (const must of [".holo-root", ".holo-world", ".holo-slate-host", ".holo-slate", ".holo-lab-hud"]) expect(hidden, must).toContain(`${SCOPE} ${must}`);
   });
-  it("沒有寫死的色碼，沒有 data-fx", () => {
+  it("沒有寫死的色碼", () => {
     const body = css.replace(/\/\*[\s\S]*?\*\//g, "");
     expect(body).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(body).not.toMatch(/\b(rgb|hsl)a?\(/);
-    expect(body).not.toMatch(/data-fx/);
+  });
+  it("data-fx 只出現在終端板內、用來蓋回共用元件的 Cyber 特效（combobox 提示符、pop 動畫）", () => {
+    const withFx = rules.filter((r) => r.selectors.some((s) => s.includes("data-fx")));
+    expect(withFx.length).toBeGreaterThan(0);
+    for (const r of withFx) for (const s of r.selectors) expect(s.startsWith(`${SCOPE} .holo-slate `), s).toBe(true);
+    const decl = (sel: string) => withFx.filter((r) => r.selectors.includes(sel)).map((r) => r.declarations).join(";");
+    expect(decl(`${SCOPE} .holo-slate [data-fx="combobox"]::before`)).toMatch(/content:\s*none/);
+    expect(decl(`${SCOPE} .holo-slate [data-fx="pop"]`)).toMatch(/animation:\s*none/);
   });
 });

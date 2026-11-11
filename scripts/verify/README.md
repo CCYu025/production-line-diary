@@ -217,7 +217,9 @@ node scripts/verify/holo-seed.mjs 3114 5000 [--scratch dir] [--photos 2] [--seed
 
 - Refuses anything that is not a `serve.mjs` scratch server (`assertScratchServer`: no 3000/3001, marker required, no real-data folder name, `DATA_DIR` inside scratch).
 - Writes `data.json` (temp file + rename) and `照片/<YYYYMMDD>/seed-<id>-<n>.png` directly (posting 20k records through the API would rewrite data.json 20k times).
-  The running server reads data.json on every request: no restart. Run it again to replace the data (it keeps `_meta` and replaces `records`).
+  The running server reads data.json on every request: no restart. Run it again to replace the data (it keeps `_meta` and replaces `records`);
+  before writing, it deletes the previous run's photos: only files named `seed-<id>-<n>.png` directly inside `照片/<YYYYMMDD>/` (and date folders left empty), only after the scratch check passed.
+  Any other file in `照片/` (example photos, other names) is left alone.
 - Distribution: 15 equipment, 22 categories; severity 13 / 66 / 20 / 1 %; status 10 % 待處理, 5 % 追蹤中; at most 11 records a day, the span follows from the count
   (ends today, or `--end`); durations are consistent with `severityFromDuration`; photos binomial(2N, ½) per record (mean N, default 2), flat-colour PNG with the id and date in a 5×7 font, <= 50 KB.
 - Reads everything back (count, unique ids, every photo file exists) and prints the distribution. 5k takes seconds, 20k about 80 s.
@@ -235,11 +237,12 @@ node scripts/verify/holo-slate-compare.mjs --url http://localhost:3114/ [--out d
 - `holo-ime` (HF3, automated half): for each positioning method × freeze setting, drives the slate while the world turns: composition then Enter (plain and IME-style key 229), ArrowDown/Up, Escape in the `<input>`,
   the `<textarea>` and the `Combobox`; checks no dropped text, no newline / option / submit during composition, and that Enter outside composition does submit. Key events during CDP composition are sent as keydown+keyup only
   (no char event), like a real IME. **Not measurable here: where the OS candidate window appears** - that is the manual Zhuyin session.
-- `holo-perf`: `fps` = HP1 (median rAF fps, idle and operating; gates 55 for 5k, 30 for 20k, 30 for 5k at 4× CPU) · `hp2` slate open + world still · `hp5` navigation → first world frame · `input` keydown → next frame in the slate ·
-  `hp7` thumbnails (decoding / resident / textures sampled every 250 ms for `--soak` s, heap after forced GC every 15 s, then a 36 s wait after parking the cursor). fps cannot exceed the display refresh
+- `holo-perf`: `fps` = HP1 (median rAF fps, idle and operating; gates 55 for 5k, 30 for 20k, 30 for 5k at 4× CPU) · `hp2` slate open + world still · `hp5` three separate times: data load (mount → records available), scene build, first world frame (+ `readyMs` = mount → first frame that contains the world) · `input` keydown → next frame in the slate ·
+  `hp7` thumbnails: (a) decoding / resident / textures sampled every 250 ms for `--soak` s, heap after forced GC every 15 s; (b) TTL test without slot pressure: two disjoint sparse windows (A + B ≤ 24 thumbnails), cursor held on B after visiting A, resident must not drop before ~28 s, must drop at 29–33 s by A's count with `released` growing by the same amount (needs sparse photo windows: seed with `--photos 0.5`; the default 2 photos per record makes every 7-day window denser than 12 thumbnails). fps cannot exceed the display refresh
   (a blank headed page measures ~56 fps on the dev machine), so the 55 fps gate is judged against that cap.
 - `holo-slate-compare`: the six comparison points of spec §3.3 for `proj`, `css3d` (fixed plane) and `css3d-billboard`; results in `<out>/result.json` plus PNG crops.
-- Page hooks: `#/_holo?scene=machine|spiral&slate=proj|css3d|off&crt=off|std|max&rot=0&freeze=0&bb=1&holodebug=1`; with `holodebug=1` `window.__holoLab()` returns frames, `renderer.info`, camera, spiral counts, thumbnail stats and the slate probe
+  Sharpness uses one fixed-size crop (240×40 CSS px) around a fixed test-text block the script adds to the slate, identical for every method; click hits are reported as `hitRateInView` (controls whose centre is on screen) and `offscreenFraction` separately.
+- Page hooks: `#/_holo?scene=machine|spiral&slate=proj|css3d|off&crt=off|std|max&rot=0&freeze=0&bb=1&holodebug=1`; with `holodebug=1` `window.__holoLab()` returns frames, `timing` (HP5 split),  `renderer.info`, camera, spiral counts, thumbnail stats and the slate probe
   (`resetProbe()`, `setView(yaw, pitch, dist)`, `moveCursor(d)`, `setCursor(day)`, `autoRotate(bool)` are properties of the function).
 
 ## os-p6.mjs — P6 (X5 §5.4 fixed method)

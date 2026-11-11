@@ -69,7 +69,14 @@ export class ThumbCache<T extends ThumbResource> {
   setVisible(keys: readonly string[]): void {
     if (this.disposed) return;
     const t = this.now();
-    this.visible = new Set(keys);
+    const next = new Set(keys);
+    // 離開視野的這一刻起算 TTL：它可能已經在視野裡停了很久（游標沒動），lastSeen 要更新成「現在」
+    for (const k of this.visible) {
+      if (next.has(k)) continue;
+      const e = this.entries.get(k);
+      if (e) e.lastSeen = t;
+    }
+    this.visible = next;
     for (const k of this.visible) {
       const e = this.entries.get(k);
       if (e) e.lastSeen = t;
@@ -89,6 +96,10 @@ export class ThumbCache<T extends ThumbResource> {
   sweep(): void {
     if (this.disposed) return;
     const t = this.now();
+    for (const k of this.visible) {
+      const e = this.entries.get(k);
+      if (e) e.lastSeen = t; // 一直看得到的縮圖，「最後看到」就是現在
+    }
     for (const e of Array.from(this.entries.values())) {
       if (e.state === "resident" && !this.visible.has(e.key) && t - e.lastSeen >= this.ttl) this.release(e);
     }

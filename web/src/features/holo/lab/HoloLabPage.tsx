@@ -20,6 +20,7 @@ import { webglAvailable } from "@/features/os/webgl";
 import type { CrtLevel } from "@/features/os/crt/settings";
 import { HoloEngine } from "../engine/engine";
 import { buildSpiral, keyToDays, wheelToDays } from "../engine/spiral";
+import { thumbKey } from "../engine/thumbLoader";
 import { createMachineWorld, type MachineWorld } from "../scenes/machineScene";
 import { createSpiralWorld, type SpiralWorld } from "../scenes/spiralScene";
 import { attachCss3dSlate, attachProjectionSlate, type SlateHandle } from "../slate/attach";
@@ -59,6 +60,14 @@ function LabInner({ scene, slate, params }: { scene: SceneName; slate: SlateMeth
   const frozenRef = React.useRef(false);
   const enteredAt = React.useRef(performance.now());
   const records = useRecords();
+  // HP5 的分段時間（都是 performance.now() 時間軸）：資料可用、場景建好（含建立耗時）、世界第一幀
+  const timing = React.useRef<{ dataAt: number | null; buildStartAt: number | null; sceneBuiltAt: number | null; firstWorldFrameAt: number | null }>({
+    dataAt: null,
+    buildStartAt: null,
+    sceneBuiltAt: null,
+    firstWorldFrameAt: null,
+  });
+  if (records.data && timing.current.dataAt === null) timing.current.dataAt = performance.now();
   const debug = params.get("holodebug") === "1";
   const slateHost = React.useMemo(() => {
     const d = document.createElement("div");
@@ -126,6 +135,9 @@ function LabInner({ scene, slate, params }: { scene: SceneName; slate: SlateMeth
     let machine: MachineWorld | null = null;
     let spiral: SpiralWorld | null = null;
     let readyAt: number | null = null;
+    timing.current.buildStartAt = performance.now();
+    timing.current.sceneBuiltAt = null;
+    timing.current.firstWorldFrameAt = null;
 
     if (scene === "machine") {
       machine = createMachineWorld(engine);
@@ -195,11 +207,16 @@ function LabInner({ scene, slate, params }: { scene: SceneName; slate: SlateMeth
         maxDay: spiralModel.maxDay,
         minDay: spiralModel.minDay,
         total: spiralModel.items.length,
+        /** 有照片的卡片（key 與縮圖快取一致），給驗證腳本挑「沒有槽位壓力」的時間窗用 */
+        photoCards: spiralModel.items.filter((it) => it.firstPhoto).map((it) => ({ day: it.day, key: thumbKey(it.date, it.firstPhoto!) })),
       };
       readyAt = performance.now();
     }
 
-    const labReadyMs = readyAt === null ? null : readyAt - enteredAt.current;
+    timing.current.sceneBuiltAt = readyAt;
+    const offFrame = readyAt === null ? () => {} : engine.onFrame(() => {
+      if (timing.current.firstWorldFrameAt === null) timing.current.firstWorldFrameAt = performance.now();
+    });
     if (debug) {
       const fn = (() => ({
         scene,
@@ -209,8 +226,15 @@ function LabInner({ scene, slate, params }: { scene: SceneName; slate: SlateMeth
         size: engine.size,
         frames: engine.stats.frames,
         firstFrameAt: engine.stats.firstFrameAt,
-        /** 進入實驗室（頁面元件掛載）到世界可以操作（第一幀已畫出）的毫秒數 */
-        readyMs: engine.stats.firstFrameAt === null || labReadyMs === null ? null : engine.stats.firstFrameAt - enteredAt.current,
+        /** 世界可以操作的總毫秒數：進入實驗室（頁面元件掛載）→ 資料可用 → 場景建好 → 世界第一幀都包含在內 */
+        readyMs: timing.current.firstWorldFrameAt === null ? null : timing.current.firstWorldFrameAt - enteredAt.current,
+        /** 分段：dataLoadMs＝掛載到紀錄可用（機台沒有資料載入：null）；sceneBuildMs＝建立世界的耗時；firstWorldFrameMs＝場景建好到世界第一幀 */
+        timing: {
+          dataLoadMs: timing.current.dataAt === null || scene !== "spiral" ? null : timing.current.dataAt - enteredAt.current,
+          sceneBuildMs: timing.current.buildStartAt === null || timing.current.sceneBuiltAt === null ? null : timing.current.sceneBuiltAt - timing.current.buildStartAt,
+          firstWorldFrameMs: timing.current.firstWorldFrameAt === null || timing.current.sceneBuiltAt === null ? null : timing.current.firstWorldFrameAt - timing.current.sceneBuiltAt,
+          enginePageFirstFrameMs: engine.stats.firstFrameAt === null ? null : engine.stats.firstFrameAt - enteredAt.current,
+        },
         nowMs: performance.now(),
         renderer: { memory: { ...engine.renderer.info.memory }, render: { ...engine.renderer.info.render }, programs: engine.renderer.info.programs?.length ?? 0 },
         camera: { ...engine.rig.state, target: engine.rig.target.toArray(), autoRotate: engine.rig.autoRotate, dragging: engine.rig.dragging, endCounts: { ...engine.rig.endCounts } },
@@ -231,6 +255,7 @@ function LabInner({ scene, slate, params }: { scene: SceneName; slate: SlateMeth
     }
 
     return () => {
+      offFrame();
       slateRef.handle?.dispose();
       slateRef.handle = null;
       if (slateHost.isConnected) slateHost.remove();

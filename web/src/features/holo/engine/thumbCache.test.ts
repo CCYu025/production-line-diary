@@ -88,6 +88,25 @@ describe("ThumbCache：離開視野 30 秒後釋放", () => {
     expect(t.cache.stats().resident).toBe(1);
   });
 
+  it("TTL 從「離開視野」那一刻起算，不是從上次 setVisible 起算（在視野裡停很久再離開，不會立刻被釋放）", async () => {
+    const t = setup();
+    t.cache.setVisible(["a"]);
+    await t.resolve("a");
+    t.advance(TTL_MS * 3); // 游標沒動，a 一直看得到
+    t.cache.sweep();
+    t.cache.setVisible(["b"]); // a 現在才離開視野
+    await t.resolve("b");
+    t.cache.sweep();
+    expect(t.made.find((r) => r.key === "a")!.disposed).toBe(false);
+    t.advance(TTL_MS - 100);
+    t.cache.sweep();
+    expect(t.made.find((r) => r.key === "a")!.disposed).toBe(false);
+    t.advance(100);
+    t.cache.sweep();
+    expect(t.made.find((r) => r.key === "a")!.disposed).toBe(true);
+    expect(t.cache.stats().released).toBe(1);
+  });
+
   it("看得到的縮圖永遠不會因為 TTL 被釋放", async () => {
     const t = setup();
     t.cache.setVisible(["a"]);

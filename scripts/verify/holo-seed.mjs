@@ -204,6 +204,28 @@ function writeAtomic(file, data) {
   fs.renameSync(tmp, file);
 }
 
+const SEED_PHOTO_RE = /^seed-\d+-\d+\.png$/;
+const DATE_DIR_RE = /^\d{8}$/;
+
+/**
+ * Remove the photos a previous holo-seed run left behind: only files named seed-<id>-<n>.png directly inside 照片/<YYYYMMDD>/
+ * (and a date folder that becomes empty). Anything else (example photos, other names, other folders) is never touched.
+ * Only call after assertScratchServer() passed. @returns number of files removed.
+ */
+export function cleanSeedPhotos(photoRoot) {
+  if (!fs.existsSync(photoRoot)) return 0;
+  let removed = 0;
+  for (const d of fs.readdirSync(photoRoot, { withFileTypes: true })) {
+    if (!d.isDirectory() || !DATE_DIR_RE.test(d.name)) continue;
+    const dir = path.join(photoRoot, d.name);
+    for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (f.isFile() && SEED_PHOTO_RE.test(f.name)) { fs.unlinkSync(path.join(dir, f.name)); removed++; }
+    }
+    if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
+  }
+  return removed;
+}
+
 /**
  * Write `count` synthetic records (and photos) into the scratch DATA_DIR of the serve.mjs server on `port`, then read it back and verify.
  * @returns {{dataDir:string, records:number, photos:number, report:object}}
@@ -216,6 +238,8 @@ export function seedScratch(port, count, { scratch = DEFAULT_SCRATCH, photos = 2
   const { records, photoJobs } = generateRecords(count, { seed, photos, end });
   // 先寫照片（資料指到的檔案要先存在），再一次寫 data.json
   const photoRoot = path.join(dataDir, '照片');
+  const cleaned = cleanSeedPhotos(photoRoot); // the previous run's seed photos (the records that pointed at them are replaced below)
+  if (cleaned) log(`removed ${cleaned} photos from a previous holo-seed run`);
   const made = new Set();
   for (const job of photoJobs) {
     const dir = path.join(photoRoot, job.date.replaceAll('-', ''));

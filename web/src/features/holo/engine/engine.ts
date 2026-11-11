@@ -98,6 +98,10 @@ export class HoloEngine {
   get reducedMotion(): boolean {
     return this.mql?.matches ?? false;
   }
+  /** 場景內隨時間流動的效果現在是否該動（減少動態效果或強度「關」時為 false） */
+  get animating(): boolean {
+    return levelParams(this.level, this.reducedMotion).animate;
+  }
   get currentLevel(): CrtLevel {
     return this.level;
   }

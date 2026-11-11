@@ -54,7 +54,7 @@ export class HoloPass {
   private width = 1;
   private height = 1;
   private dpr = 1;
-  private params: LevelParams = { blurPx: 0, glow: 0, scan: 0, flicker: false, taps: 0 };
+  private params: LevelParams = { blurPx: 0, glow: 0, scan: 0, flicker: false, taps: 0, animate: false };
   private readonly page = new THREE.Color();
 
   constructor(

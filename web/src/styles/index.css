@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Tailwind 不掃描驗證腳本與全像引擎／場景原始碼（沒有 class 名稱；其中的字串如 "blur"、.blur() 會被誤認成 utility 而多出 CSS）。
+ * 全像的終端板／實驗室外殼（features/holo/slate、lab）仍照常掃描。 */
+@source not "../../../scripts";
+@source not "../features/holo/engine";
+@source not "../features/holo/scenes";
+
 /*
  * 設計 token（docs/refactor-plan.md §4 U0）。
  * 色票語意沿用切換前舊 UI 的 CSS 變數（舊 frontend/index.html 已移除），淺色／深色兩套、跟隨系統；

@@ -7,10 +7,13 @@
 //   fps   HP1: median fps of rAF over --duration seconds, idle (nothing touched; the machine's auto rotate stays on) and operating (rotate drag, wheel, cursor moves).
 //         Gate: spiral n<=5000 >= 55 fps (CPU 1x); n=20000 >= 30; CPU 4x with n<=5000 >= 30. The machine scene is measured for the record (gate 55 at 1x).
 //   hp2   HP2 (measure only): machine, slate open, world still (rot=0) 2 s after settling: fps of rAF and the number of world frames.
-//   hp5   HP5 (measure only): navigation start -> first world frame, and lab mount -> first frame, in ms.
+//   hp5   HP5 (measure only): reports three separate times (ms): data load (lab mount -> records available; spiral only), scene build
+//         (building the world), first world frame (scene built -> first frame drawn WITH the world); readyMs = lab mount -> first world frame.
 //   input slate typing latency: keydown -> next animation frame while the world turns (ms, p50 / p95 / max).
-//   hp7   HP7: thumbnails. samples decoding / resident / renderer textures every 250 ms while the cursor sweeps back and forth for --soak seconds
-//         (default 300 = 5 min), heap after forced GC every 15 s (slope), then parks the cursor and checks that 30+ s later nothing stale is still resident.
+//   hp7   HP7: thumbnails. (a) samples decoding / resident / renderer textures every 250 ms while the cursor sweeps back and forth for --soak seconds
+//         (default 300 = 5 min), heap after forced GC every 15 s (slope). (b) TTL test with NO slot pressure: two sparse time windows A and B
+//         (visible slots A + B <= 24, windows disjoint), cursor held on B after visiting A: resident must NOT drop before ~28 s, must drop at ~30 s
+//         (29-33 s) by A's thumbnails, and `released` must grow by the same amount (it only counts TTL releases here because there is no slot pressure).
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
@@ -138,11 +141,16 @@ try {
     for (let i = 0; i < 3; i++) {
       const p = await open();
       const info = await lab(p);
-      runs.push({ navigationToFirstFrameMs: +info.firstFrameAt.toFixed(0), labMountToFirstFrameMs: info.readyMs === null ? null : +info.readyMs.toFixed(0) });
+      const t = info.timing;
+      runs.push({
+        dataLoadMs: t.dataLoadMs === null ? null : +t.dataLoadMs.toFixed(0), sceneBuildMs: +t.sceneBuildMs.toFixed(0), firstWorldFrameMs: +t.firstWorldFrameMs.toFixed(0),
+        readyMs: +info.readyMs.toFixed(0), engineFirstFrameMs: +t.enginePageFirstFrameMs.toFixed(0),
+      });
       await p.close();
     }
-    out.hp5 = { scene: A.scene, runs, medianNavigationToFirstFrameMs: median(runs.map((r) => r.navigationToFirstFrameMs)), note: 'measured only; includes app boot, lazy lab chunk, (spiral: records fetch) on localhost' };
-    log('INFO HP5', JSON.stringify(out.hp5));
+    const med = (k) => { const v = runs.map((r) => r[k]).filter((x) => x !== null); return v.length ? median(v) : null; };
+    out.hp5 = { scene: A.scene, runs, median: { dataLoadMs: med('dataLoadMs'), sceneBuildMs: med('sceneBuildMs'), firstWorldFrameMs: med('firstWorldFrameMs'), readyMs: med('readyMs') }, note: 'measured only; readyMs = lab mount -> first frame that contains the world (data load + scene build + first world frame); engineFirstFrameMs is the engine first frame, which can come BEFORE the world exists (the spiral waits for data); localhost' };
+    log('INFO HP5 medians', JSON.stringify(out.hp5.median), 'runs:', JSON.stringify(runs));
   }
 
   // ------------------------------------------------------------------ input latency inside the slate
@@ -201,27 +209,70 @@ try {
     const warm = heap.filter((h) => h.t >= Math.min(60, soak / 4));
     let slope = 0;
     if (warm.length >= 3) { const mx = warm.reduce((a, h) => a + h.t, 0) / warm.length, my = warm.reduce((a, h) => a + h.bytes, 0) / warm.length; slope = warm.reduce((a, h) => a + (h.t - mx) * (h.bytes - my), 0) / warm.reduce((a, h) => a + (h.t - mx) ** 2, 0); }
-    // park the cursor far away and wait for the 30 s release
-    const parkAt = await p.eval('window.__holoLab.maxDay - 40');
-    await p.eval(`window.__holoLab.setCursor(${parkAt})`);
-    const afterPark = await lab(p);
-    await sleep(36000);
-    const later = await lab(p);
-    const lt = later.spiral.thumbs;
     out.hp7 = {
       soakSeconds: soak, maxDecoding: maxDec, maxResident: maxRes, maxDecodingPlusResidentObserved: Math.max(...samples.map((s) => s.decoding + s.resident)), maxQueued, maxSlots, maxThumbTextures: maxTex,
       heapMiB: heap.map((h) => ({ t: h.t, MiB: +(h.bytes / 1048576).toFixed(1) })), heapSlopeKiBPerMin: +((slope * 60) / 1024).toFixed(1),
-      afterParking: { residentRightAfter: afterPark.spiral.thumbs.resident, residentAfter36s: lt.resident, slotsAfter36s: lt.slots, texturesRightAfter: afterPark.renderer.memory.textures - baseTextures, texturesAfter36s: later.renderer.memory.textures - baseTextures, released: lt.released, started: lt.started },
     };
     const o = out.hp7;
     const pass1 = o.maxDecoding <= 24 && o.maxResident <= 24 && o.maxDecodingPlusResidentObserved <= 24;
-    // nothing stale: every resident thumbnail belongs to a card that is in view now, and the GPU texture count follows the resident count
-    const pass2 = o.afterParking.residentAfter36s <= o.afterParking.slotsAfter36s && o.afterParking.texturesAfter36s <= o.afterParking.residentAfter36s + 1;
     log(`${pass1 ? 'PASS' : 'FAIL'} HP7 decoding <= 24 and resident <= 24 (also their sum): max decoding ${maxDec}, max resident ${maxRes}, max sum ${o.maxDecodingPlusResidentObserved}, queued peak ${maxQueued}`);
-    log(`${pass2 ? 'PASS' : 'FAIL'} HP7 30 s after leaving the view nothing stale stays: resident ${o.afterParking.residentRightAfter} -> ${lt.resident} (visible slots ${lt.slots}), thumb textures ${o.afterParking.texturesRightAfter} -> ${o.afterParking.texturesAfter36s}`);
     log(`INFO HP7 heap after GC: ${o.heapMiB.map((h) => `${h.t}s ${h.MiB}MiB`).join('  ')}  -> slope ${o.heapSlopeKiBPerMin} KiB/min (judge "not growing" from the series)`);
-    if (!(pass1 && pass2)) exitCode = 1;
+    if (!pass1) exitCode = 1;
     await p.close();
+
+    // ---- (b) TTL without slot pressure, on a fresh page
+    const q = await open();
+    const cards = JSON.parse(await q.eval('JSON.stringify(window.__holoLab.photoCards)'));
+    const lo = await q.eval('window.__holoLab.minDay');
+    const hi = await q.eval('window.__holoLab.maxDay');
+    const win = (d) => new Set(cards.filter((c) => Math.abs(c.day - d) <= 3).map((c) => c.key)); // THUMB_DAY_RADIUS = 3 (spiralScene.ts)
+    const sizes = new Map();
+    for (let d = lo; d <= hi; d++) sizes.set(d, win(d).size);
+    // A, B: disjoint windows (> 6 days apart), 3..12 thumbnails each, sum <= 24 (so there is never slot pressure); prefer the largest sum
+    let best = null;
+    for (const [da, sa] of sizes) {
+      if (sa < 3 || sa > 12) continue;
+      for (const [db, sb] of sizes) {
+        if (sb < 3 || sb > 12 || Math.abs(da - db) <= 6 || sa + sb > 24) continue;
+        if (!best || sa + sb > best.sa + best.sb) best = { da, sa, db, sb };
+      }
+    }
+    if (!best) {
+      log('FAIL HP7 TTL: no pair of sparse photo windows (3..12 thumbnails each) in this data set; seed sparser data, e.g. holo-seed.mjs <port> 1000 --photos 0.5');
+      exitCode = 1;
+    } else {
+      const total = best.sa + best.sb;
+      // 1) park on A until the window shown at load (latest day) has long been released: steady state = A only
+      await q.eval(`window.__holoLab.setCursor(${best.da})`);
+      const settleStart = Date.now();
+      while (Date.now() - settleStart < 50000) { const t = (await lab(q)).spiral.thumbs; if (t.resident === best.sa && t.decoding === 0 && Date.now() - settleStart > 33000) break; await sleep(500); }
+      // 2) visit B and hold: A leaves the view at t0
+      const t0 = Date.now();
+      await q.eval(`window.__holoLab.setCursor(${best.db})`);
+      const series = [];
+      let loadedAt = null, base = null;
+      while ((Date.now() - t0) / 1000 < 42) {
+        const i = await lab(q);
+        const th = i.spiral.thumbs;
+        const t = (Date.now() - t0) / 1000;
+        if (loadedAt === null && th.resident === total && th.decoding === 0) { loadedAt = t; base = { released: th.released, textures: i.renderer.memory.textures }; }
+        series.push({ t: +t.toFixed(1), resident: th.resident, decoding: th.decoding, released: th.released, textures: i.renderer.memory.textures, slots: th.slots, shown: th.shown });
+        await sleep(500);
+      }
+      const dropAt = loadedAt === null ? null : (series.find((x) => x.t > loadedAt && x.resident < total)?.t ?? null);
+      const early = series.filter((x) => loadedAt !== null && x.t > loadedAt && x.t < 28);
+      const earlyOk = loadedAt !== null && early.length > 10 && early.every((x) => x.resident === total && x.released === base.released && x.textures === base.textures);
+      const last = series[series.length - 1];
+      const lateOk = base !== null && last.resident === best.sb && last.released - base.released === best.sa && base.textures - last.textures === best.sa;
+      const dropOk = dropAt !== null && dropAt >= 29 && dropAt <= 33;
+      out.hp7.ttl = { windowA: best.da, thumbsA: best.sa, windowB: best.db, thumbsB: best.sb, loadedAtSec: loadedAt, firstDropAtSec: dropAt, releasedBase: base?.released ?? null, releasedEnd: last.released, residentEnd: last.resident, texturesDelta: base ? last.textures - base.textures : null, earlyOk, lateOk, dropOk, series };
+      log(`${earlyOk ? 'PASS' : 'FAIL'} HP7 TTL: before 28 s nothing was released (resident stayed ${total}, released and textures constant); A ${best.sa} thumbs at day ${best.da}, B ${best.sb} at day ${best.db}, all loaded at ${loadedAt}s`);
+      log(`${dropOk ? 'PASS' : 'FAIL'} HP7 TTL: first drop ${dropAt} s after leaving A (expect 29-33 s)`);
+      log(`${lateOk ? 'PASS' : 'FAIL'} HP7 TTL: end resident ${last.resident} (= B ${best.sb}), released +${base ? last.released - base.released : '?'} (= A ${best.sa}), textures -${base ? base.textures - last.textures : '?'} (= A)`);
+      if (!(earlyOk && dropOk && lateOk)) exitCode = 1;
+    }
+    await q.throttleCPU(1);
+    await q.close();
   }
 } finally {
   fs.writeFileSync(path.join(A.out, `result-${A.scene}${A.n ?? ''}-cpu${A.throttle}-${[...modes].join('_')}.json`), JSON.stringify(out, null, 2));

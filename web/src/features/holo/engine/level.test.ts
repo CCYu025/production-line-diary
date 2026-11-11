@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectiveDpr, FlickerClock, FLICKER, levelParams } from "./level";
+import { advanceAnimTime, effectiveDpr, FlickerClock, FLICKER, levelParams } from "./level";
 
 describe("levelParams（H-D6：關＝只有線、標準、濃）", () => {
   it("關：沒有光暈、掃描線、閃爍", () => {
@@ -13,10 +13,27 @@ describe("levelParams（H-D6：關＝只有線、標準、濃）", () => {
     expect(levelParams("std", true).flicker).toBe(false);
     expect(levelParams("std", true).blurPx).toBe(4);
   });
+  it("animate：減少動態效果或強度「關」時凍結場景內的時間流動效果", () => {
+    expect(levelParams("std", false).animate).toBe(true);
+    expect(levelParams("max", false).animate).toBe(true);
+    expect(levelParams("std", true).animate).toBe(false);
+    expect(levelParams("max", true).animate).toBe(false);
+    expect(levelParams("off", false).animate).toBe(false);
+    expect(levelParams("off", true).animate).toBe(false);
+  });
   it("DPR 上限 1.5、下限 1", () => {
     expect(effectiveDpr(3)).toBe(1.5);
     expect(effectiveDpr(1)).toBe(1);
     expect(effectiveDpr(0)).toBe(1);
+  });
+});
+
+describe("advanceAnimTime", () => {
+  it("animating=true 才推進；false 時不論過多久都不變", () => {
+    expect(advanceAnimTime(1, 500, true)).toBe(1.5);
+    let t = 3;
+    for (let i = 0; i < 1000; i++) t = advanceAnimTime(t, 16, false);
+    expect(t).toBe(3);
   });
 });
 

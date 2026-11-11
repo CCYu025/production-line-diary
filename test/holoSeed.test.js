@@ -7,7 +7,7 @@ import zlib from "node:zlib";
 import { after, describe, it } from "node:test";
 import { severityFromDuration } from "../backend/lib/aggregate.js";
 import {
-  distributionReport, encodePng, generateRecords, makeRng, MAX_PER_DAY, PHOTO_MAX_BYTES, planDays, quota, renderPhoto, seedScratch,
+  cleanSeedPhotos, distributionReport, encodePng, generateRecords, makeRng, MAX_PER_DAY, PHOTO_MAX_BYTES, planDays, quota, renderPhoto, seedScratch,
 } from "../scripts/verify/holo-seed.mjs";
 
 const pct = (records, key, v) => (records.filter((r) => r[key] === v).length / records.length) * 100;
@@ -145,5 +145,50 @@ describe("holo-seed：安全檢查（只寫進 serve.mjs 的暫存副本）", ()
       assert.ok(fs.statSync(f).size <= PHOTO_MAX_BYTES);
     }
     assert.equal(fs.readdirSync(dataDir).filter((n) => n.includes(".tmp")).length, 0);
+  });
+  it("重跑時清掉上一輪 seed 的照片（只清 seed-*.png），資料與照片一致，其他檔案不動", () => {
+    const dataDir = path.join(scratch, "data-3194-abc");
+    const photoRoot = path.join(dataDir, "照片");
+    fs.mkdirSync(path.join(photoRoot, "20200101"), { recursive: true });
+    fs.mkdirSync(path.join(photoRoot, "notadate"), { recursive: true });
+    fs.writeFileSync(path.join(dataDir, "data.json"), JSON.stringify({ _meta: { schemaVersion: "1.1" }, records: [] }));
+    // 非 seed 的檔案：範例照片、名稱相似但不符的檔案、非日期資料夾裡的 seed 檔名
+    const keep = [
+      path.join(photoRoot, "20200101", "example.png"),
+      path.join(photoRoot, "20200101", "seed-1-1.png.bak"),
+      path.join(photoRoot, "20200101", "my-seed-1-1.png"),
+      path.join(photoRoot, "notadate", "seed-9-9.png"),
+    ];
+    for (const f of keep) fs.writeFileSync(f, "x");
+    marker(3194, { dataDir });
+    const listSeed = () =>
+      fs.readdirSync(photoRoot, { withFileTypes: true }).filter((d) => d.isDirectory()).flatMap((d) => fs.readdirSync(path.join(photoRoot, d.name)).filter((n) => /^seed-\d+-\d+\.png$/.test(n)).map((n) => `${d.name}/${n}`));
+
+    seedScratch(3194, 200, { scratch, photos: 2, end: "2026-11-01", seed: 1 });
+    const first = listSeed().filter((n) => !n.startsWith("notadate/"));
+    assert.ok(first.length > 200);
+    // 第二輪：不同種子、不同終點日期 → 第一輪的照片檔必須全部消失，只剩第二輪資料參照的
+    const r2 = seedScratch(3194, 120, { scratch, photos: 2, end: "2026-05-01", seed: 2 });
+    const back = JSON.parse(fs.readFileSync(path.join(dataDir, "data.json"), "utf8"));
+    const referenced = new Set(back.records.flatMap((rec) => rec.photos.map((fn) => `${rec.date.replaceAll("-", "")}/${fn}`)));
+    const onDisk = new Set(listSeed().filter((n) => !n.startsWith("notadate/")));
+    assert.equal(referenced.size, r2.photos);
+    assert.deepEqual([...onDisk].sort(), [...referenced].sort()); // 沒有孤兒、也沒有缺檔
+    for (const f of keep) assert.equal(fs.existsSync(f), true, f);
+    // 空的日期資料夾一併清掉：第一輪獨有的日期資料夾不留
+    const dirs = fs.readdirSync(photoRoot).filter((n) => /^\d{8}$/.test(n));
+    for (const d of dirs) assert.ok(fs.readdirSync(path.join(photoRoot, d)).length > 0, d);
+  });
+  it("cleanSeedPhotos：資料夾不存在回傳 0", () => {
+    assert.equal(cleanSeedPhotos(path.join(scratch, "nope", "照片")), 0);
+  });
+  it("安全檢查沒通過時不會清任何檔案", () => {
+    const dataDir = path.join(scratch, "工作日誌-keep");
+    fs.mkdirSync(path.join(dataDir, "照片", "20260101"), { recursive: true });
+    const f = path.join(dataDir, "照片", "20260101", "seed-1-1.png");
+    fs.writeFileSync(f, "x");
+    marker(3195, { dataDir });
+    assert.throws(() => seedScratch(3195, 10, { scratch }), /real-data folder name/);
+    assert.equal(fs.existsSync(f), true);
   });
 });

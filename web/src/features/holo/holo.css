@@ -89,6 +89,26 @@
   color: var(--accent-text);
 }
 
+/*
+ * 終端板內原封 import 的共用元件（Combobox）自己帶 Cyber 頁面特效的掛勾（data-fx）；終端板內容區不疊任何效果（§4.2），
+ * 所以在這裡把 cyber.css 套到那些掛勾的外觀蓋回來（不改共用元件、不改 cyber.css）。holo 自己寫的元素一律沒有 data-fx。
+ * 這是 holo.css 裡唯一允許出現 data-fx 的地方（holoCss.test.ts 檢查選擇器都在 .holo-slate 內）。
+ * cyber 對 combobox 的效果是聚焦時亮起的 ">" 提示符（::before），對 pop（建議清單）是 clip-path 展開動畫；
+ * 清單的底色與框線 cyber 與標準本來就相同（surface-raised、line-strong），不需覆寫。
+ */
+:root[data-mode="holo"] .holo-slate [data-fx="combobox"]::before {
+  content: none;
+  display: none;
+  transition: none;
+}
+
+:root[data-mode="holo"] .holo-slate [data-fx="pop"],
+:root[data-mode="holo"] .holo-slate [data-fx="pop"][data-state],
+:root[data-mode="holo"] .holo-slate [data-fx="pop"][data-side] {
+  animation: none;
+  clip-path: none;
+}
+
 /* 實驗室外殼（用完即丟）：左上角的控制條與 fps 讀數 */
 :root[data-mode="holo"] .holo-lab-hud {
   position: absolute;
