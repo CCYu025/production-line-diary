@@ -198,8 +198,21 @@ export function renderPhoto(id, date) {
 }
 
 /* ------------------------------------------------------------------ writing into a scratch server's DATA_DIR */
+/**
+ * Refuse to write through an existing link (or anything that is not a regular file): a symlink named like our target would make writeFileSync follow it
+ * to wherever it points. Refusing (instead of unlink + write) is fail-closed: a link where only regular files should be means the scratch folder was
+ * tampered with, which is worth stopping for rather than silently repairing.
+ */
+export function assertWritableTarget(file) {
+  let st;
+  try { st = fs.lstatSync(file); } catch (e) { if (e.code === 'ENOENT') return; throw e; }
+  if (!st.isFile()) throw new Error(`holo-seed: ${file} exists and is not a regular file (link?); refusing to write through it`);
+}
+
 function writeAtomic(file, data) {
   const tmp = `${file}.tmp-${process.pid}`;
+  assertWritableTarget(file); // rename replaces a link itself rather than following it, but a link here is still not something we create
+  assertWritableTarget(tmp);
   fs.writeFileSync(tmp, data);
   fs.renameSync(tmp, file);
 }
@@ -284,7 +297,9 @@ export function seedScratch(port, count, { scratch = DEFAULT_SCRATCH, photos = 2
       assertRealPathsInScratch(scratch, dir); // the date folder itself must also resolve inside scratch
       made.add(dir);
     }
-    fs.writeFileSync(path.join(dir, job.filename), renderPhoto(job.id, job.date));
+    const target = path.join(dir, job.filename);
+    assertWritableTarget(target);
+    fs.writeFileSync(target, renderPhoto(job.id, job.date));
   }
   store.records = records;
   store._meta = { ...(store._meta ?? {}), exportedAt: new Date().toISOString(), holoSeed: { count, seed, photos } };

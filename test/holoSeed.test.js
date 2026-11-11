@@ -7,7 +7,7 @@ import zlib from "node:zlib";
 import { after, describe, it } from "node:test";
 import { severityFromDuration } from "../backend/lib/aggregate.js";
 import {
-  cleanSeedPhotos, distributionReport, encodePng, generateRecords, makeRng, MAX_PER_DAY, PHOTO_MAX_BYTES, planDays, quota, renderPhoto, seedScratch,
+  assertWritableTarget, cleanSeedPhotos, distributionReport, encodePng, generateRecords, makeRng, MAX_PER_DAY, PHOTO_MAX_BYTES, planDays, quota, renderPhoto, seedScratch,
 } from "../scripts/verify/holo-seed.mjs";
 
 const pct = (records, key, v) => (records.filter((r) => r[key] === v).length / records.length) * 100;
@@ -258,14 +258,57 @@ describe("holo-seed：junction／symlink 不能繞過安全檢查（realpath 再
     assert.equal(fs.readFileSync(path.join(out, "照片", "20260101", "seed-1-1.png"), "utf8"), "victim");
     assert.deepEqual(fs.readdirSync(path.join(out, "照片", "20260101")), ["seed-1-1.png"]);
   });
-  it("data.json 是指到暫存區外的 symlink／junction 檔案所在位置：拒絕", () => {
+  it("data.json 是指到暫存區外的 symlink／junction 檔案所在位置：拒絕", (t) => {
     const out = victim("d");
     const dataDir = path.join(scratch, "data-3199-file");
     fs.mkdirSync(dataDir, { recursive: true });
-    try { fs.symlinkSync(path.join(out, "data.json"), path.join(dataDir, "data.json"), "file"); } catch { return; } // 沒有建立檔案 symlink 的權限就略過
+    try { fs.symlinkSync(path.join(out, "data.json"), path.join(dataDir, "data.json"), "file"); } catch { t.skip("沒有建立檔案 symlink 的權限"); return; }
     marker(3199, dataDir);
     assert.throws(() => seedScratch(3199, 10, { scratch }), /outside the scratch folder/);
     untouched(out);
+  });
+  it("照片目標檔名已存在且是 symlink：拒絕，不會寫到連結指向的外部檔案", (t) => {
+    const out = victim("e");
+    const dataDir = path.join(scratch, "data-3201-photolink");
+    const dateDir = path.join(dataDir, "照片", "20260101");
+    fs.mkdirSync(dateDir, { recursive: true });
+    fs.writeFileSync(path.join(dataDir, "data.json"), JSON.stringify({ records: [] }));
+    // seed 一定會產生這個檔名（第一筆紀錄的第一張照片）：先預先放一個 symlink 指到外部
+    const { photoJobs } = generateRecords(400, { seed: 1, photos: 2, end: "2026-01-31" });
+    const job = photoJobs.find((j) => j.date === "2026-01-01");
+    assert.ok(job, "測試資料要包含 2026-01-01 的照片");
+    try { fs.symlinkSync(path.join(out, "照片", "20260101", "seed-1-1.png"), path.join(dateDir, job.filename), "file"); } catch { t.skip("沒有建立檔案 symlink 的權限"); return; }
+    marker(3201, dataDir);
+    assert.throws(() => seedScratch(3201, 400, { scratch, photos: 2, end: "2026-01-31", seed: 1 }), /not a regular file/);
+    assert.equal(fs.readFileSync(path.join(out, "照片", "20260101", "seed-1-1.png"), "utf8"), "victim");
+  });
+  it("照片目標檔名已存在但不是一般檔案（用資料夾代替，不需要 symlink 權限）：拒絕", () => {
+    const dataDir = path.join(scratch, "data-3203-photodir");
+    const dateDir = path.join(dataDir, "照片", "20260101");
+    fs.mkdirSync(dateDir, { recursive: true });
+    fs.writeFileSync(path.join(dataDir, "data.json"), JSON.stringify({ records: [] }));
+    const { photoJobs } = generateRecords(400, { seed: 1, photos: 2, end: "2026-01-31" });
+    const job = photoJobs.find((j) => j.date === "2026-01-01");
+    fs.mkdirSync(path.join(dateDir, job.filename));
+    marker(3203, dataDir);
+    assert.throws(() => seedScratch(3203, 400, { scratch, photos: 2, end: "2026-01-31", seed: 1 }), /not a regular file/);
+  });
+  it("assertWritableTarget：不存在或一般檔案可以，目錄不行", () => {
+    const d = fs.mkdtempSync(path.join(scratch, "wt-"));
+    assertWritableTarget(path.join(d, "nope"));
+    fs.writeFileSync(path.join(d, "f"), "x");
+    assertWritableTarget(path.join(d, "f"));
+    assert.throws(() => assertWritableTarget(d), /not a regular file/);
+  });
+  it("data.json 在暫存區內但是 symlink：寫入被拒絕，連結目標不變", (t) => {
+    const dataDir = path.join(scratch, "data-3202-jsonlink");
+    fs.mkdirSync(dataDir, { recursive: true });
+    const real = path.join(scratch, "real-data-3202.json");
+    fs.writeFileSync(real, JSON.stringify({ records: [], keep: true }));
+    try { fs.symlinkSync(real, path.join(dataDir, "data.json"), "file"); } catch { t.skip("沒有建立檔案 symlink 的權限"); return; }
+    marker(3202, dataDir);
+    assert.throws(() => seedScratch(3202, 10, { scratch }), /not a regular file/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(real, "utf8")), { records: [], keep: true });
   });
   it("正常的暫存資料夾不受影響", () => {
     const dataDir = path.join(scratch, "data-3200-ok");

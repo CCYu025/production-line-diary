@@ -1,7 +1,8 @@
 /*
  * 減少動態效果（prefers-reduced-motion）的唯一來源。
- * 只在建構時讀一次 mql.matches，之後只由 change 事件更新：不能每幀去讀 mql.matches——
- * 實測 Chrome 裡每幀讀取會讓這個 MediaQueryList 的 change 事件不觸發，執行中切換就不生效（H1 第二輪驗證發現）。
+ * 只在建構時讀一次 mql.matches，之後只由 change 事件更新，不每幀去讀。
+ * 成因：在本 App 實測，每幀讀 mql.matches 時引擎那個 MediaQueryList 的 change 事件沒有觸發，執行中切換就不生效（H1 第二輪驗證發現）；
+ * 空白頁的最小測試不一定重現，所以不能當成瀏覽器一律如此，只是不再依賴每幀讀取。
  * 所有「是否減少動態效果」的判斷（自動緩轉、慣性、平滑追隨、閃爍、虛線流動）都問這個物件。
  */
 export class ReducedMotionSource {
