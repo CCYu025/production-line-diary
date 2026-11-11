@@ -52,14 +52,16 @@ export const routes = [
   },
 ];
 
-// 實驗室是全螢幕頁面，不進 ModeShell／AppShell（不改外殼）。
-const labRoutes = HOLO_LAB
-  ? [
-      {
-        path: "/_holo",
-        lazy: async () => ({ Component: (await import("@/features/holo/lab/HoloLabPage")).default }),
-      },
-    ]
-  : [];
-
-export const createRouter = () => createHashRouter([...routes, ...labRoutes]);
+// 實驗室是全螢幕頁面，不進 ModeShell／AppShell（不改外殼）。條件展開直接寫在呼叫處（與上面 _ui 同樣的寫法），預設建置才會被完全消掉。
+export const createRouter = () =>
+  createHashRouter([
+    ...routes,
+    ...(HOLO_LAB
+      ? [
+          {
+            path: "/_holo",
+            lazy: async () => ({ Component: (await import("@/features/holo/lab/HoloLabPage")).default }),
+          },
+        ]
+      : []),
+  ]);

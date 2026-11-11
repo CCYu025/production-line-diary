@@ -2,7 +2,9 @@
 //   node scripts/verify/holo-still.mjs --url http://localhost:3114/ [--gap 700] [--out dir] [--allow-software]
 // For machine and spiral (spiral needs holo-seed data so tracked cards exist) x crt std / off / max: with prefers-reduced-motion: reduce emulated, nothing touched
 // (machine auto-rotate left on), two screenshots --gap ms apart must be pixel-identical (diff 0). A control run WITHOUT reduced motion (std) must differ,
-// otherwise the check proves nothing. Exit 1 on any failure, 2 if the renderer is software (unless --allow-software).
+// otherwise the check proves nothing. Then the RUNTIME toggle, both directions, both scenes: load without reduced motion, switch it on with CDP
+// Emulation.setEmulatedMedia while the page runs (within 1 s the world must be still: two shots --gap apart identical, page reducedMotion=true), switch it off again
+// (within 1 s the world must move again); and the reverse order (load reduced -> off -> on). Exit 1 on any failure, 2 if the renderer is software (unless --allow-software).
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
@@ -45,6 +47,40 @@ try {
       if (!ok) bad = true;
       results.push({ scene, crt, reducedMotion: info.reducedMotion, level: info.level, cards: info.spiral?.fullCards ?? null, ...d, ok });
       console.log(`${ok ? 'PASS' : 'FAIL'} ${scene} crt=${crt} ${reduced ? 'reduced motion' : 'CONTROL (motion allowed, must differ)'}: ${d.differingPixels} differing px of ${d.totalPixels} (max channel delta ${d.maxChannelDelta}); page says reducedMotion=${info.reducedMotion}${info.spiral ? ', full cards ' + info.spiral.fullCards : ''}`);
+      await p.close();
+    }
+  }
+  // ---------------------------------------------------------------- runtime toggle
+  const shots = async (p, tag) => {
+    const a = await p.send('Page.captureScreenshot', { format: 'png' });
+    await sleep(+A.gap);
+    const b = await p.send('Page.captureScreenshot', { format: 'png' });
+    const d = await p.eval(`(${DIFF})(${JSON.stringify(a.data)}, ${JSON.stringify(b.data)})`, true);
+    fs.writeFileSync(path.join(A.out, `${tag}-b.png`), Buffer.from(b.data, 'base64'));
+    return d;
+  };
+  const setRM = (p, on) => p.setMedia('dark', 'screen', [{ name: 'prefers-reduced-motion', value: on ? 'reduce' : 'no-preference' }]);
+  for (const scene of ['machine', 'spiral']) {
+    for (const startReduced of [false, true]) {
+      const p = await browser.newPage({ width: 1280, height: 720 });
+      await setRM(p, startReduced);
+      await p.goto(`${base}#/_holo?scene=${scene}&crt=std&holodebug=1&slate=off`, { settle: 300 });
+      await p.waitFor('window.__holoLab && window.__holoLab().frames > 10', 30000);
+      if (scene === 'spiral') await p.waitFor('window.__holoLab().spiral && window.__holoLab().spiral.total > 0', 60000);
+      await p.eval("(()=>{const h=document.querySelector('.holo-lab-hud');if(h)h.style.visibility='hidden';return true})()");
+      await sleep(2500);
+      const rm = async () => (JSON.parse(await p.eval('JSON.stringify(window.__holoLab())'))).reducedMotion;
+      const steps = startReduced ? [true, false, true] : [false, true, false]; // state after each switch; the first entry is the loaded state
+      for (let i = 0; i < steps.length; i++) {
+        const want = steps[i];
+        if (i > 0) { await setRM(p, want); await sleep(1000); }
+        const d = await shots(p, `rt-${scene}-${startReduced ? 'fromRM' : 'fromMotion'}-${i}-${want ? 'still' : 'moving'}`);
+        const reported = await rm();
+        const ok = want ? d.differingPixels === 0 && reported === true : d.differingPixels > 0 && reported === false;
+        if (!ok) bad = true;
+        results.push({ runtime: true, scene, startReduced, step: i, wantReduced: want, reportedReducedMotion: reported, ...d, ok });
+        console.log(`${ok ? 'PASS' : 'FAIL'} runtime ${scene} (loaded ${startReduced ? 'reduced' : 'normal'}) step ${i}${i ? ' after switching to ' + (want ? 'reduced (must be still within 1 s)' : 'normal (must move again within 1 s)') : ''}: ${d.differingPixels} differing px; page reducedMotion=${reported}`);
+      }
       await p.close();
     }
   }

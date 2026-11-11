@@ -7,8 +7,8 @@
 //   fps   HP1: median fps of rAF over --duration seconds, idle (nothing touched; the machine's auto rotate stays on) and operating (rotate drag, wheel, cursor moves).
 //         Gate: spiral n<=5000 >= 55 fps (CPU 1x); n=20000 >= 30; CPU 4x with n<=5000 >= 30. The machine scene is measured for the record (gate 55 at 1x).
 //   hp2   HP2 (measure only): machine, slate open, world still (rot=0) 2 s after settling: fps of rAF and the number of world frames.
-//   hp5   HP5 (measure only): reports three separate times (ms): data load (lab mount -> records available; spiral only), scene build
-//         (building the world), first world frame (scene built -> first frame drawn WITH the world); readyMs = lab mount -> first world frame.
+//   hp5   HP5 (measure only): readyMs = lab mount -> first frame that contains the world, split into dataLoad (mount -> records; spiral), engineCritical
+//         (engine init beyond data availability), modelBuild (buildSpiral), sceneBuild, firstWorldFrame and other (React commits / waits) - they add up to readyMs.
 //   input slate typing latency: keydown -> next animation frame while the world turns (ms, p50 / p95 / max).
 //   hp7   HP7: thumbnails. (a) samples decoding / resident / renderer textures every 250 ms while the cursor sweeps back and forth for --soak seconds
 //         (default 300 = 5 min), heap after forced GC every 15 s (slope). (b) TTL test with NO slot pressure: two sparse time windows A and B
@@ -142,14 +142,14 @@ try {
       const p = await open();
       const info = await lab(p);
       const t = info.timing;
-      runs.push({
-        dataLoadMs: t.dataLoadMs === null ? null : +t.dataLoadMs.toFixed(0), sceneBuildMs: +t.sceneBuildMs.toFixed(0), firstWorldFrameMs: +t.firstWorldFrameMs.toFixed(0),
-        readyMs: +info.readyMs.toFixed(0), engineFirstFrameMs: +t.enginePageFirstFrameMs.toFixed(0),
-      });
+      const parts = ['dataLoadMs', 'engineCriticalMs', 'modelBuildMs', 'sceneBuildMs', 'firstWorldFrameMs'];
+      const r0 = (x) => (x === null ? null : +x.toFixed(0));
+      const sum = parts.reduce((a, k) => a + (t[k] ?? 0), 0);
+      runs.push({ ...Object.fromEntries([...parts, 'otherMs', 'readyMs', 'engineInitMs', 'enginePageFirstFrameMs'].map((k) => [k, r0(t[k])])), sumOfSegmentsMs: r0(sum), otherShare: +(t.otherMs / t.readyMs).toFixed(3) });
       await p.close();
     }
     const med = (k) => { const v = runs.map((r) => r[k]).filter((x) => x !== null); return v.length ? median(v) : null; };
-    out.hp5 = { scene: A.scene, runs, median: { dataLoadMs: med('dataLoadMs'), sceneBuildMs: med('sceneBuildMs'), firstWorldFrameMs: med('firstWorldFrameMs'), readyMs: med('readyMs') }, note: 'measured only; readyMs = lab mount -> first frame that contains the world (data load + scene build + first world frame); engineFirstFrameMs is the engine first frame, which can come BEFORE the world exists (the spiral waits for data); localhost' };
+    out.hp5 = { scene: A.scene, runs, median: Object.fromEntries(['readyMs', 'dataLoadMs', 'engineCriticalMs', 'modelBuildMs', 'sceneBuildMs', 'firstWorldFrameMs', 'otherMs'].map((k) => [k, med(k)])), note: 'measured only; readyMs = lab mount -> first frame that contains the world = dataLoad + engineCritical (engine init beyond data availability) + modelBuild (buildSpiral) + sceneBuild + firstWorldFrame + other (React commits, waits between effects); engineInitMs and enginePageFirstFrameMs are reference values (the engine first frame can come BEFORE the world exists: the spiral waits for data); localhost' };
     log('INFO HP5 medians', JSON.stringify(out.hp5.median), 'runs:', JSON.stringify(runs));
   }
 

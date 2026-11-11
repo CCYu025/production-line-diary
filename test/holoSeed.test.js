@@ -191,4 +191,87 @@ describe("holo-seed：安全檢查（只寫進 serve.mjs 的暫存副本）", ()
     assert.throws(() => seedScratch(3195, 10, { scratch }), /real-data folder name/);
     assert.equal(fs.existsSync(f), true);
   });
+  it("cleanSeedPhotos：本來就是空的日期資料夾不刪，只刪「因為這次清理而變空」的", () => {
+    const root = path.join(scratch, "clean-empty", "照片");
+    fs.mkdirSync(path.join(root, "20240101"), { recursive: true }); // 本來就空
+    fs.mkdirSync(path.join(root, "20240102"), { recursive: true });
+    fs.writeFileSync(path.join(root, "20240102", "seed-1-1.png"), "x"); // 清完會變空
+    fs.mkdirSync(path.join(root, "20240103"), { recursive: true });
+    fs.writeFileSync(path.join(root, "20240103", "seed-2-1.png"), "x");
+    fs.writeFileSync(path.join(root, "20240103", "keep.png"), "x"); // 清完還有別的檔
+    assert.equal(cleanSeedPhotos(root), 2);
+    assert.equal(fs.existsSync(path.join(root, "20240101")), true);
+    assert.equal(fs.existsSync(path.join(root, "20240102")), false);
+    assert.equal(fs.existsSync(path.join(root, "20240103", "keep.png")), true);
+  });
+});
+
+describe("holo-seed：junction／symlink 不能繞過安全檢查（realpath 再檢查一次）", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "holo-seed-junction-"));
+  const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), "holo-seed-outside-j-"));
+  after(() => {
+    fs.rmSync(scratch, { recursive: true, force: true });
+    fs.rmSync(outsideRoot, { recursive: true, force: true });
+  });
+  const marker = (port, dataDir) => fs.writeFileSync(path.join(scratch, `serve-${port}.json`), JSON.stringify({ port, scratch, dataDir }));
+  const link = (target, at) => fs.symlinkSync(target, at, "junction");
+  /** 暫存區外的「受害者」資料夾：有一個像 seed 照片的檔案與 data.json */
+  const victim = (name) => {
+    const dir = path.join(outsideRoot, name);
+    fs.mkdirSync(path.join(dir, "照片", "20260101"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "照片", "20260101", "seed-1-1.png"), "victim");
+    fs.writeFileSync(path.join(dir, "data.json"), JSON.stringify({ records: ["victim"] }));
+    return dir;
+  };
+  const untouched = (dir) => {
+    assert.equal(fs.readFileSync(path.join(dir, "照片", "20260101", "seed-1-1.png"), "utf8"), "victim");
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, "data.json"), "utf8")), { records: ["victim"] });
+  };
+
+  it("DATA_DIR 本身是指到暫存區外的 junction：拒絕，外面的檔案原封不動", () => {
+    const out = victim("a");
+    const dataDir = path.join(scratch, "data-3196-link");
+    link(out, dataDir);
+    marker(3196, dataDir);
+    assert.throws(() => seedScratch(3196, 10, { scratch }), /outside the scratch folder/);
+    untouched(out);
+  });
+  it("照片資料夾是指到暫存區外的 junction：拒絕，外面的檔案原封不動", () => {
+    const out = victim("b");
+    const dataDir = path.join(scratch, "data-3197-photos");
+    fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(path.join(dataDir, "data.json"), JSON.stringify({ records: [] }));
+    link(path.join(out, "照片"), path.join(dataDir, "照片"));
+    marker(3197, dataDir);
+    assert.throws(() => seedScratch(3197, 10, { scratch }), /outside the scratch folder/);
+    untouched(out);
+  });
+  it("日期資料夾是指到暫存區外的 junction：不會刪也不會寫進去", () => {
+    const out = victim("c");
+    const dataDir = path.join(scratch, "data-3198-date");
+    fs.mkdirSync(path.join(dataDir, "照片"), { recursive: true });
+    fs.writeFileSync(path.join(dataDir, "data.json"), JSON.stringify({ records: [] }));
+    link(path.join(out, "照片", "20260101"), path.join(dataDir, "照片", "20260101"));
+    marker(3198, dataDir);
+    // 清理階段略過連結；寫入階段碰到連結的日期資料夾就拒絕（種子日期涵蓋 2026-01-01）
+    assert.throws(() => seedScratch(3198, 400, { scratch, photos: 2, end: "2026-01-31" }), /is a link/);
+    assert.equal(fs.readFileSync(path.join(out, "照片", "20260101", "seed-1-1.png"), "utf8"), "victim");
+    assert.deepEqual(fs.readdirSync(path.join(out, "照片", "20260101")), ["seed-1-1.png"]);
+  });
+  it("data.json 是指到暫存區外的 symlink／junction 檔案所在位置：拒絕", () => {
+    const out = victim("d");
+    const dataDir = path.join(scratch, "data-3199-file");
+    fs.mkdirSync(dataDir, { recursive: true });
+    try { fs.symlinkSync(path.join(out, "data.json"), path.join(dataDir, "data.json"), "file"); } catch { return; } // 沒有建立檔案 symlink 的權限就略過
+    marker(3199, dataDir);
+    assert.throws(() => seedScratch(3199, 10, { scratch }), /outside the scratch folder/);
+    untouched(out);
+  });
+  it("正常的暫存資料夾不受影響", () => {
+    const dataDir = path.join(scratch, "data-3200-ok");
+    fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(path.join(dataDir, "data.json"), JSON.stringify({ records: [] }));
+    marker(3200, dataDir);
+    assert.equal(seedScratch(3200, 20, { scratch, end: "2026-11-01" }).records, 20);
+  });
 });

@@ -61,13 +61,20 @@ function LabInner({ scene, slate, params }: { scene: SceneName; slate: SlateMeth
   const enteredAt = React.useRef(performance.now());
   const records = useRecords();
   // HP5 的分段時間（都是 performance.now() 時間軸）：資料可用、場景建好（含建立耗時）、世界第一幀
-  const timing = React.useRef<{ dataAt: number | null; buildStartAt: number | null; sceneBuiltAt: number | null; firstWorldFrameAt: number | null }>({
-    dataAt: null,
-    buildStartAt: null,
-    sceneBuiltAt: null,
-    firstWorldFrameAt: null,
-  });
+  const timing = React.useRef<{
+    dataAt: number | null;
+    engineStartAt: number | null;
+    engineReadyAt: number | null;
+    modelMs: number | null;
+    modelBuiltAt: number | null;
+    buildStartAt: number | null;
+    sceneBuiltAt: number | null;
+    firstWorldFrameAt: number | null;
+  }>({ dataAt: null, engineStartAt: null, engineReadyAt: null, modelMs: null, modelBuiltAt: null, buildStartAt: null, sceneBuiltAt: null, firstWorldFrameAt: null });
   if (records.data && timing.current.dataAt === null) timing.current.dataAt = performance.now();
+  // 除錯讀數用 ref：紀錄載入完成不該讓機台場景重建（世界的 effect 不依賴紀錄筆數）
+  const recordsCount = React.useRef<number | null>(null);
+  recordsCount.current = records.data?.length ?? null;
   const debug = params.get("holodebug") === "1";
   const slateHost = React.useMemo(() => {
     const d = document.createElement("div");
@@ -96,6 +103,7 @@ function LabInner({ scene, slate, params }: { scene: SceneName; slate: SlateMeth
     const host = hostRef.current;
     if (!host || failed) return;
     let eng: HoloEngine;
+    timing.current.engineStartAt = performance.now();
     try {
       eng = new HoloEngine({ host, levelOverride: readCrt(params.get("crt")), onContextLost: () => setFailed(true) });
     } catch {
@@ -104,6 +112,7 @@ function LabInner({ scene, slate, params }: { scene: SceneName; slate: SlateMeth
     }
     setEngine(eng);
     eng.start();
+    timing.current.engineReadyAt = performance.now();
     // fps 讀數（直接改 DOM 文字，不經過 React）
     let lastFrames = 0;
     let lastT = performance.now();
@@ -122,7 +131,14 @@ function LabInner({ scene, slate, params }: { scene: SceneName; slate: SlateMeth
   }, [failed, params]);
 
   // 世界（機台或螢幕牆螺旋）＋終端板
-  const spiralModel = React.useMemo(() => (scene === "spiral" && records.data ? buildSpiral(records.data) : null), [scene, records.data]);
+  const spiralModel = React.useMemo(() => {
+    if (scene !== "spiral" || !records.data) return null;
+    const t0 = performance.now();
+    const m = buildSpiral(records.data);
+    timing.current.modelBuiltAt = performance.now();
+    timing.current.modelMs = timing.current.modelBuiltAt - t0;
+    return m;
+  }, [scene, records.data]);
   React.useEffect(() => {
     if (!engine) return;
     const root = rootRef.current;
@@ -228,13 +244,38 @@ function LabInner({ scene, slate, params }: { scene: SceneName; slate: SlateMeth
         firstFrameAt: engine.stats.firstFrameAt,
         /** 世界可以操作的總毫秒數：進入實驗室（頁面元件掛載）→ 資料可用 → 場景建好 → 世界第一幀都包含在內 */
         readyMs: timing.current.firstWorldFrameAt === null ? null : timing.current.firstWorldFrameAt - enteredAt.current,
-        /** 分段：dataLoadMs＝掛載到紀錄可用（機台沒有資料載入：null）；sceneBuildMs＝建立世界的耗時；firstWorldFrameMs＝場景建好到世界第一幀 */
-        timing: {
-          dataLoadMs: timing.current.dataAt === null || scene !== "spiral" ? null : timing.current.dataAt - enteredAt.current,
-          sceneBuildMs: timing.current.buildStartAt === null || timing.current.sceneBuiltAt === null ? null : timing.current.sceneBuiltAt - timing.current.buildStartAt,
-          firstWorldFrameMs: timing.current.firstWorldFrameAt === null || timing.current.sceneBuiltAt === null ? null : timing.current.firstWorldFrameAt - timing.current.sceneBuiltAt,
-          enginePageFirstFrameMs: engine.stats.firstFrameAt === null ? null : engine.stats.firstFrameAt - enteredAt.current,
-        },
+        /**
+         * 分段（毫秒）。readyMs = 掛載 → 世界第一幀。分段加總 + otherMs = readyMs（引擎初始化與資料載入同時進行時，只有排在後面的那段算在關鍵路徑上，所以 engineCriticalMs 才是計入加總的那一項）：
+         *   dataLoadMs      掛載到紀錄可用（機台沒有資料載入：null）
+         *   engineCriticalMs 引擎初始化超出「資料可用」之後的部分（螺旋通常是 0，因為引擎比資料早好；機台＝掛載到引擎好）
+         *   modelBuildMs    buildSpiral（螺旋）
+         *   sceneBuildMs    建立世界（幾何、著色器、緩衝）
+         *   firstWorldFrameMs 場景建好到世界第一幀
+         *   otherMs         其餘（React 提交與重繪、effect 之間的等待）= readyMs − 以上加總
+         *   engineInitMs    引擎初始化本身的耗時（參考，與上面可能重疊）
+         */
+        timing: (() => {
+          const T = timing.current;
+          const ready = T.firstWorldFrameAt === null ? null : T.firstWorldFrameAt - enteredAt.current;
+          const dataLoadMs = T.dataAt === null || scene !== "spiral" ? null : T.dataAt - enteredAt.current;
+          const base = scene === "spiral" && T.dataAt !== null ? T.dataAt : enteredAt.current;
+          const engineCriticalMs = T.engineReadyAt === null ? null : Math.max(0, T.engineReadyAt - base);
+          const modelBuildMs = scene === "spiral" ? T.modelMs : null;
+          const sceneBuildMs = T.buildStartAt === null || T.sceneBuiltAt === null ? null : T.sceneBuiltAt - T.buildStartAt;
+          const firstWorldFrameMs = T.firstWorldFrameAt === null || T.sceneBuiltAt === null ? null : T.firstWorldFrameAt - T.sceneBuiltAt;
+          const sum = (dataLoadMs ?? 0) + (engineCriticalMs ?? 0) + (modelBuildMs ?? 0) + (sceneBuildMs ?? 0) + (firstWorldFrameMs ?? 0);
+          return {
+            readyMs: ready,
+            dataLoadMs,
+            engineCriticalMs,
+            modelBuildMs,
+            sceneBuildMs,
+            firstWorldFrameMs,
+            otherMs: ready === null ? null : ready - sum,
+            engineInitMs: T.engineStartAt === null || T.engineReadyAt === null ? null : T.engineReadyAt - T.engineStartAt,
+            enginePageFirstFrameMs: engine.stats.firstFrameAt === null ? null : engine.stats.firstFrameAt - enteredAt.current,
+          };
+        })(),
         nowMs: performance.now(),
         renderer: { memory: { ...engine.renderer.info.memory }, render: { ...engine.renderer.info.render }, programs: engine.renderer.info.programs?.length ?? 0 },
         camera: { ...engine.rig.state, target: engine.rig.target.toArray(), autoRotate: engine.rig.autoRotate, dragging: engine.rig.dragging, endCounts: { ...engine.rig.endCounts } },
@@ -248,7 +289,7 @@ function LabInner({ scene, slate, params }: { scene: SceneName; slate: SlateMeth
               probe: { submits: slateProbe.submits, composing: slateProbe.composing, compositions: slateProbe.compositions, events: slateProbe.events.slice(-120) },
             }
           : null,
-        records: records.data?.length ?? null,
+        records: recordsCount.current,
       })) as unknown as NonNullable<Window["__holoLab"]>;
       Object.assign(fn, api, { resetProbe: () => slateProbe.reset(), isFrozen: () => frozenRef.current });
       window.__holoLab = fn;
@@ -264,7 +305,7 @@ function LabInner({ scene, slate, params }: { scene: SceneName; slate: SlateMeth
       if (window.__holoLab) delete window.__holoLab;
       slateProbe.enabled = false;
     };
-  }, [engine, scene, slate, spiralModel, debug, params, slateHost, records.data?.length]);
+  }, [engine, scene, slate, spiralModel, debug, params, slateHost]);
 
   const onComposition = React.useCallback(
     (composing: boolean) => {

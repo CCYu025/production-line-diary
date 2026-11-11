@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { getCrtLevel, subscribeCrt, type CrtLevel } from "@/features/os/crt/settings";
 import { OrbitRig, type RigCallbacks, type RigConfig } from "./controls";
 import { HoloPass } from "./holoPass";
+import { ReducedMotionSource } from "./reducedMotion";
 import { effectiveDpr, FlickerClock, levelParams } from "./level";
 import { HoloMaterials } from "./material";
 import { readHoloColors, type HoloColors } from "./tokens";
@@ -56,7 +57,8 @@ export class HoloEngine {
   private dpr = 1;
   private level: CrtLevel;
   private readonly flicker = new FlickerClock();
-  private readonly mql: MediaQueryList | null;
+  private readonly reducedSource = new ReducedMotionSource();
+  private unsubReduced: () => void;
   private readonly frameCbs = new Set<(nowMs: number) => void>();
   private readonly ro: ResizeObserver;
   private unsubCrt: () => void;
@@ -80,7 +82,6 @@ export class HoloEngine {
     });
 
     this.pass = new HoloPass(this.renderer, this.colors.page);
-    this.mql = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
     this.level = opts.levelOverride ?? getCrtLevel();
     this.rig = new OrbitRig(
       { limits: { minDist: 1, maxDist: 100, minPitch: -0.3, maxPitch: 1.3 }, home: { yaw: 0, pitch: 0.3, dist: 20 }, homeTarget: new THREE.Vector3(), fovDeg: CAMERA_FOV, wheelMode: "zoom" },
@@ -89,14 +90,15 @@ export class HoloEngine {
     this.rig.attach(this.canvas);
     this.applyLevel();
     this.unsubCrt = opts.levelOverride ? () => {} : subscribeCrt(() => this.setLevel(getCrtLevel()));
-    this.mql?.addEventListener?.("change", this.onReducedChange);
+    this.unsubReduced = this.reducedSource.subscribe(this.onReducedChange);
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(opts.host);
     this.resize();
   }
 
+  /** 減少動態效果：唯一來源是 ReducedMotionSource（只由 change 事件更新，不每幀讀 mql.matches） */
   get reducedMotion(): boolean {
-    return this.mql?.matches ?? false;
+    return this.reducedSource.matches;
   }
   /** 場景內隨時間流動的效果現在是否該動（減少動態效果或強度「關」時為 false） */
   get animating(): boolean {
@@ -214,7 +216,8 @@ export class HoloEngine {
     this.disposed = true;
     this.stop();
     this.unsubCrt();
-    this.mql?.removeEventListener?.("change", this.onReducedChange);
+    this.unsubReduced();
+    this.reducedSource.dispose();
     this.ro.disconnect();
     this.rig.detach();
     this.setWorld(null);

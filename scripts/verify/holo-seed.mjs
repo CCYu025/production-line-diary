@@ -14,7 +14,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { assertScratchServer, DEFAULT_SCRATCH } from './safety.mjs';
+import { assertScratchServer, DEFAULT_SCRATCH, REAL_FOLDER_NAME } from './safety.mjs';
 import { toISODate } from '../../backend/lib/aggregate.js';
 
 export const MAX_PER_DAY = 11;
@@ -207,6 +207,37 @@ function writeAtomic(file, data) {
 const SEED_PHOTO_RE = /^seed-\d+-\d+\.png$/;
 const DATE_DIR_RE = /^\d{8}$/;
 
+const isInside = (parent, child) => {
+  const r = path.relative(parent, child);
+  return !!r && !r.startsWith('..') && !path.isAbsolute(r);
+};
+
+/**
+ * Second safety layer, run after assertScratchServer() and before anything is deleted or written: resolve junctions / symlinks (realpath) and
+ * require the REAL location of DATA_DIR (and of 照片 and data.json when they exist) to still be inside the REAL scratch folder and not contain the
+ * real-data folder name. assertScratchServer() only compares path strings, so a junction inside the scratch folder pointing outside would pass it.
+ * (Kept here, not in safety.mjs: nothing about the other scripts' checks changes.)
+ */
+export function assertRealPathsInScratch(scratch, dataDir) {
+  const realScratch = fs.realpathSync(path.resolve(scratch));
+  const check = (p, what) => {
+    const real = fs.realpathSync(p);
+    if (real.includes(REAL_FOLDER_NAME)) throw new Error(`holo-seed: ${what} resolves to ${real}, which contains the real-data folder name`);
+    if (!isInside(realScratch, real)) throw new Error(`holo-seed: ${what} resolves to ${real}, which is outside the scratch folder ${realScratch} (junction/symlink?)`);
+    return real;
+  };
+  const realData = check(dataDir, 'DATA_DIR');
+  for (const rel of ['data.json', '照片']) {
+    const f = path.join(dataDir, rel);
+    if (fs.existsSync(f) || isLink(f)) {
+      const real = check(f, rel);
+      if (!isInside(realData, real)) throw new Error(`holo-seed: ${rel} resolves outside DATA_DIR (${real})`);
+    }
+  }
+  return realData;
+}
+function isLink(f) { try { return fs.lstatSync(f).isSymbolicLink(); } catch { return false; } }
+
 /**
  * Remove the photos a previous holo-seed run left behind: only files named seed-<id>-<n>.png directly inside 照片/<YYYYMMDD>/
  * (and a date folder that becomes empty). Anything else (example photos, other names, other folders) is never touched.
@@ -218,10 +249,13 @@ export function cleanSeedPhotos(photoRoot) {
   for (const d of fs.readdirSync(photoRoot, { withFileTypes: true })) {
     if (!d.isDirectory() || !DATE_DIR_RE.test(d.name)) continue;
     const dir = path.join(photoRoot, d.name);
+    let here = 0;
     for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (f.isFile() && SEED_PHOTO_RE.test(f.name)) { fs.unlinkSync(path.join(dir, f.name)); removed++; }
+      if (f.isFile() && SEED_PHOTO_RE.test(f.name)) { fs.unlinkSync(path.join(dir, f.name)); here++; }
     }
-    if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
+    removed += here;
+    // only a folder that became empty BECAUSE of this cleanup is removed; a date folder that was already empty is not ours
+    if (here > 0 && fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
   }
   return removed;
 }
@@ -233,6 +267,7 @@ export function cleanSeedPhotos(photoRoot) {
 export function seedScratch(port, count, { scratch = DEFAULT_SCRATCH, photos = 2, seed = 1, end, log = () => {} } = {}) {
   const info = assertScratchServer(`http://127.0.0.1:${port}/`, scratch); // throws unless this is a serve.mjs scratch server
   const dataDir = info.dataDir;
+  assertRealPathsInScratch(scratch, dataDir); // junction / symlink check (realpath), before anything is read for deletion or written
   const file = path.join(dataDir, 'data.json');
   const store = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')) : { _meta: { schemaVersion: '1.1', app: '產線日誌', exportedAt: new Date().toISOString() } };
   const { records, photoJobs } = generateRecords(count, { seed, photos, end });
@@ -243,7 +278,12 @@ export function seedScratch(port, count, { scratch = DEFAULT_SCRATCH, photos = 2
   const made = new Set();
   for (const job of photoJobs) {
     const dir = path.join(photoRoot, job.date.replaceAll('-', ''));
-    if (!made.has(dir)) { fs.mkdirSync(dir, { recursive: true }); made.add(dir); }
+    if (!made.has(dir)) {
+      if (isLink(dir)) throw new Error(`holo-seed: ${dir} is a link; refusing to write through it`);
+      fs.mkdirSync(dir, { recursive: true });
+      assertRealPathsInScratch(scratch, dir); // the date folder itself must also resolve inside scratch
+      made.add(dir);
+    }
     fs.writeFileSync(path.join(dir, job.filename), renderPhoto(job.id, job.date));
   }
   store.records = records;

@@ -65,9 +65,11 @@ try {
       // ---------- C1 <input>
       await focus('holo-problem');
       const yaw0 = (await lab()).camera.yaw;
-      const rect0 = await rectOfSlate();
       await comp('ㄋㄧˇ');
-      await sleep(700); // the world keeps turning while composing
+      await sleep(120); // the freeze applies from compositionstart on; measure the baseline only AFTER it took effect: a rect read before compositionstart can be
+                        // one rendered frame older than the frozen position (css3d moves ~1px per frame while the world turns) and would look like movement
+      const rect0 = await rectOfSlate();
+      await sleep(580); // the world keeps turning while composing
       const mid = await lab();
       const rectMid = await rectOfSlate();
       await rawKey('Enter', 'Enter', 13);
