@@ -206,14 +206,14 @@ export function renderPhoto(id, date) {
 export function assertWritableTarget(file) {
   let st;
   try { st = fs.lstatSync(file); } catch (e) { if (e.code === 'ENOENT') return; throw e; }
-  if (!st.isFile()) throw new Error(`holo-seed: ${file} exists and is not a regular file (link?); refusing to write through it`);
+  if (!st.isFile()) throw new Error(`${file} exists and is not a regular file (link?); refusing to write through it`);
 }
 
-function writeAtomic(file, data) {
+export function writeAtomic(file, data) {
   const tmp = `${file}.tmp-${process.pid}`;
-  assertWritableTarget(file); // rename replaces a link itself rather than following it, but a link here is still not something we create
-  assertWritableTarget(tmp);
-  fs.writeFileSync(tmp, data);
+  // 'wx': the temp file must not exist (a symlink OR a hard link planted at that name would otherwise be written THROUGH to its target).
+  // The rename then replaces data.json itself (it never follows a link at the destination).
+  fs.writeFileSync(tmp, data, { flag: 'wx' });
   fs.renameSync(tmp, file);
 }
 
@@ -235,8 +235,8 @@ export function assertRealPathsInScratch(scratch, dataDir) {
   const realScratch = fs.realpathSync(path.resolve(scratch));
   const check = (p, what) => {
     const real = fs.realpathSync(p);
-    if (real.includes(REAL_FOLDER_NAME)) throw new Error(`holo-seed: ${what} resolves to ${real}, which contains the real-data folder name`);
-    if (!isInside(realScratch, real)) throw new Error(`holo-seed: ${what} resolves to ${real}, which is outside the scratch folder ${realScratch} (junction/symlink?)`);
+    if (real.includes(REAL_FOLDER_NAME)) throw new Error(`${what} resolves to ${real}, which contains the real-data folder name`);
+    if (!isInside(realScratch, real)) throw new Error(`${what} resolves to ${real}, which is outside the scratch folder ${realScratch} (junction/symlink?)`);
     return real;
   };
   const realData = check(dataDir, 'DATA_DIR');
@@ -244,12 +244,41 @@ export function assertRealPathsInScratch(scratch, dataDir) {
     const f = path.join(dataDir, rel);
     if (fs.existsSync(f) || isLink(f)) {
       const real = check(f, rel);
-      if (!isInside(realData, real)) throw new Error(`holo-seed: ${rel} resolves outside DATA_DIR (${real})`);
+      if (!isInside(realData, real)) throw new Error(`${rel} resolves outside DATA_DIR (${real})`);
     }
   }
   return realData;
 }
 function isLink(f) { try { return fs.lstatSync(f).isSymbolicLink(); } catch { return false; } }
+
+/**
+ * Every check that can refuse, run BEFORE anything is deleted or written, so a refusal leaves the scratch folder exactly as it was:
+ *  - real paths (junction / symlink) of DATA_DIR, data.json, 照片;
+ *  - data.json must be a regular file (or absent); the temp file name must not exist at all;
+ *  - every date folder the run will write into must be a real directory (not a link) that resolves inside scratch (or not exist yet);
+ *  - every photo target must be absent or a regular file. A regular file with that name is a previous seed photo that cleanSeedPhotos() unlinks first
+ *    (unlink removes only the name, so a hard link elsewhere is never written through); anything else (symlink, folder...) is refused here.
+ * The photo writes below use the 'wx' flag as well, so nothing is ever written into an existing file.
+ */
+export function preflightSeed({ scratch, dataDir, photoRoot, photoJobs, file }) {
+  assertRealPathsInScratch(scratch, dataDir);
+  assertWritableTarget(file);
+  const tmp = `${file}.tmp-${process.pid}`;
+  if (fs.existsSync(tmp) || isLink(tmp)) throw new Error(`${tmp} already exists; refusing to write through it`);
+  const checkedDirs = new Set();
+  for (const job of photoJobs) {
+    const dir = path.join(photoRoot, job.date.replaceAll('-', ''));
+    if (!checkedDirs.has(dir)) {
+      checkedDirs.add(dir);
+      if (isLink(dir)) throw new Error(`${dir} is a link; refusing to write through it`);
+      if (fs.existsSync(dir)) {
+        if (!fs.statSync(dir).isDirectory()) throw new Error(`${dir} is not a folder`);
+        assertRealPathsInScratch(scratch, dir);
+      }
+    }
+    assertWritableTarget(path.join(dir, job.filename));
+  }
+}
 
 /**
  * Remove the photos a previous holo-seed run left behind: only files named seed-<id>-<n>.png directly inside 照片/<YYYYMMDD>/
@@ -280,26 +309,22 @@ export function cleanSeedPhotos(photoRoot) {
 export function seedScratch(port, count, { scratch = DEFAULT_SCRATCH, photos = 2, seed = 1, end, log = () => {} } = {}) {
   const info = assertScratchServer(`http://127.0.0.1:${port}/`, scratch); // throws unless this is a serve.mjs scratch server
   const dataDir = info.dataDir;
-  assertRealPathsInScratch(scratch, dataDir); // junction / symlink check (realpath), before anything is read for deletion or written
   const file = path.join(dataDir, 'data.json');
-  const store = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')) : { _meta: { schemaVersion: '1.1', app: '產線日誌', exportedAt: new Date().toISOString() } };
-  const { records, photoJobs } = generateRecords(count, { seed, photos, end });
-  // 先寫照片（資料指到的檔案要先存在），再一次寫 data.json
   const photoRoot = path.join(dataDir, '照片');
+  const { records, photoJobs } = generateRecords(count, { seed, photos, end });
+  preflightSeed({ scratch, dataDir, photoRoot, photoJobs, file }); // all refusals happen here: nothing has been deleted or written yet
+  const store = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')) : { _meta: { schemaVersion: '1.1', app: '產線日誌', exportedAt: new Date().toISOString() } };
+  // 先寫照片（資料指到的檔案要先存在），再一次寫 data.json
   const cleaned = cleanSeedPhotos(photoRoot); // the previous run's seed photos (the records that pointed at them are replaced below)
   if (cleaned) log(`removed ${cleaned} photos from a previous holo-seed run`);
   const made = new Set();
   for (const job of photoJobs) {
     const dir = path.join(photoRoot, job.date.replaceAll('-', ''));
     if (!made.has(dir)) {
-      if (isLink(dir)) throw new Error(`holo-seed: ${dir} is a link; refusing to write through it`);
       fs.mkdirSync(dir, { recursive: true });
-      assertRealPathsInScratch(scratch, dir); // the date folder itself must also resolve inside scratch
       made.add(dir);
     }
-    const target = path.join(dir, job.filename);
-    assertWritableTarget(target);
-    fs.writeFileSync(target, renderPhoto(job.id, job.date));
+    fs.writeFileSync(path.join(dir, job.filename), renderPhoto(job.id, job.date), { flag: 'wx' }); // never into an existing file
   }
   store.records = records;
   store._meta = { ...(store._meta ?? {}), exportedAt: new Date().toISOString(), holoSeed: { count, seed, photos } };

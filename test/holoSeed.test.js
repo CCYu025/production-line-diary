@@ -1,5 +1,6 @@
 // holo-seed（scripts/verify/holo-seed.mjs）：分布比例、安全檢查（拒絕 3000／3001、沒有 marker、路徑含「工作日誌」）、PNG 大小上限。
 import { strict as assert } from "node:assert";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,7 +8,7 @@ import zlib from "node:zlib";
 import { after, describe, it } from "node:test";
 import { severityFromDuration } from "../backend/lib/aggregate.js";
 import {
-  assertWritableTarget, cleanSeedPhotos, distributionReport, encodePng, generateRecords, makeRng, MAX_PER_DAY, PHOTO_MAX_BYTES, planDays, quota, renderPhoto, seedScratch,
+  assertWritableTarget, cleanSeedPhotos, writeAtomic, distributionReport, encodePng, generateRecords, makeRng, MAX_PER_DAY, PHOTO_MAX_BYTES, planDays, quota, renderPhoto, seedScratch,
 } from "../scripts/verify/holo-seed.mjs";
 
 const pct = (records, key, v) => (records.filter((r) => r[key] === v).length / records.length) * 100;
@@ -206,6 +207,22 @@ describe("holo-seed：安全檢查（只寫進 serve.mjs 的暫存副本）", ()
   });
 });
 
+/** 資料夾的完整快照：相對路徑 → "dir" 或檔案內容的 sha1（連結也算它指到的內容，所以另外記 lstat 型別） */
+function snapshot(root) {
+  const m = new Map();
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const f = path.join(d, e.name);
+      const rel = path.relative(root, f).replaceAll("\\", "/");
+      if (e.isDirectory()) { m.set(rel, "dir"); walk(f); }
+      else if (e.isSymbolicLink()) m.set(rel, "link");
+      else m.set(rel, createHash("sha1").update(fs.readFileSync(f)).digest("hex"));
+    }
+  };
+  walk(root);
+  return m;
+}
+
 describe("holo-seed：junction／symlink 不能繞過安全檢查（realpath 再檢查一次）", () => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "holo-seed-junction-"));
   const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), "holo-seed-outside-j-"));
@@ -300,16 +317,79 @@ describe("holo-seed：junction／symlink 不能繞過安全檢查（realpath 再
     assertWritableTarget(path.join(d, "f"));
     assert.throws(() => assertWritableTarget(d), /not a regular file/);
   });
-  it("data.json 在暫存區內但是 symlink：寫入被拒絕，連結目標不變", (t) => {
+  it("data.json 是 DATA_DIR 內的 symlink（連結目標也在 DATA_DIR 內，所以 realpath 檢查會過）：writeAtomic 前的檢查拒絕，連結目標不變", (t) => {
     const dataDir = path.join(scratch, "data-3202-jsonlink");
     fs.mkdirSync(dataDir, { recursive: true });
-    const real = path.join(scratch, "real-data-3202.json");
+    const real = path.join(dataDir, "real-data.json"); // 目標放在 DATA_DIR 內
     fs.writeFileSync(real, JSON.stringify({ records: [], keep: true }));
     try { fs.symlinkSync(real, path.join(dataDir, "data.json"), "file"); } catch { t.skip("沒有建立檔案 symlink 的權限"); return; }
     marker(3202, dataDir);
     assert.throws(() => seedScratch(3202, 10, { scratch }), /not a regular file/);
     assert.deepEqual(JSON.parse(fs.readFileSync(real, "utf8")), { records: [], keep: true });
   });
+  it("data.json 位置被資料夾佔住（不需要 symlink 權限）：拒絕，暫存區不變", () => {
+    const dataDir = path.join(scratch, "data-3204-jsondir");
+    fs.mkdirSync(path.join(dataDir, "data.json"), { recursive: true });
+    marker(3204, dataDir);
+    const before = snapshot(dataDir);
+    assert.throws(() => seedScratch(3204, 10, { scratch }), /not a regular file/);
+    assert.deepEqual(snapshot(dataDir), before);
+  });
+  it("暫存檔名已存在（硬連結到外部檔案，Windows 不需權限）：拒絕，外部檔案不被寫穿，暫存區不變", () => {
+    const out = victim("f");
+    const dataDir = path.join(scratch, "data-3205-tmplink");
+    fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(path.join(dataDir, "data.json"), JSON.stringify({ records: [] }));
+    fs.linkSync(path.join(out, "data.json"), path.join(dataDir, `data.json.tmp-${process.pid}`));
+    marker(3205, dataDir);
+    const before = snapshot(dataDir);
+    assert.throws(() => seedScratch(3205, 10, { scratch }), /already exists/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(out, "data.json"), "utf8")), { records: ["victim"] });
+    assert.deepEqual(snapshot(dataDir), before);
+  });
+  it("writeAtomic 本身：暫存檔是硬連結時用 wx 失敗，不寫穿到外部檔案", () => {
+    const out = victim("g");
+    const dir = fs.mkdtempSync(path.join(scratch, "wa-"));
+    const file = path.join(dir, "data.json");
+    fs.linkSync(path.join(out, "data.json"), `${file}.tmp-${process.pid}`);
+    assert.throws(() => writeAtomic(file, "{}"), /EEXIST/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(out, "data.json"), "utf8")), { records: ["victim"] });
+    assert.equal(fs.existsSync(file), false);
+  });
+  it("照片目標檔名是硬連結到外部檔案的一般檔案：先 unlink 再用 wx 建立，不寫穿，外部檔案不變", () => {
+    const out = victim("h");
+    const dataDir = path.join(scratch, "data-3206-photohard");
+    const dateDir = path.join(dataDir, "照片", "20260101");
+    fs.mkdirSync(dateDir, { recursive: true });
+    fs.writeFileSync(path.join(dataDir, "data.json"), JSON.stringify({ records: [] }));
+    const { photoJobs } = generateRecords(400, { seed: 1, photos: 2, end: "2026-01-31" });
+    const job = photoJobs.find((j) => j.date === "2026-01-01");
+    fs.linkSync(path.join(out, "照片", "20260101", "seed-1-1.png"), path.join(dateDir, job.filename));
+    marker(3206, dataDir);
+    const r = seedScratch(3206, 400, { scratch, photos: 2, end: "2026-01-31", seed: 1 });
+    assert.equal(r.records, 400);
+    assert.equal(fs.readFileSync(path.join(out, "照片", "20260101", "seed-1-1.png"), "utf8"), "victim");
+    assert.ok(fs.statSync(path.join(dateDir, job.filename)).size > 100); // 已是新的 PNG，不是連結到外部的 "victim"
+  });
+  for (const which of ["first", "last"]) {
+    it(`拒絕是原子的：第一張／最後一張照片目標被佔用（${which}）時，已有的舊照片與 data.json 都不動`, () => {
+      const dataDir = path.join(scratch, `data-3207-${which}`);
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(path.join(dataDir, "data.json"), JSON.stringify({ _meta: { schemaVersion: "1.1" }, records: [] }));
+      const port = which === "first" ? 3207 : 3208;
+      marker(port, dataDir);
+      seedScratch(port, 150, { scratch, photos: 2, end: "2026-03-01", seed: 1 }); // 先有一份完整的舊資料與舊照片
+      const opts = { photos: 2, end: "2026-06-01", seed: 2 }; // 第二輪的日期不同：照片目標都是全新的檔名
+      const { photoJobs } = generateRecords(150, opts);
+      const job = which === "first" ? photoJobs[0] : photoJobs[photoJobs.length - 1];
+      const dir = path.join(dataDir, "照片", job.date.replaceAll("-", ""));
+      fs.mkdirSync(path.join(dir, job.filename), { recursive: true }); // 用資料夾佔住目標檔名
+      const before = snapshot(dataDir);
+      assert.ok([...before.keys()].filter((k) => /seed-\d+-\d+\.png$/.test(k) && before.get(k) !== "dir").length > 100); // 舊照片確實存在
+      assert.throws(() => seedScratch(port, 150, { scratch, ...opts }), /not a regular file/);
+      assert.deepEqual(snapshot(dataDir), before); // 檔案清單與內容完全相同
+    });
+  }
   it("正常的暫存資料夾不受影響", () => {
     const dataDir = path.join(scratch, "data-3200-ok");
     fs.mkdirSync(dataDir, { recursive: true });
