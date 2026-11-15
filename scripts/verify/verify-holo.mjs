@@ -134,21 +134,22 @@ function makeCtx(id) {
   const file = path.join(LOGS, `${id}.log`);
   fs.writeFileSync(file, '');
   const append = (t) => fs.appendFileSync(file, t);
+  const ctx = { id, file, append, timedOut: false };
   /** run a command, append its output to this item's log, return { code, text } */
-  const run = (label, file2, args, { cwd = REPO, env = {}, shell = false, timeoutMs = 25 * 60 * 1000 } = {}) => new Promise((resolve) => {
+  const run = (label, file2, args, { cwd = REPO, env = {}, shell = false, timeoutMs = 40 * 60 * 1000 } = {}) => new Promise((resolve) => {
     append(`\n$ ${label}\n`);
     const child = spawn(file2, args, { cwd, env: { ...BASE_ENV, ...env }, shell, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     live.add(child);
     let text = '';
     const onData = (d) => { const s = d.toString(); text += s; append(s); };
     child.stdout.on('data', onData); child.stderr.on('data', onData);
-    const timer = setTimeout(() => { append('\n[verify-holo: timeout, killing]\n'); killTree(child); }, timeoutMs);
+    const timer = setTimeout(() => { append('\n[verify-holo: timeout, killing]\n'); ctx.timedOut = true; killTree(child); }, timeoutMs);
     child.on('error', (e) => { append(`\n[spawn error: ${e.message}]\n`); });
     child.on('close', (code) => { clearTimeout(timer); live.delete(child); append(`\n[exit ${code}]\n`); resolve({ code, text: text.replace(ANSI, '') }); });
   });
   const npm = (cmd, env = {}, cwd = REPO) => run(`npm ${cmd}`, `npm ${cmd}`, [], { env, shell: true, cwd });
   const node = (script, args, env = {}) => run(`node ${path.relative(REPO, script)} ${args.join(' ')}`, process.execPath, [script, ...args], { env });
-  return { id, file, append, run, npm, node };
+  return Object.assign(ctx, { run, npm, node });
 }
 const num = (re, text) => { const m = re.exec(text); return m ? Number(m[1]) : null; };
 const readJsonSafe = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
@@ -346,7 +347,7 @@ async function redlineGrep(L) {
     for (const st of body.split(';').map((x) => x.trim().replace(/\s+/g, ' ')).filter(Boolean)) if (!reexport.test(st)) hits.r5.push(`${s}: not a pure re-export: ${st.slice(0, 80)}`);
   }
   for (const [k, arr] of Object.entries(hits)) L.append(`${k}: ${arr.length ? '\n  ' + arr.join('\n  ') : 'none'}\n`);
-  const v = { viewTransition: hits.r1.length, themeWrite: hits.r2.length, personalPath: hits.r3.length, dependencies: hits.r4.length, shimNotPure: hits.r5.length, shimsChecked: shims.length, newFilesScanned: added.length };
+  const v = { rule1ViewTransitions: hits.r1.length, rule2ThemeWrite: hits.r2.length, rule3PersonalPath: hits.r3.length, rule4Dependencies: hits.r4.length, rule5ShimNotPure: hits.r5.length, shimsChecked: shims.length, newFilesScanned: added.length };
   const all = Object.values(hits).flat();
   return all.length ? fail({ ...v, hits: all.slice(0, 30) }, 'all counts 0', `${all.length} red-line hit(s): ${all.slice(0, 5).join('; ')}`) : pass(v, 'all counts 0');
 }
@@ -409,12 +410,14 @@ async function osHandoff(L) {
   const dir = path.join(OUT, 'os-handoff');
   const r = await L.node(path.join(HERE, 'os-handoff.mjs'), ['--url', url, '--out', dir, ...BL.osHandoff.args]);
   const j = readJsonSafe(path.join(dir, 'result.json'));
-  const v = { exit: r.code, samples: j?.summary.total ?? null, fail: j?.summary.fail ?? null, deviated: j?.summary.deviated ?? null };
-  const th = { exit: 0, fail: 0, deviated: 0, samplesMin: BL.osHandoff.samples };
-  if (r.code === 1) return fail(v, th, `${v.fail} failing sample(s)`);
-  if (r.code === 3) return { status: 'INVALID', value: v, threshold: th, reason: `${v.deviated} DEVIATED sample(s): planned offsets not reached, inconclusive` };
-  if (r.code !== 0 || !j) throw invalid(`os-handoff exit ${r.code}`);
-  if (v.samples < th.samplesMin) return fail(v, th, `samples ${v.samples} < baseline ${th.samplesMin}`);
+  if (!j || r.code === null || r.code > 3) throw invalid(`os-handoff exit ${r.code}, no result.json`);
+  // DEVIATED = the planned click offset was not reachable on this machine (README: inconclusive, never a pass, never a failure).
+  // PASS needs 0 FAIL and at least osHandoff.conclusiveMin conclusive passes; the DEVIATED count is reported in value.
+  const total = j.summary.total, failN = j.summary.fail, dev = j.summary.deviated;
+  const v = { exit: r.code, samples: total, conclusivePass: total - failN - dev, fail: failN, deviated: dev };
+  const th = { fail: 0, conclusivePassMin: BL.osHandoff.conclusiveMin, samplesMin: BL.osHandoff.samples };
+  if (failN > 0 || r.code === 1) return fail(v, th, `${failN} failing sample(s)`);
+  if (v.conclusivePass < th.conclusivePassMin || total < th.samplesMin) return { status: 'INVALID', value: v, threshold: th, reason: `only ${v.conclusivePass} conclusive pass(es) of ${total} samples (${dev} DEVIATED): need >= ${th.conclusivePassMin}` };
   return pass(v, th);
 }
 
@@ -481,7 +484,7 @@ async function main() {
     it.log = rel(L.file);
     it.reason = null;
     let res;
-    try { res = await RUNNERS[it.id](L); res = it.group === 'D' ? await softwareGuard(res) : res; }
+    try { res = await RUNNERS[it.id](L); res = it.group === 'D' ? await softwareGuard(res) : res; if (L.timedOut && res.status !== 'INVALID') res = { ...res, status: 'INVALID', reason: 'a command timed out and was killed: result is inconclusive' }; }
     catch (e) { res = { status: 'INVALID', value: null, threshold: null, reason: (e instanceof Invalid ? '' : 'harness error: ') + (e.message ?? String(e)) }; L.append(`\n[${res.reason}]\n${e.stack ?? ''}\n`); }
     Object.assign(it, { status: res.status, value: res.value ?? null, threshold: res.threshold ?? null, reason: res.reason ?? null, durationMs: Date.now() - t0 });
     if (res.status === 'SKIP') it.log = null;

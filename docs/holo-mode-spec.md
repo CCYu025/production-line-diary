@@ -955,7 +955,7 @@ H 期與 OS 規格的關係：H0 修改的是 OS 模式本身，其餘各期只�
 
 ## 14. 待實作時一併更新的文件
 - `CLAUDE.md`／`AGENTS.md`（保持同步）：
-  - 〈關鍵檔案〉加入 `features/holo/`、`features/os/core/`。
+  - 〈關鍵檔案〉加入 `features/holo/`、`features/os/core/`、`features/records/core/`、`app/core/`（位置與原因見 §3.4）。
   - 紅線摘要改成「業務邏輯只存在一份」。
   - 加入全像模式的入口。
 - `README.md`：全像模式的入口、操作語法表、裝置需求、後備說明。
