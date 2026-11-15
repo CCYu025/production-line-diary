@@ -59,8 +59,50 @@ node process listening on the port).
 | `holo-perf.mjs` | HP1 / HP2 / HP5 / HP7 + slate typing latency (headed, real GPU, 4× CPU option). | lab |
 | `holo-slate-compare.mjs` | Slate positioning, method P (projection) vs C (CSS3DRenderer): sharpness, hit, focus ring, frame cost, red lines. | lab |
 | `holo-still.mjs` | Reduced-motion stillness (spec §4.2): pixel diff 0, runtime toggle both ways, legacy `?scene=machine` falls back to the spiral. | lab |
+| `verify-holo.mjs` | **One-command verification** (`npm run verify:holo`): CI six steps + static red lines + lab bundle + c1 zero-diff + OS regression + H1 lab scripts, one JSON and one summary line (section below). | partly |
+| `holo-baseline.json` | Thresholds `verify-holo.mjs` reads (test-count baseline, c1 combination counts, OS check counts, perf gates, shim list). Update after every merged PR. | – |
 | `os-common.mjs` | selectors (`SEL`, `hudCh(n)`), page hook, helpers (`waitPhase` auto-passes B1, `passB1(page)`), `Reporter`. | – |
 | `serve.mjs` | safe server launcher. | – |
+
+## verify-holo.mjs — `npm run verify:holo` (H2-0)
+
+```
+npm run verify:holo -- [--base <main worktree>] [--quick] [--only a,b] [--out <dir>] [--allow-software] [--diff-base main]
+```
+
+Delivery and L1 run the full version; `--quick` (groups A and B, about 3 minutes) is for the coordinator while developing. Zero new dependencies (`cdp.mjs`, `serve.mjs`, `safety.mjs`). The script calls the existing scripts and reads their output files / exit codes; it does not re-implement them.
+
+| id | group | what | threshold (numbers live in `holo-baseline.json`) |
+|---|---|---|---|
+| ci-check | A | `npm run check` | exit 0 |
+| ci-test | A | `npm test` | exit 0, 0 failed, passed >= baseline, skipped <= baseline |
+| ci-typecheck | A | `npm run typecheck` | exit 0 |
+| ci-test-web | A | `npm run test:web` | exit 0, 0 failed, tests and files >= baseline |
+| ci-build | A | `npm run build` | exit 0 |
+| ci-bundle | A | `npm run verify:os-bundle` | exit 0 (A5, A5-holo, entry gzip delta <= 2 KB, group limits) |
+| tests-untouched | B | `git diff --name-status <diff-base>...HEAD -- '*.test.*'` | only status `A`; any `M` / `D` / `R` is FAIL (files listed) |
+| redline-grep | B | added lines of `git diff <diff-base>...HEAD` | five rules, any hit FAIL: (1) View Transitions API in code, (2) `pld.theme` written outside `theme.ts`, (3) personal absolute path or the real-data folder name in a new file, (4) any change in a `package.json` dependency block, (5) a shim (list = `shims` in `holo-baseline.json`) that is not a pure `export … from` |
+| lab-bundle | C | lab build (`VITE_HOLO_LAB=1`, output to a scratch dir through `WEB_OUT_DIR`) + `os-bundle --expect-holo` | exit 0, holo-core <= 220 KiB |
+| c1-web | C | `c1.mjs --base 3115 --new 3114`, 3 themes x 375/900/1280 x all scenarios | 0 diffs, 0 ACTFAIL, combination count == `c1.webCombos` (guards against deleted scenarios) |
+| c1-os | C | c1 `--scope main --ignore-offset-y`, both sides `?mode=os`, 1280 wide, the S4(b) scenarios | 0 diffs, 0 ACTFAIL, combinations == `c1.osCombos` |
+| os-e2e | C | `os-e2e.mjs` | 0 FAIL, 0 SKIP, pass >= `osE2e.pass`, MANUAL <= `osE2e.manual` (E1 is manual by design) |
+| os-handoff | C | `os-handoff.mjs` (I1–I4) | 0 FAIL, 0 DEVIATED (exit 3 = INVALID), samples >= `osHandoff.samples` |
+| holo-ime | D | `holo-ime.mjs`, method proj, freeze on and off | all PASS; window not focused = INVALID |
+| holo-still | D | `holo-still.mjs` | reduced-motion pixel diff 0, control diff > 0 |
+| holo-perf | D | `holo-perf.mjs --modes fps`, 5k records | idle and operating median >= 55 fps; software renderer = INVALID |
+| holo-perf-20k | D | same, 20k records | >= 30 fps |
+
+Output:
+
+- `<out>/verify-holo.json`: `{schema, head, base, summary, items:[{id, group, status, value, threshold, durationMs, log, reason}], …}`. Every item is always present; `status` is `PASS` | `FAIL` | `SKIP` | `INVALID`; a SKIP or INVALID carries a `reason` (no `--base`, `--quick`, `--only`, software renderer, window not focused, build failed…). `log` is the item's full output, relative to `<out>` (`logs/<id>.log`). Sub-results (c1, os-e2e, … JSON and screenshots) are in `<out>/<script>/`.
+- Last stdout line: `VERIFY:HOLO <PASS|FAIL|INCOMPLETE> 17/19 pass, 1 fail (c1-web), 1 skip (holo-perf) — <path to json>`.
+- Exit code: 0 all PASS | 1 any FAIL | 2 no FAIL but some SKIP / INVALID. **2 is not a pass**: L1 escalates to L2.
+
+Servers and builds: the script starts its own scratch servers with `serve.mjs` (always a copy of the example data in a fresh temp folder; `assertScratchServer` first): **3114** this worktree (default `web/dist`), **3115** the `--base` worktree (its `web/dist`; built there if missing, no source change), **3116** this worktree's lab build. The lab build goes to a scratch folder (`WEB_OUT_DIR=<abs dir>` read by `web/vite.config.ts`, default stays `dist`; the server gets `WEB_DIST_DIR`), so it never overwrites `web/dist`. A port that already answers is never reused (INVALID). D group data: `holo-seed.mjs` writes 5000 records (20000 for holo-perf-20k) into the 3116 scratch copy. Everything is stopped at the end, on failure and on Ctrl+C.
+
+Prerequisites for the full run: the `--base` worktree of main (kept untouched under `pld-wt/`, `npm install` done), a visible desktop with a real GPU for group D, Chrome at `CHROME_PATH`. The B group compares against `--diff-base` (default `main`, the local branch), so commit first: uncommitted changes are not in `main...HEAD`.
+
+`holo-baseline.json` is measured, not guessed: re-run `npm test` / `npm run test:web` on the new main after every merge and write the numbers (they only grow). `shims` stays `[]` until H2-6 moves files into `features/os/core/`; then list every old path there (repo-relative, e.g. `web/src/features/os/…`).
 
 X4 note: a fresh tab (no `sessionStorage pld.os.boot`) shows B1 (`[data-os="b1"]`, PRESS ANY KEY) before the boot; `waitPhase(p, 'hub')` and `os-e2e settled()` press one key via `passB1`. Deep links to a station, short boots and reduced motion after the first pass have no B1. Audio debug hooks: `?osdebug=audio` → `window.__osAudio()`, `window.__osAudioRender(id)` (see docs/os-mode-spec.md X4 notes).
 

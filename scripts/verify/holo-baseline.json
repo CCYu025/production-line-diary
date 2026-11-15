@@ -1,0 +1,19 @@
+{
+  "note": "verify:holo thresholds. Re-measured at H2-0 start on main 3d8a1ce; update after every merged PR (counts only grow). scripts/verify/verify-holo.mjs reads every threshold from here.",
+  "recordedAt": "2026-11-15",
+  "mainCommit": "3d8a1ce",
+  "backend": { "tests": 206, "pass": 203, "skipped": 3, "fail": 0 },
+  "web": { "tests": 1792, "files": 99, "skipped": 0, "failed": 0 },
+  "c1": {
+    "webCombos": 102,
+    "osCombos": 9,
+    "osScenarios": ["dashboard", "records", "new", "calendar", "trash", "settings", "report", "detail", "form-validation"]
+  },
+  "osE2e": { "pass": 0, "manual": 0 },
+  "osHandoff": { "args": [], "samples": 0 },
+  "holoIme": { "checks": 0 },
+  "holoStill": { "checks": 0 },
+  "seed": { "records": 5000 },
+  "perf": { "hp1MinFps5k": 55, "hp1MinFps20k": 30 },
+  "shims": []
+}

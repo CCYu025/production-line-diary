@@ -246,17 +246,20 @@
 
 ### 3.4 共用核心（H2 抽出，零行為變更）
 
-| 共用件 | 來源 | 使用者 |
-|---|---|---|
-| `useRecordFormController({mode, record, copyFrom})` | `RecordForm` 的送出、`failWith`、焦點順序、blocker、beforeunload、取消、`?copy=` 同步、選檔前置檢查 | 2D 表單、全像表單終端板 |
-| `useOpenRecordParam()` | `RecordsPage`／`RecordDetailSheet` 的 `?open=` 協議與無效值清除 | 列表、事件流場 |
-| `useRecordQuickActions(record)` | 詳情裡的改狀態、補根本原因、刪除（含 toast 文案與「成功才關面板」） | 詳情面板、詳情終端板 |
-| `isRecurringProblem(records, r)` | `RecordDetailSheet.tsx` 內聯判斷 | 同上 |
-| 3D 資料轉換純函式（新增，`lib/holoAggregate.ts`） | 只把 `aggregate()`、`calendarModel`、`reportModel` 的既有輸出轉成佈局與儀器環用的陣列（例如日期補 0、實體次數排序），不新增任何統計口徑（§1.3） | CH-01／04／05 的晶格與儀器環 |
-| `useModeShell()` | `OsShell` 的模式生命週期、applyTheme、exit route-first、WebGL 失敗、輸入閘接線、焦點逐幀重試、宣告；`AppShell` 重複的標題與焦點規則 | OsShell、HoloShell |
-| `features/os/core/` | director、channels、audio、crt/settings、signals、alerts、webgl、DeviceGate、commands | OS、全像 |
+| 共用件 | 位置 | 來源 | 使用者 |
+|---|---|---|---|
+| `useRecordFormController({mode, record, copyFrom})` | `web/src/features/records/core/` | `RecordForm` 的送出、`failWith`、焦點順序、blocker、beforeunload、取消、`?copy=` 同步、選檔前置檢查 | 2D 表單、全像表單終端板 |
+| `useOpenRecordParam()` | `web/src/features/records/core/` | `RecordsPage`／`RecordDetailSheet` 的 `?open=` 協議與無效值清除 | 列表、事件流場 |
+| `useRecordQuickActions(record)` | `web/src/features/records/core/` | 詳情裡的改狀態、補根本原因、刪除（含 toast 文案與「成功才關面板」） | 詳情面板、詳情終端板 |
+| `isRecurringProblem(records, r)` | `web/src/features/records/core/` | `RecordsPage.tsx`（`aggregate(all).problemRanked[0]`）與 `RecordDetailSheet.tsx`（`count >= 3 && label === r.problem`）兩處判斷合成一個函式，回傳次數（0 表示不顯示） | 同上 |
+| 3D 資料轉換純函式（新增，`lib/holoAggregate.ts`） | `web/src/lib/`（H6 才建） | 只把 `aggregate()`、`calendarModel`、`reportModel` 的既有輸出轉成佈局與儀器環用的陣列（例如日期補 0、實體次數排序），不新增任何統計口徑（§1.3）。**延到 H6，和晶格一起做**（H2 不新增全像程式碼） | CH-01／04／05 的晶格與儀器環 |
+| `useModeShell()` 的網頁可用半邊 | `web/src/app/core/` | `AppShell` 重複的 `document.title` 與換頁焦點規則 | AppShell、OsShell、HoloShell |
+| `useModeShell()` 的模式半邊 | `web/src/features/os/core/` | `OsShell` 的模式生命週期、applyTheme、exit route-first、WebGL 失敗、輸入閘接線、焦點逐幀重試、宣告 | OsShell、HoloShell |
+| `features/os/core/` | `web/src/features/os/core/` | director、channels、audio、crt/settings、signals、alerts、webgl、DeviceGate、commands（H2-6）、ColorManagement 初始化（H2-7） | OS、全像 |
 
-搬到 `features/os/core/` 的檔案，舊路徑保留一行 re-export（`export * from "../core/…"`），讓既有測試、`scripts/verify/*` 與 `os-bundle` 的路徑都不用改。re-export 之後在 H10 統一清理；清理時只能改 import 路徑。
+**放法的原因（A5／HB1）**：網頁入口（`AppShell`、`RecordForm`、`RecordsPage`、`RecordDetailSheet`）的靜態匯入圖不得含 `features/os`、`features/holo` 或 three，否則 `os-bundle.mjs` 的 A5 失敗、網頁入口變大（HB1）。所以網頁入口會用到的共用件（記錄相關的 hook、純函式、`AppShell` 那半）一律放在 `features/records/core/` 與 `app/core/`，只有 OS 與全像專用的東西才放 `features/os/core/`。網頁入口內的元件**絕不可 import `features/os/**`**。
+
+搬到 `features/os/core/` 的檔案，舊路徑保留一行 re-export（`export * from "../core/…"`；也可以是具名 re-export），不得包裝、轉接或加預設值，讓既有測試、`scripts/verify/*` 與 `os-bundle` 的路徑都不用改。re-export 之後在 H10 統一清理；清理時只能改 import 路徑。`verify:holo` 的 redline-grep 第 5 條逐檔檢查這些 shim 是不是純 re-export（清單在 `scripts/verify/holo-baseline.json` 的 `shims`）。
 
 每抽一件都是一個 PR，必須符合四個條件：
 - C1 零差異（網頁三種主題加 OS 2D）。
@@ -267,7 +270,9 @@
 ### 3.5 檔案結構（目標）
 
 ```
-web/src/features/os/core/        ← H2 抽出的共用核心
+web/src/features/os/core/        ← H2 抽出的共用核心（OS 與全像專用；網頁入口不得 import）
+web/src/features/records/core/   ← H2 抽出的記錄相關 hook 與純函式（網頁入口也用，所以不能放進 features/os，A5／HB1）
+web/src/app/core/                ← useModeShell 的網頁可用半邊（document.title、換頁焦點）
 web/src/features/holo/
   HoloShell.tsx                  ← 外殼（useModeShell）
   holoEntry.ts                   ← 動態 import 入口
@@ -870,7 +875,7 @@ CH-07 設定不用世界，只剩終端板（§6.4）。
 | **H0 OS 控制台**（已合併，PR #57，2026-11-09） | §7 全部 | 新的控制室下排與 hover 連動 | §7.3 |
 | **H1 技術驗證**（已合併，PR #62，2026-11-15） | 全像材質；終端板投影定位（與 CSS3D 比較後定案為投影，§3.3）；終端板內中文 IME；`holo-seed` 合成資料；5k／20k 筆事件 LOD 雛形（InstancedMesh 的數量級與 A、C 相同，數據直接適用）；照片縮圖解碼與釋放；`os-bundle.mjs` 群組制。驗證已通過（2026-11-12）；寫實的機台樣品依 D4 移除，不進主線 | 一個可轉可縮的 5,000 筆事件雛形＋能輸入中文的終端板 | **能不能繼續**：HP1 雛形、HF3、HP7、HB4。不通過就回到設計師重新調整規格 |
 | **H1.5 概念定稿**（已完成，2026-11-15，純設計、無程式） | A 流場、B 星座、C 晶格三張互動草圖（156 筆真實規模與 5k 合成各一份，在設計師筆記中），經顧問兩輪審查判定「滿意，可定稿」；使用者核准 D1–D5；本文件 §1.3、§4.1、§6、§12 改寫 | 使用者在三張草圖之間拍板（D3） | 使用者核准新 §6 |
-| **H2 共用核心** | §3.4 全部，每件一個 PR | 網頁與 OS 2D 完全不變 | HA3、HS1、HS2、`os-e2e` |
+| **H2 共用核心** | §3.4 全部，位置依 §3.4（`records/core/`、`app/core/`、`os/core/`，原因是 A5／HB1）；共 7 個 PR：H2-0 `verify:holo`、H2-1+2 `isRecurringProblem`＋`useOpenRecordParam`、H2-3 `useRecordQuickActions`、H2-4 `useRecordFormController`、H2-5 `useModeShell`、H2-6 搬進 `features/os/core/`、H2-7 ColorManagement 初始化函式；`lib/holoAggregate.ts` 延到 H6（和晶格一起做） | 網頁與 OS 2D 完全不變 | HA3、HS1、HS2、`os-e2e` |
 | **H3 全像引擎＋佈局框架** | 模式階梯、HoloShell、場景架構、操作語法、拖曳輸入閘、終端板元件、儀器環框架、文字分身（依目前佈局的順序）、OS 狀態列的 HOLO 切換；**佈局引擎**：`layouts/` 純函式介面、事件物件池（InstancedMesh）、佈局間變形、尺度自適應與鏡頭配適 | 測試場景：同一批合成事件在流場與晶格之間變形；§5.1 的每個動詞都能用，`T` 切換文字分身，後備降級可以示範 | HA1、HA2、HA5、HI1–HI5、**HL1–HL3** |
 | **H4 流場＋詳情（CH-02）** | §6.1 世界、篩選、抓起事件與泳道、詳情、快速操作、刪除與復原、點泳道下鑽 | 找到一筆、抓起、改狀態、補根本原因、刪除再復原；點泳道下鑽 | 附錄 A 第 1–23 條、第 41 條、HP1、HP4、HL4 |
 | **H5 編輯＋新增（CH-03）** | 表單終端板、照片、複製、搜尋過去紀錄、離開確認；空白卡改為流場最前端的虛線光點 | 用全像模式新增一筆含照片的紀錄，再編輯並存檔 | 附錄 A 第 24–40 條、HF3；錄入時間 ≤ 網頁版 +20% |

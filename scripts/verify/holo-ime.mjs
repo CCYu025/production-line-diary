@@ -26,6 +26,30 @@ const base = A.url.replace(/\/?$/, '/');
 const browser = await Browser.launch({ port: +A['cdp-port'], headless: A.headless });
 const results = [];
 let failed = 0;
+let invalid = null;
+/** bringToFront + focus emulation, then prove the field really takes IME input (document.hasFocus(), activeElement, and a probe composition that must fire compositionstart). Up to 3 tries, 200 ms apart. */
+async function ensureFocused(p, id) {
+  for (let i = 0; i < 3; i++) {
+    try {
+      await p.send('Page.bringToFront');
+      await p.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+      await p.eval(`(()=>{const e=document.getElementById('${id}');window.__imeProbe=0;e.addEventListener('compositionstart',()=>{window.__imeProbe++},{once:true});e.focus();return true})()`);
+      await sleep(200);
+      const ok = await p.eval(`document.hasFocus() && document.activeElement === document.getElementById('${id}')`);
+      if (ok) {
+        await p.send('Input.imeSetComposition', { text: 'ㄅ', selectionStart: 1, selectionEnd: 1 });
+        await sleep(100);
+        const started = await p.eval('window.__imeProbe > 0');
+        await p.send('Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 });
+        await sleep(100);
+        await p.eval(`(()=>{const e=document.getElementById('${id}');e.value='';e.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
+        if (started) return true;
+      }
+    } catch { /* retry */ }
+    await sleep(200);
+  }
+  return false;
+}
 const record = (cfg, name, pass, evidence) => {
   results.push({ ...cfg, name, pass, evidence });
   if (!pass) failed++;
@@ -34,6 +58,7 @@ const record = (cfg, name, pass, evidence) => {
 
 try {
   for (const method of A.methods.split(',')) {
+    if (invalid) break;
     for (const freeze of A.freeze.split(',')) {
       const cfg = { method, freeze };
       const p = await browser.newPage({ width: 1600, height: 900 });
@@ -58,7 +83,10 @@ try {
       const rectOfSlate = () => p.eval(`(()=>{const r=document.querySelector('[data-holo="slate"]').getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}})()`);
       const submits = async () => (await lab()).slate.probe.submits;
       const keyEvents = async () => (await lab()).slate.probe.events.filter((e) => e.type === 'keydown');
-      await p.eval('window.__holoLab.resetProbe()');
+      // Window-focus gate (H2-0): a fresh Chrome window that did not get OS focus swallows Input.imeSetComposition, which used to be judged as a product FAIL.
+      // Not focused after 3 tries = INVALID (exit 2), never FAIL. The judging logic below is unchanged.
+      if (!(await ensureFocused(p, 'holo-problem'))) { invalid = 'window not focused'; console.log(`INVALID: window not focused [${method} freeze=${freeze}]`); await p.close(); break; }
+      await p.eval('window.__holoLab.resetProbe()'); // also wipes the probe composition the focus gate made
       const before = await lab();
       // drive the world: yaw drift every 50 ms; cursor one day back / forth every 300 ms (the slate anchor is the cursor's card, so it jumps and drifts)
       if (A.drive === '1') await p.eval(`(()=>{let dir=-1;let n=0;window.__drive=setInterval(()=>{const L=window.__holoLab;const c=L().camera;L.setView(c.yaw+0.004,c.pitch,c.dist);if(++n%6===0){L.moveCursor(dir);dir=-dir}},50);return true})()`);
@@ -159,8 +187,8 @@ try {
     }
   }
 } finally {
-  fs.writeFileSync(path.join(A.out, 'result.json'), JSON.stringify({ url: A.url, results, failed }, null, 2));
+  fs.writeFileSync(path.join(A.out, 'result.json'), JSON.stringify({ url: A.url, results, failed, invalid }, null, 2));
   await browser.close();
 }
-console.log(failed ? `\nRESULT: FAIL (${failed} checks)` : `\nRESULT: PASS (${results.length} checks)`);
-process.exit(failed ? 1 : 0);
+console.log(failed ? `\nRESULT: FAIL (${failed} checks)` : invalid ? `\nRESULT: INVALID (${invalid})` : `\nRESULT: PASS (${results.length} checks)`);
+process.exit(failed ? 1 : invalid ? 2 : 0);
