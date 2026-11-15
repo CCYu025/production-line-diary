@@ -67,8 +67,10 @@ node process listening on the port).
 ## verify-holo.mjs — `npm run verify:holo` (H2-0)
 
 ```
-npm run verify:holo -- [--base <main worktree>] [--quick] [--only a,b] [--out <dir>] [--allow-software] [--diff-base main]
+npm run verify:holo -- [--base <main worktree>] [--quick] [--full] [--only a,b] [--out <dir>] [--allow-software] [--diff-base main]
 ```
+
+`--full` additionally runs `os-handoff-4x` (the same os-handoff at CPU 4x, more than 25 minutes). **Use `--full`** for: every L2 round of H2-5, the last L2 round of every phase from H3 on, and any PR that touches the input gate, the transitions or `useBlocker`. Without `--full` that item is `N/A` (not counted in the totals, does not make the run INCOMPLETE).
 
 Delivery and L1 run the full version; `--quick` (groups A and B, about 3 minutes) is for the coordinator while developing. Zero new dependencies (`cdp.mjs`, `serve.mjs`, `safety.mjs`). The script calls the existing scripts and reads their output files / exit codes; it does not re-implement them.
 
@@ -80,13 +82,15 @@ Delivery and L1 run the full version; `--quick` (groups A and B, about 3 minutes
 | ci-test-web | A | `npm run test:web` | exit 0, 0 failed, tests and files >= baseline |
 | ci-build | A | `npm run build` | exit 0 |
 | ci-bundle | A | `npm run verify:os-bundle` | exit 0 (A5, A5-holo, entry gzip delta <= 2 KB, group limits) |
+| entry-delta-vs-base | A | web entry gzip of this worktree minus the `--base` worktree, both measured with `os-bundle.mjs --dist … --json` (gzip -9 of the entry static-graph JS) | delta <= `entry.deltaVsBaseMaxBytes` (+100 B); SKIP without `--base`. `bundle-baseline.json` is **not** updated (HB1: the whole plan may add at most 2048 B over it); `ci-bundle` keeps that limit. If H2 would push the total past 2048 B, stop and ask the designer |
 | tests-untouched | B | `git diff --name-status <diff-base>...HEAD -- '*.test.*'` | only status `A`; any `M` / `D` / `R` is FAIL (files listed) |
 | redline-grep | B | added lines of `git diff <diff-base>...HEAD` | five rules, any hit FAIL: (1) View Transitions API in code, (2) `pld.theme` written outside `theme.ts`, (3) personal absolute path or the real-data folder name in a new file, (4) any change in a `package.json` dependency block, (5) a shim (list = `shims` in `holo-baseline.json`) that is not a pure `export … from` |
 | lab-bundle | C | lab build (`VITE_HOLO_LAB=1`, output to a scratch dir through `WEB_OUT_DIR`) + `os-bundle --expect-holo` | exit 0, holo-core <= 220 KiB |
 | c1-web | C | `c1.mjs --base 3115 --new 3114`, 3 themes x 375/900/1280 x all scenarios | 0 diffs, 0 ACTFAIL, combination count == `c1.webCombos` (guards against deleted scenarios) |
-| c1-os | C | c1 `--scope main --ignore-offset-y`, both sides `?mode=os`, 1280 wide, the S4(b) scenarios | 0 diffs, 0 ACTFAIL, combinations == `c1.osCombos` |
+| c1-os | C | c1 `--scope main --ignore-offset-y`, both sides `?mode=os`, standard-light, 1280 and 1024 wide (`c1.osWidths`), the 9 S4(b) scenarios = 18 combinations | 0 diffs, 0 ACTFAIL, combinations == `c1.osCombos` (18). The DeviceGate screen itself (< 1024x600) is not a c1 combination: `os-e2e` GATE / E2.gate-dirty own it |
 | os-e2e | C | `os-e2e.mjs` | 0 FAIL, 0 SKIP, pass >= `osE2e.pass`, MANUAL <= `osE2e.manual` (E1 is manual by design) |
-| os-handoff | C | `os-handoff.mjs` (I1–I4), args from `osHandoff.args` (headed, CPU 1x only, `--allow-deviated`: the 4x run takes > 25 min and almost every early offset is DEVIATED) | 0 FAIL, samples >= `osHandoff.samples`, conclusive passes (samples - fail - DEVIATED) >= `osHandoff.conclusiveMin`; DEVIATED count is reported in `value` |
+| os-handoff | C | `os-handoff.mjs` (I1–I4), args from `osHandoff.args` (headed, CPU 1x by default, `--allow-deviated`) | 0 FAIL, samples >= `osHandoff.samples`, conclusive passes (samples - fail - DEVIATED) >= `osHandoff.conclusiveMin`, **DEVIATED <= floor(`osHandoff.baselineDeviated` x 1.5)** (else INVALID, escalate to L2); the DEVIATED count is reported in `value` |
+| os-handoff-4x | C | the same at CPU 4x, only with `--full` (otherwise `N/A`); thresholds in `osHandoff4x` | same rules with the `osHandoff4x` numbers |
 | holo-ime | D | `holo-ime.mjs`, method proj, freeze on and off | all PASS; window not focused = INVALID |
 | holo-still | D | `holo-still.mjs` | reduced-motion pixel diff 0, control diff > 0 |
 | holo-perf | D | `holo-perf.mjs --modes fps`, 5k records | idle and operating median >= 55 fps; software renderer = INVALID |
@@ -94,7 +98,7 @@ Delivery and L1 run the full version; `--quick` (groups A and B, about 3 minutes
 
 Output:
 
-- `<out>/verify-holo.json`: `{schema, head, base, summary, items:[{id, group, status, value, threshold, durationMs, log, reason}], …}`. Every item is always present; `status` is `PASS` | `FAIL` | `SKIP` | `INVALID`; a SKIP or INVALID carries a `reason` (no `--base`, `--quick`, `--only`, software renderer, window not focused, build failed, a command timed out after 40 minutes…). `log` is the item's full output, relative to `<out>` (`logs/<id>.log`). Sub-results (c1, os-e2e, … JSON and screenshots) are in `<out>/<script>/`.
+- `<out>/verify-holo.json`: `{schema, head, base, summary, items:[{id, group, status, value, threshold, durationMs, log, reason}], …}`. Every item is always present; `status` is `PASS` | `FAIL` | `SKIP` | `INVALID` | `N/A` (os-handoff-4x without `--full`); a SKIP or INVALID carries a `reason` (no `--base`, `--quick`, `--only`, software renderer, window not focused, build failed, a command timed out after 40 minutes…). `log` is the item's full output, relative to `<out>` (`logs/<id>.log`). Sub-results (c1, os-e2e, … JSON and screenshots) are in `<out>/<script>/`.
 - Last stdout line: `VERIFY:HOLO <PASS|FAIL|INCOMPLETE> 17/19 pass, 1 fail (c1-web), 1 skip (holo-perf) — <path to json>`.
 - Exit code: 0 all PASS | 1 any FAIL | 2 no FAIL but some SKIP / INVALID. **2 is not a pass**: L1 escalates to L2.
 
@@ -102,7 +106,7 @@ Servers and builds: the script starts its own scratch servers with `serve.mjs` (
 
 Prerequisites for the full run: the `--base` worktree of main (kept untouched under `pld-wt/`, `npm install` done), a visible desktop with a real GPU for group D, Chrome at `CHROME_PATH`. The B group compares against `--diff-base` (default `main`, the local branch), so commit first: uncommitted changes are not in `main...HEAD`.
 
-`holo-baseline.json` is measured, not guessed: re-run `npm test` / `npm run test:web` on the new main after every merge and write the numbers (they only grow). `shims` stays `[]` until H2-6 moves files into `features/os/core/`; then list every old path there (repo-relative, e.g. `web/src/features/os/…`).
+`holo-baseline.json` is measured, not guessed (its `measuredOn` block names the machine and date; DEVIATED counts and fps are machine-specific). **Any change to `holo-baseline.json` must be explained in the PR body**, and L2 reads its diff line by line. Re-measure: re-run `npm test` / `npm run test:web` on the new main after every merge and write the numbers (they only grow). `shims` stays `[]` until H2-6 moves files into `features/os/core/`; then list every old path there (repo-relative, e.g. `web/src/features/os/…`).
 
 X4 note: a fresh tab (no `sessionStorage pld.os.boot`) shows B1 (`[data-os="b1"]`, PRESS ANY KEY) before the boot; `waitPhase(p, 'hub')` and `os-e2e settled()` press one key via `passB1`. Deep links to a station, short boots and reduced motion after the first pass have no B1. Audio debug hooks: `?osdebug=audio` → `window.__osAudio()`, `window.__osAudioRender(id)` (see docs/os-mode-spec.md X4 notes).
 

@@ -1,11 +1,12 @@
 // verify:holo — the one-command verification for the HOLO work (H2 brief section 3, docs/holo-handoff.md).
 //
-//   npm run verify:holo -- [--base <main worktree>] [--quick] [--only a,b] [--out <dir>] [--allow-software] [--diff-base main]
+//   npm run verify:holo -- [--base <main worktree>] [--quick] [--full] [--only a,b] [--out <dir>] [--allow-software] [--diff-base main]
 //
 // Items (every one always appears in the JSON; not run = SKIP with a reason):
 //   A  ci-check ci-test ci-typecheck ci-test-web ci-build ci-bundle      the six CI steps (thresholds: holo-baseline.json)
+//      entry-delta-vs-base                                             web entry gzip vs the --base worktree (<= +100 B; SKIP without --base)
 //   B  tests-untouched redline-grep                                      static red lines on `git diff <diff-base>...HEAD`
-//   C  lab-bundle c1-web c1-os os-e2e os-handoff                         zero-diff and OS regression (needs servers)
+//   C  lab-bundle c1-web c1-os os-e2e os-handoff os-handoff-4x           zero-diff and OS regression (needs servers); os-handoff-4x only with --full
 //   D  holo-ime holo-still holo-perf holo-perf-20k                       the H1 lab scripts (headed Chrome, real GPU)
 //
 // Output: <out>/verify-holo.json  {schema, items:[{id, group, status, value, threshold, durationMs, log}], ...}
@@ -30,20 +31,21 @@ const REPO = path.resolve(HERE, '..', '..');
 const BASELINE_FILE = path.join(HERE, 'holo-baseline.json');
 const { values: A } = parseArgs({
   options: {
-    base: { type: 'string' }, quick: { type: 'boolean', default: false }, only: { type: 'string' }, out: { type: 'string', default: 'verify-out/holo' },
+    base: { type: 'string' }, quick: { type: 'boolean', default: false }, full: { type: 'boolean', default: false }, only: { type: 'string' }, out: { type: 'string', default: 'verify-out/holo' },
     'allow-software': { type: 'boolean', default: false }, 'diff-base': { type: 'string', default: 'main' }, help: { type: 'boolean', default: false },
   },
 });
 const ITEM_DEFS = [
-  ['ci-check', 'A'], ['ci-test', 'A'], ['ci-typecheck', 'A'], ['ci-test-web', 'A'], ['ci-build', 'A'], ['ci-bundle', 'A'],
+  ['ci-check', 'A'], ['ci-test', 'A'], ['ci-typecheck', 'A'], ['ci-test-web', 'A'], ['ci-build', 'A'], ['ci-bundle', 'A'], ['entry-delta-vs-base', 'A'],
   ['tests-untouched', 'B'], ['redline-grep', 'B'],
-  ['lab-bundle', 'C'], ['c1-web', 'C'], ['c1-os', 'C'], ['os-e2e', 'C'], ['os-handoff', 'C'],
+  ['lab-bundle', 'C'], ['c1-web', 'C'], ['c1-os', 'C'], ['os-e2e', 'C'], ['os-handoff', 'C'], ['os-handoff-4x', 'C'],
   ['holo-ime', 'D'], ['holo-still', 'D'], ['holo-perf', 'D'], ['holo-perf-20k', 'D'],
 ];
 if (A.help) {
-  console.log(`npm run verify:holo -- [--base <main worktree>] [--quick] [--only a,b] [--out <dir>] [--allow-software] [--diff-base main]
-  --base            main worktree for the c1 zero-diff items (3115). Without it c1-web / c1-os are SKIP.
+  console.log(`npm run verify:holo -- [--base <main worktree>] [--quick] [--full] [--only a,b] [--out <dir>] [--allow-software] [--diff-base main]
+  --base            main worktree for the c1 zero-diff items (3115) and entry-delta-vs-base. Without it those three are SKIP.
   --quick           only groups A and B (about 3 minutes, for the coordinator while developing). Delivery and L1 run the full version.
+  --full            also run os-handoff-4x (os-handoff at CPU 4x, > 25 min). Required for: H2-5 every L2 round, H3+ final L2 round of each phase, any PR touching the input gate / transitions / useBlocker.
   --only a,b        run only these ids (${ITEM_DEFS.map((d) => d[0]).join(', ')}); the others are SKIP
   --out <dir>       default verify-out/holo
   --allow-software  let D items run on a software WebGL renderer; their PASS is then downgraded to INVALID
@@ -100,14 +102,15 @@ let renderer = null;
 function writeJson(extra = {}) {
   const json = {
     schema: 1, startedAt, finishedAt: extra.finishedAt ?? null, head, base: A.base ? { head: baseHead } : null, diffBase: A['diff-base'],
-    args: { quick: A.quick, only: A.only ?? null, allowSoftware: A['allow-software'], hasBase: !!A.base }, renderer,
+    args: { quick: A.quick, full: A.full, only: A.only ?? null, allowSoftware: A['allow-software'], hasBase: !!A.base }, renderer,
     baselineFile: 'scripts/verify/holo-baseline.json', baseline: BL, summary: summarize(), items, ...extra,
   };
   fs.writeFileSync(path.join(OUT, 'verify-holo.json'), JSON.stringify(json, null, 2));
 }
 function summarize() {
   const by = (s) => items.filter((i) => i.status === s).map((i) => i.id);
-  return { total: items.length, pass: by('PASS').length, fail: by('FAIL'), skip: by('SKIP'), invalid: by('INVALID') };
+  const na = by('N/A'); // not applicable in this invocation (os-handoff-4x without --full): not counted, not an incomplete run
+  return { total: items.length - na.length, pass: by('PASS').length, fail: by('FAIL'), skip: by('SKIP'), invalid: by('INVALID'), notApplicable: na };
 }
 let finished = false;
 function finish(why = null) {
@@ -120,6 +123,7 @@ function finish(why = null) {
   if (s.fail.length) parts.push(`${s.fail.length} fail (${s.fail.join(', ')})`);
   if (s.skip.length) parts.push(`${s.skip.length} skip (${s.skip.join(', ')})`);
   if (s.invalid.length) parts.push(`${s.invalid.length} invalid (${s.invalid.join(', ')})`);
+  if (s.notApplicable.length) parts.push(`${s.notApplicable.length} n/a (${s.notApplicable.join(', ')})`);
   const label = s.fail.length ? 'FAIL' : code === 0 ? 'PASS' : 'INCOMPLETE';
   const jsonPath = path.relative(process.cwd(), path.join(OUT, 'verify-holo.json')).split(path.sep).join('/');
   cleanupAll();
@@ -282,6 +286,30 @@ async function ciBundle(L) {
   const th = { exit: 0, entryDeltaMaxBytes: 2048 };
   return r.code === 0 ? pass(v, th) : fail(v, th, `os-bundle exit ${r.code}`);
 }
+async function entryDeltaVsBase(L) {
+  const th = { entryDeltaVsBaseMaxBytes: BL.entry.deltaVsBaseMaxBytes };
+  if (!A.base) return { status: 'SKIP', value: null, threshold: th, reason: 'no --base given' };
+  if (!(await defaultBuild(L))) throw invalid('default build failed');
+  const root = path.resolve(A.base);
+  if (!fs.existsSync(path.join(root, 'web', 'dist', 'index.html'))) {
+    L.append(`
+[base worktree has no web/dist: building it there (no source change)]
+`);
+    if ((await L.npm('run build', {}, root)).code !== 0) throw invalid('could not build the --base worktree');
+  }
+  // same measuring code for both sides (this worktree's os-bundle.mjs: gzip -9 of the entry static-graph JS)
+  const measure = async (label, dist) => {
+    const json = path.join(OUT, `entry-delta-${label}.json`);
+    await L.node(path.join(HERE, 'os-bundle.mjs'), ['--dist', dist, '--json', json]); // its own exit code (bundle-baseline) is not this item's concern
+    const j = readJsonSafe(json);
+    if (!j || typeof j.entryGzip !== 'number') throw invalid(`os-bundle wrote no entryGzip for ${label}`);
+    return j.entryGzip;
+  };
+  const branch = await measure('branch', path.join(REPO, 'web', 'dist'));
+  const base = await measure('base', path.join(root, 'web', 'dist'));
+  const v = { branchEntryGzip: branch, baseEntryGzip: base, deltaBytes: branch - base };
+  return v.deltaBytes > th.entryDeltaVsBaseMaxBytes ? fail(v, th, `web entry gzip +${v.deltaBytes} B vs base > +${th.entryDeltaVsBaseMaxBytes} B (stop and ask the designer if H2 would push the total past 2048 B over bundle-baseline.json)`) : pass(v, th);
+}
 
 // ------------------------------------------------------------------ B: static red lines
 const MB = () => gitOut(['merge-base', A['diff-base'], 'HEAD']);
@@ -385,7 +413,7 @@ async function c1Run(L, name, extraArgs, expectCombos) {
   return bad.length ? fail(v, th, bad.join('; ')) : pass(v, th);
 }
 const c1Web = (L) => c1Run(L, 'c1-web', ['--theme', 'all', '--widths', '375,900,1280'], BL.c1.webCombos);
-const c1Os = (L) => c1Run(L, 'c1-os', ['--theme', 'standard-light', '--scope', 'main', '--ignore-offset-y', '--widths', '1280', '--scenarios', BL.c1.osScenarios.join(','),
+const c1Os = (L) => c1Run(L, 'c1-os', ['--theme', 'standard-light', '--scope', 'main', '--ignore-offset-y', '--widths', BL.c1.osWidths.join(','), '--scenarios', BL.c1.osScenarios.join(','),
   '--base-query', '?mode=os', '--new-query', '?mode=os'], BL.c1.osCombos);
 async function osE2e(L) {
   if (!(await defaultBuild(L))) throw invalid('default build failed');
@@ -404,22 +432,30 @@ async function osE2e(L) {
   if (v.fail) return fail(v, th, bad.join('; '));
   return bad.length ? { status: 'INVALID', value: v, threshold: th, reason: bad.join('; ') } : pass(v, th);
 }
-async function osHandoff(L) {
+/** runs os-handoff.mjs with args (baseline osHandoff.args + --throttles), judges 0 FAIL / samples / conclusive / DEVIATED cap */
+async function osHandoffRun(L, dirName, throttle, B) {
   if (!(await defaultBuild(L))) throw invalid('default build failed');
   const url = await mainServer(L);
-  const dir = path.join(OUT, 'os-handoff');
-  const r = await L.node(path.join(HERE, 'os-handoff.mjs'), ['--url', url, '--out', dir, ...BL.osHandoff.args]);
+  const dir = path.join(OUT, dirName);
+  const r = await L.node(path.join(HERE, 'os-handoff.mjs'), ['--url', url, '--out', dir, ...BL.osHandoff.args, '--throttles', String(throttle)]);
   const j = readJsonSafe(path.join(dir, 'result.json'));
   if (!j || r.code === null || r.code > 3) throw invalid(`os-handoff exit ${r.code}, no result.json`);
   // DEVIATED = the planned click offset was not reachable on this machine (README: inconclusive, never a pass, never a failure).
-  // PASS needs 0 FAIL and at least osHandoff.conclusiveMin conclusive passes; the DEVIATED count is reported in value.
+  // PASS needs 0 FAIL, samples >= B.samples, conclusive passes >= B.conclusiveMin, and DEVIATED <= baseline DEVIATED x 1.5.
   const total = j.summary.total, failN = j.summary.fail, dev = j.summary.deviated;
-  const v = { exit: r.code, samples: total, conclusivePass: total - failN - dev, fail: failN, deviated: dev };
-  const th = { fail: 0, conclusivePassMin: BL.osHandoff.conclusiveMin, samplesMin: BL.osHandoff.samples };
+  const devMax = Math.floor(B.baselineDeviated * 1.5);
+  const v = { throttle, exit: r.code, samples: total, conclusivePass: total - failN - dev, fail: failN, deviated: dev };
+  const th = { fail: 0, conclusivePassMin: B.conclusiveMin, samplesMin: B.samples, deviatedMax: devMax, baselineDeviated: B.baselineDeviated };
   if (failN > 0 || r.code === 1) return fail(v, th, `${failN} failing sample(s)`);
-  if (v.conclusivePass < th.conclusivePassMin || total < th.samplesMin) return { status: 'INVALID', value: v, threshold: th, reason: `only ${v.conclusivePass} conclusive pass(es) of ${total} samples (${dev} DEVIATED): need >= ${th.conclusivePassMin}` };
+  if (dev > devMax) return { status: 'INVALID', value: v, threshold: th, reason: `DEVIATED ${dev} > ${devMax} (baseline ${B.baselineDeviated} x 1.5): the machine is not behaving like the baseline run; escalate to L2` };
+  if (v.conclusivePass < th.conclusivePassMin || total < th.samplesMin) return { status: 'INVALID', value: v, threshold: th, reason: `only ${v.conclusivePass} conclusive pass(es) of ${total} samples (${dev} DEVIATED): need >= ${th.conclusivePassMin} and >= ${th.samplesMin} samples` };
   return pass(v, th);
 }
+const osHandoff = (L) => osHandoffRun(L, 'os-handoff', 1, BL.osHandoff);
+const osHandoff4x = async (L) => {
+  if (!A.full) return { status: 'N/A', value: null, threshold: null, reason: 'only with --full (CPU 4x, > 25 min)' };
+  return osHandoffRun(L, 'os-handoff-4x', 4, BL.osHandoff4x);
+};
 
 // ------------------------------------------------------------------ D: lab scripts (headed Chrome, real GPU)
 const swFlag = () => (A['allow-software'] ? ['--allow-software'] : []);
@@ -465,9 +501,9 @@ async function holoPerf(L, n, minFps) {
 }
 
 const RUNNERS = {
-  'ci-check': (L) => ciSimple(L, 'run check'), 'ci-test': ciTest, 'ci-typecheck': (L) => ciSimple(L, 'run typecheck'), 'ci-test-web': ciTestWeb, 'ci-build': ciBuild, 'ci-bundle': ciBundle,
+  'ci-check': (L) => ciSimple(L, 'run check'), 'ci-test': ciTest, 'ci-typecheck': (L) => ciSimple(L, 'run typecheck'), 'ci-test-web': ciTestWeb, 'ci-build': ciBuild, 'ci-bundle': ciBundle, 'entry-delta-vs-base': entryDeltaVsBase,
   'tests-untouched': testsUntouched, 'redline-grep': redlineGrep,
-  'lab-bundle': labBundle, 'c1-web': c1Web, 'c1-os': c1Os, 'os-e2e': osE2e, 'os-handoff': osHandoff,
+  'lab-bundle': labBundle, 'c1-web': c1Web, 'c1-os': c1Os, 'os-e2e': osE2e, 'os-handoff': osHandoff, 'os-handoff-4x': osHandoff4x,
   'holo-ime': holoIme, 'holo-still': holoStill, 'holo-perf': (L) => holoPerf(L, BL.seed.records, BL.perf.hp1MinFps5k), 'holo-perf-20k': (L) => holoPerf(L, 20000, BL.perf.hp1MinFps20k),
 };
 
@@ -487,7 +523,7 @@ async function main() {
     try { res = await RUNNERS[it.id](L); res = it.group === 'D' ? await softwareGuard(res) : res; if (L.timedOut && res.status !== 'INVALID') res = { ...res, status: 'INVALID', reason: 'a command timed out and was killed: result is inconclusive' }; }
     catch (e) { res = { status: 'INVALID', value: null, threshold: null, reason: (e instanceof Invalid ? '' : 'harness error: ') + (e.message ?? String(e)) }; L.append(`\n[${res.reason}]\n${e.stack ?? ''}\n`); }
     Object.assign(it, { status: res.status, value: res.value ?? null, threshold: res.threshold ?? null, reason: res.reason ?? null, durationMs: Date.now() - t0 });
-    if (res.status === 'SKIP') it.log = null;
+    if (res.status === 'SKIP' || res.status === 'N/A') it.log = null;
     console.log(`${res.status.padEnd(7)} ${it.id.padEnd(16)} ${(it.durationMs / 1000).toFixed(0).padStart(4)}s  ${JSON.stringify(it.value)}${it.reason ? '  — ' + it.reason : ''}`);
     writeJson();
   }

@@ -2,18 +2,88 @@
   "note": "verify:holo thresholds. Re-measured at H2-0 start on main 3d8a1ce; update after every merged PR (counts only grow). scripts/verify/verify-holo.mjs reads every threshold from here.",
   "recordedAt": "2026-11-15",
   "mainCommit": "3d8a1ce",
-  "backend": { "tests": 206, "pass": 203, "skipped": 3, "fail": 0 },
-  "web": { "tests": 1792, "files": 99, "skipped": 0, "failed": 0 },
+  "backend": {
+    "tests": 206,
+    "pass": 203,
+    "skipped": 3,
+    "fail": 0
+  },
+  "web": {
+    "tests": 1792,
+    "files": 99,
+    "skipped": 0,
+    "failed": 0
+  },
   "c1": {
     "webCombos": 102,
-    "osCombos": 9,
-    "osScenarios": ["dashboard", "records", "new", "calendar", "trash", "settings", "report", "detail", "form-validation"]
+    "osCombos": 18,
+    "osScenarios": [
+      "dashboard",
+      "records",
+      "new",
+      "calendar",
+      "trash",
+      "settings",
+      "report",
+      "detail",
+      "form-validation"
+    ],
+    "osWidths": [
+      1280,
+      1024
+    ]
   },
-  "osE2e": { "pass": 36, "manual": 2 },
-  "osHandoff": { "args": ["--headed", "--throttles", "1", "--allow-deviated"], "samples": 100, "conclusiveMin": 75 },
-  "holoIme": { "checks": 26 },
-  "holoStill": { "checks": 10 },
-  "seed": { "records": 5000 },
-  "perf": { "hp1MinFps5k": 55, "hp1MinFps20k": 30 },
-  "shims": []
+  "osE2e": {
+    "pass": 36,
+    "manual": 2
+  },
+  "osHandoff": {
+    "args": [
+      "--headed",
+      "--throttles",
+      "1",
+      "--allow-deviated"
+    ],
+    "samples": 100,
+    "conclusiveMin": 75,
+    "baselineDeviated": 11,
+    "note": "1x run only (default). DEVIATED must be <= floor(baselineDeviated x 1.5) = 16, else INVALID. baselineDeviated: 11 measured 2026-11-15 on the machine in measuredOn (102 samples, 91 conclusive; earlier runs 11-12)."
+  },
+  "holoIme": {
+    "checks": 26
+  },
+  "holoStill": {
+    "checks": 10
+  },
+  "seed": {
+    "records": 5000
+  },
+  "perf": {
+    "hp1MinFps5k": 55,
+    "hp1MinFps20k": 30
+  },
+  "shims": [],
+  "measuredOn": {
+    "machine": "AMD Ryzen 7 PRO 8840HS / AMD Radeon 780M Graphics (real GPU, headed Chrome), 28 GB RAM",
+    "os": "Windows 11 build 26200",
+    "node": "v24.14.1",
+    "date": "2026-11-15",
+    "note": "os-handoff DEVIATED baseline and the perf numbers are machine-specific; re-measure and justify in the PR body when the machine changes"
+  },
+  "osHandoff4x": {
+    "args": [
+      "--headed",
+      "--throttles",
+      "1",
+      "--allow-deviated"
+    ],
+    "samples": 100,
+    "conclusiveMin": 35,
+    "baselineDeviated": 62,
+    "note": "PROVISIONAL. Single measurement 2026-11-16 (--only os-handoff-4x --full, main code 3d8a1ce + verify changes): 102 samples, 38 conclusive, 62 DEVIATED, 2 FAIL (I2 exit/first-click and I2 switch/first-click/hash: 'timeout waiting for phase exiting-post / switching-post' under CPU 4x), 30.5 min. DEVIATED cap = floor(62 x 1.5) = 93. The 2 FAILs are unresolved: do not treat os-handoff-4x as green until L2/designer has judged them."
+  },
+  "entry": {
+    "deltaVsBaseMaxBytes": 100,
+    "note": "web entry gzip of this branch minus the --base worktree (main at the start of the PR), same measuring code (os-bundle.mjs). bundle-baseline.json is deliberately NOT updated (HB1: whole-plan cumulative <= 2048 B); ci-bundle keeps its 2048 B limit against it."
+  }
 }
