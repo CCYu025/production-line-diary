@@ -48,6 +48,8 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: false,
+    // dist/.vite/manifest.json：scripts/verify/os-bundle.mjs 用它把 chunk 對回原始模組路徑（群組制，HB4）。只多一個檔案，不改任何 chunk 的內容。
+    manifest: true,
   },
   test: {
     environment: "jsdom",

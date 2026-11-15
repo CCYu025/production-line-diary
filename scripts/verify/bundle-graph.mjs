@@ -53,5 +53,5 @@ export function analyze(distArg) {
   const markersOf = (f) => { const src = fs.readFileSync(f, 'utf8'); return CONTENT_MARKERS.filter((k) => src.includes(k)); };
   const isOsish = (f) => NAME_RE.test(path.basename(f)) || markersOf(f).length > 0;
   const osLazy = closure(lazyJs.filter(isOsish), staticGraph);
-  return { dist, rel, cssFiles, staticGraph, lazyJs, osLazy, markersOf, warnings };
+  return { dist, rel, cssFiles, staticGraph, lazyJs, osLazy, markersOf, warnings, closure, allJs };
 }

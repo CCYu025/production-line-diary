@@ -48,12 +48,17 @@ node process listening on the port).
 | `snap.mjs` | `takeSnap(page,{scope})`, `diffSnaps(a,b,{ignoreProps,ignoreRect,ignoreWidthRelated,ignoreCustoms,ignoreOffsetY})`. | – |
 | `safety.mjs` | scratch-server proof, `exportTargetInScratch`, idempotent seeding (`seedPhoto`, `seedTrash`), `firstRecordId`. | – |
 | `c1.mjs` | S1 / S4(b) comparator (two servers, per scenario / width / theme). | S4(b) only |
-| `os-bundle.mjs`, `bundle-graph.mjs` | A5 + P4 bundle checks on `web/dist`. | – |
+| `os-bundle.mjs`, `bundle-graph.mjs` | A5 + P4 + HB4 bundle checks on `web/dist`; grouped (`os`, `holo-core`, `holo-ch01`–`ch07`). | – |
 | `os-handoff.mjs` | I1–I4 (transition input gating, overlay, rapid enter/Esc). | yes |
 | `os-e2e.mjs` | E2 E3 E5 E6 E7, device gate, mode persistence, EXIT TO WEB, sidebar button, WebGL fallback, E1 export guard. | yes |
 | `os-shots.mjs` | design-review material (hub, strips, stations, palette, gate). | yes |
 | `os-perf.mjs` | P1 fps (headed, real GPU) and P2 rAF attribution. | yes |
 | `os-p6.mjs` | P6 heap growth (forced GC) + WebGL resource release, branch and main side by side. | yes |
+| `holo-seed.mjs` | HOLO synthetic records + photos, written straight into a scratch server's `DATA_DIR` (1k / 5k / 20k). | – |
+| `holo-ime.mjs` | HF3 automated part: Chinese IME composition in the H1 lab slate (CDP `Input.imeSetComposition`). | lab |
+| `holo-perf.mjs` | HP1 / HP2 / HP5 / HP7 + slate typing latency (headed, real GPU, 4× CPU option). | lab |
+| `holo-slate-compare.mjs` | Slate positioning, method P (projection) vs C (CSS3DRenderer): sharpness, hit, focus ring, frame cost, red lines. | lab |
+| `holo-still.mjs` | Reduced-motion stillness (spec §4.2): pixel diff 0, runtime toggle both ways, legacy `?scene=machine` falls back to the spiral. | lab |
 | `os-common.mjs` | selectors (`SEL`, `hudCh(n)`), page hook, helpers (`waitPhase` auto-passes B1, `passB1(page)`), `Reporter`. | – |
 | `serve.mjs` | safe server launcher. | – |
 
@@ -168,19 +173,27 @@ Saves `hub-1920x1080.png` (+ selection moved to CH-05), `station-{records,dashbo
 and frame strips `strips/{enter,exit,short-hash,short-palette}.png` (CDP screencast frames matched to planned offsets measured from the phase stamp; labels show the real frame offset and phase; individual frames in `frames/`; `index.html` lists everything).
 Strips are for design judgement, not pixel-exact; software GL yields fewer distinct frames, use `--headed` on the GPU machine for smooth ones.
 
-## os-bundle.mjs — A5 + P4
+## os-bundle.mjs — A5 + P4 + HB4 (groups)
 
 ```
-node scripts/verify/os-bundle.mjs [--dist web/dist] [--baseline <bytes>] [--baseline-file f] [--write-baseline] [--json out.json]
+node scripts/verify/os-bundle.mjs [--dist web/dist] [--baseline <bytes>] [--baseline-file f] [--write-baseline] [--expect-holo] [--json out.json]
 ```
 
 - Parses `index.html` entry `<script type=module>` + `modulepreload` links; follows static `import…from"./x.js"`, `import"./x.js"`,
   `export…from"./x.js"` (not `import()`, not `__vitePreload` arrays).
-- A5 FAIL if any chunk in that static graph has a name matching `three|fiber|OsShell|features/os` or contains three markers
-  (`__THREE__`, `WebGLRenderer`, `WebGLRenderTarget`, `@react-three`, `BufferGeometry`, `WebGLProgram`).
-- "OS lazy" chunks = lazy chunks (not in the static graph) that match those name/marker rules, plus their lazy static deps.
+- A5 FAIL if any chunk in that static graph has a name matching `three|fiber|OsShell|features/os`, contains three markers
+  (`__THREE__`, `WebGLRenderer`, `WebGLRenderTarget`, `@react-three`, `BufferGeometry`, `WebGLProgram`) or holo engine markers
+  (`__holoLab`, `holo-slate`, `holo-root`, `holo-world`; plus `HoloLabPage` / `/_holo` unless `--expect-holo`).
+- **A5-holo** (default build): `dist/.vite/manifest.json` has no source under `features/holo/` and no JS/CSS file in the whole dist contains those markers.
+- **Groups** (HB4; gzip -9, JS only, 1 KiB = 1024 B): `os` 300 KiB (lazy chunks matching the three/OS name/marker rules plus their lazy static deps),
+  `holo-core` 220 KiB, `holo-ch01`…`holo-ch07` 60 KiB each. A chunk is counted once, in the first group that reaches it (os first), so the three
+  shared with OS is not counted twice. Holo groups come from the manifest (`build.manifest` in `web/vite.config.ts`; adds only `.vite/manifest.json`, changes no chunk):
+  a lazy chunk whose source is `src/features/holo/**` is `holo-core`, `src/features/holo/(channels/)ch0N/**` is `holo-chN`; each group is those chunks
+  plus their static imports not already in the entry graph or an earlier group. **A group with no chunks prints `SKIP (not built yet)` and never fails.**
 - P4: entry static-graph JS gzip(-9) minus baseline must be <= 2048 B (baseline from `--baseline` or `bundle-baseline.json`
-  `{ "entryGzipBytes": N }`; missing => skipped with a notice); OS lazy JS gzip total <= 300 KiB. Reports entry CSS gzip too.
+  `{ "entryGzipBytes": N }`; missing => skipped with a notice); OS group <= 300 KiB. Reports entry CSS gzip too.
+- **Lab build**: `VITE_HOLO_LAB=1 npm run build` then `node scripts/verify/os-bundle.mjs --expect-holo` measures `holo-core` (HB2 prototype figure) and requires it to exist.
+  Run a plain `npm run build` afterwards so `web/dist` is the default build again (CI step 6 and the A5-holo check expect that).
 - `--write-baseline` writes `scripts/verify/bundle-baseline.json` from the current dist — run it on a **main** build.
 
 ## os-perf.mjs — P1 / P2
@@ -195,6 +208,46 @@ node scripts/verify/os-perf.mjs --url http://localhost:3114/ [--only p1,p2] [--d
   `[data-os="hud-ch"][aria-current="true"]`), waits for phase `station`, records stacks for 3 s and counts calls whose stack contains a file of an OS lazy chunk
   (computed from `--dist`, or `--os-chunks a.js,b.js`). Expect 0; other callers (react, entry, radix, sonner…) are listed for information.
 - Results in `<out>/result.json`. Exit 1 on failure.
+
+## holo-seed.mjs — synthetic data (§11.2)
+
+```
+node scripts/verify/serve.mjs --root <worktree> --port 3114          # background; example data copy
+node scripts/verify/holo-seed.mjs 3114 5000 [--scratch dir] [--photos 2] [--seed 1] [--end YYYY-MM-DD]
+```
+
+- Refuses anything that is not a `serve.mjs` scratch server (`assertScratchServer`: no 3000/3001, marker required, no real-data folder name, `DATA_DIR` inside scratch).
+- Writes `data.json` (temp file + rename) and `照片/<YYYYMMDD>/seed-<id>-<n>.png` directly (posting 20k records through the API would rewrite data.json 20k times).
+  The running server reads data.json on every request: no restart. Run it again to replace the data (it keeps `_meta` and replaces `records`);
+  before writing, it deletes the previous run's photos: only files named `seed-<id>-<n>.png` directly inside `照片/<YYYYMMDD>/` (and date folders left empty), only after the scratch check passed.
+  Any other file in `照片/` (example photos, other names) is left alone.
+- Distribution: 15 equipment, 22 categories; severity 13 / 66 / 20 / 1 %; status 10 % 待處理, 5 % 追蹤中; at most 11 records a day, the span follows from the count
+  (ends today, or `--end`); durations are consistent with `severityFromDuration`; photos binomial(2N, ½) per record (mean N, default 2), flat-colour PNG with the id and date in a 5×7 font, <= 50 KB.
+- Reads everything back (count, unique ids, every photo file exists) and prints the distribution. 5k takes seconds, 20k about 80 s.
+- Unit tests: `test/holoSeed.test.js` (runs in `npm test`).
+
+## The H1 lab scripts (need the LAB build: `VITE_HOLO_LAB=1 npm run build`)
+
+```
+node scripts/verify/holo-ime.mjs   --url http://localhost:3114/ [--methods proj,css3d] [--freeze 1,0] [--out dir]
+node scripts/verify/holo-perf.mjs  --url http://localhost:3114/ --n 5000 [--throttle 4] [--modes fps,hp2,hp5,input,hp7] [--duration 10] [--soak 300]
+node scripts/verify/holo-slate-compare.mjs --url http://localhost:3114/ [--out dir]
+node scripts/verify/holo-still.mjs --url http://localhost:3114/ [--gap 700] [--out dir] [--allow-software]
+```
+
+- All four launch **headed** Chrome (`cdp.mjs`) and write nothing to the app data. `holo-perf` and `holo-still` stop with `INVALID` (exit 2) when the WebGL renderer is SwiftShader / llvmpipe / software.
+- `holo-ime` (HF3, automated half): for each positioning method × freeze setting, drives the slate while the (script-driven) world moves: the spiral does not turn by itself, so the script drifts the yaw and flips the cursor one day back and forth, which moves the slate anchor: composition then Enter (plain and IME-style key 229), ArrowDown/Up, Escape in the `<input>`,
+  the `<textarea>` and the `Combobox`; checks no dropped text, no newline / option / submit during composition, and that Enter outside composition does submit. Key events during CDP composition are sent as keydown+keyup only
+  (no char event), like a real IME. **Not measurable here: where the OS candidate window appears** - that is the manual Zhuyin session.
+- `holo-perf`: `fps` = HP1 (median rAF fps, idle and operating; gates 55 for 5k, 30 for 20k, 30 for 5k at 4× CPU) · `hp2` slate open (proj) + world still · `hp5` readyMs (mount → first frame that contains the world) split into data load, engine (critical part), buildSpiral, scene build, first world frame and other (they add up to readyMs) · `input` keydown → next frame in the slate ·
+  `hp7` thumbnails: (a) decoding / resident / textures sampled every 250 ms for `--soak` s, heap after forced GC every 15 s; (b) TTL test without slot pressure: two disjoint sparse windows (A + B ≤ 24 thumbnails), cursor held on B after visiting A, resident must not drop before ~28 s, must drop at 29–33 s by A's count with `released` growing by the same amount (needs sparse photo windows, i.e. two disjoint 7-day windows with 3–12 photo cards each; with dense data such a pair may not exist, then the script prints `FAIL ... seed sparser data, e.g. holo-seed.mjs <port> 1000 --photos 0.5` and exits 1. 1k records at the default 2 photos did not have one, 1k at `--photos 0.5` did). fps cannot exceed the display refresh
+  (a blank headed page measures ~56 fps on the dev machine), so the 55 fps gate is judged against that cap.
+- `holo-still`: reduced-motion stillness (spec §4.2). spiral × crt std/off/max (the H1 machine sample was removed; the spiral does not turn by itself, also asserted; a legacy `?scene=machine` URL must fall back to the spiral) with `prefers-reduced-motion: reduce` emulated: two screenshots 0.7 s apart must be identical (control run without reduced motion must differ);
+  then the runtime toggle in both directions (load normal → reduce → normal, and load reduced → normal → reduced): the world must be still / moving again within 1 s of each `Emulation.setEmulatedMedia`. Hides the lab's fps readout. Exit 1 on failure.
+- `holo-slate-compare`: the six comparison points of spec §3.3 for `proj`, `css3d` (fixed plane) and `css3d-billboard`; results in `<out>/result.json` plus PNG crops.
+  Sharpness uses one fixed-size crop (240×40 CSS px) around a fixed test-text block the script adds to the slate, identical for every method; click hits are reported as `hitRateInView` (controls whose centre is on screen) and `offscreenFraction` separately.
+- Page hooks: `#/_holo?slate=proj|css3d|off&crt=off|std|max&freeze=0&bb=1&holodebug=1`; with `holodebug=1` `window.__holoLab()` returns frames, `timing` (HP5 split),  `renderer.info`, camera, spiral counts, thumbnail stats and the slate probe
+  (`resetProbe()`, `setView(yaw, pitch, dist)`, `moveCursor(d)`, `setCursor(day)` are properties of the function).
 
 ## os-p6.mjs — P6 (X5 §5.4 fixed method)
 

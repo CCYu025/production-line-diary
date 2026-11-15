@@ -1,0 +1,158 @@
+/*
+ * 全像實驗室（H1 雛形）的樣式。每條規則都以 :root[data-mode="holo"] 開頭（holoCss.test.ts 把關）；
+ * 檔尾的 @media print 隱藏所有全像元素。顏色一律用 token，不寫死色碼。
+ * 注意：全像自己的元素不使用 data-fx（那是 Cyber 頁面特效的掛勾）；唯一的例外是 .holo-slate 內，
+ * 用來把原封 import 的 Combobox 自帶的 cyber 特效蓋回去（見檔案後段）。
+ */
+:root[data-mode="holo"] .holo-root {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow: hidden;
+  background: var(--page);
+  color: var(--ink-1);
+}
+
+:root[data-mode="holo"] .holo-world {
+  position: absolute;
+  inset: 0;
+}
+
+/* Cyber 主題的全頁掃描線（body::after）在全像模式關閉：掃描線只疊在世界上（由 holoPass 畫，強度「關」時沒有），終端板與儀器環上不疊（§4.2） */
+:root[data-mode="holo"] body::after {
+  display: none;
+}
+
+/* 終端板外框：內容區不透明、不疊任何效果 */
+:root[data-mode="holo"] .holo-slate-host {
+  z-index: 3;
+}
+
+:root[data-mode="holo"] .holo-slate {
+  width: min(560px, calc(100vw - 48px));
+  max-height: 80vh;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow);
+  color: var(--ink-1);
+  font-family: "IBM Plex Mono", "Noto Sans TC", monospace;
+}
+
+:root[data-mode="holo"] .holo-slate-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  font-size: 12px;
+}
+
+:root[data-mode="holo"] .holo-slate-body {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+:root[data-mode="holo"] .holo-slate-row {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+
+:root[data-mode="holo"] .holo-slate-label {
+  padding-top: 10px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+:root[data-mode="holo"] .holo-slate-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+:root[data-mode="holo"] .holo-slate-btn {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-raised);
+  color: var(--ink-1);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+:root[data-mode="holo"] .holo-slate-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+/*
+ * 終端板內原封 import 的共用元件（Combobox）自己帶 Cyber 頁面特效的掛勾（data-fx）；終端板內容區不疊任何效果（§4.2），
+ * 所以在這裡把 cyber.css 套到那些掛勾的外觀蓋回來（不改共用元件、不改 cyber.css）。holo 自己寫的元素一律沒有 data-fx。
+ * 這是 holo.css 裡唯一允許出現 data-fx 的地方（holoCss.test.ts 檢查選擇器都在 .holo-slate 內）。
+ * cyber 對 combobox 的效果是聚焦時亮起的 ">" 提示符（::before），對 pop（建議清單）是 clip-path 展開動畫；
+ * 清單的底色與框線 cyber 與標準本來就相同（surface-raised、line-strong），不需覆寫。
+ */
+:root[data-mode="holo"] .holo-slate [data-fx="combobox"]::before {
+  content: none;
+  display: none;
+  transition: none;
+}
+
+:root[data-mode="holo"] .holo-slate [data-fx="pop"],
+:root[data-mode="holo"] .holo-slate [data-fx="pop"][data-state],
+:root[data-mode="holo"] .holo-slate [data-fx="pop"][data-side] {
+  animation: none;
+  clip-path: none;
+}
+
+/* 實驗室外殼（用完即丟）：左上角的控制條與 fps 讀數 */
+:root[data-mode="holo"] .holo-lab-hud {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  z-index: 4;
+  display: grid;
+  gap: 6px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: "IBM Plex Mono", "Noto Sans TC", monospace;
+  font-size: 12px;
+}
+
+:root[data-mode="holo"] .holo-lab-hud a {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+:root[data-mode="holo"] .holo-lab-hud [aria-current="true"] {
+  color: var(--ink-1);
+  font-weight: 700;
+}
+
+:root[data-mode="holo"] .holo-lab-msg {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+@media print {
+  :root[data-mode="holo"] .holo-root,
+  :root[data-mode="holo"] .holo-world,
+  :root[data-mode="holo"] .holo-slate-host,
+  :root[data-mode="holo"] .holo-slate,
+  :root[data-mode="holo"] .holo-lab-hud,
+  :root[data-mode="holo"] .holo-lab-msg {
+    display: none !important;
+  }
+}
