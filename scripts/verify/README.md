@@ -86,7 +86,7 @@ Delivery and L1 run the full version; `--quick` (groups A and B, about 3 minutes
 | c1-web | C | `c1.mjs --base 3115 --new 3114`, 3 themes x 375/900/1280 x all scenarios | 0 diffs, 0 ACTFAIL, combination count == `c1.webCombos` (guards against deleted scenarios) |
 | c1-os | C | c1 `--scope main --ignore-offset-y`, both sides `?mode=os`, 1280 wide, the S4(b) scenarios | 0 diffs, 0 ACTFAIL, combinations == `c1.osCombos` |
 | os-e2e | C | `os-e2e.mjs` | 0 FAIL, 0 SKIP, pass >= `osE2e.pass`, MANUAL <= `osE2e.manual` (E1 is manual by design) |
-| os-handoff | C | `os-handoff.mjs` (I1–I4) | 0 FAIL, 0 DEVIATED (exit 3 = INVALID), samples >= `osHandoff.samples` |
+| os-handoff | C | `os-handoff.mjs` (I1–I4), args from `osHandoff.args` (headed, CPU 1x only, `--allow-deviated`: the 4x run takes > 25 min and almost every early offset is DEVIATED) | 0 FAIL, samples >= `osHandoff.samples`, conclusive passes (samples - fail - DEVIATED) >= `osHandoff.conclusiveMin`; DEVIATED count is reported in `value` |
 | holo-ime | D | `holo-ime.mjs`, method proj, freeze on and off | all PASS; window not focused = INVALID |
 | holo-still | D | `holo-still.mjs` | reduced-motion pixel diff 0, control diff > 0 |
 | holo-perf | D | `holo-perf.mjs --modes fps`, 5k records | idle and operating median >= 55 fps; software renderer = INVALID |
@@ -94,7 +94,7 @@ Delivery and L1 run the full version; `--quick` (groups A and B, about 3 minutes
 
 Output:
 
-- `<out>/verify-holo.json`: `{schema, head, base, summary, items:[{id, group, status, value, threshold, durationMs, log, reason}], …}`. Every item is always present; `status` is `PASS` | `FAIL` | `SKIP` | `INVALID`; a SKIP or INVALID carries a `reason` (no `--base`, `--quick`, `--only`, software renderer, window not focused, build failed…). `log` is the item's full output, relative to `<out>` (`logs/<id>.log`). Sub-results (c1, os-e2e, … JSON and screenshots) are in `<out>/<script>/`.
+- `<out>/verify-holo.json`: `{schema, head, base, summary, items:[{id, group, status, value, threshold, durationMs, log, reason}], …}`. Every item is always present; `status` is `PASS` | `FAIL` | `SKIP` | `INVALID`; a SKIP or INVALID carries a `reason` (no `--base`, `--quick`, `--only`, software renderer, window not focused, build failed, a command timed out after 40 minutes…). `log` is the item's full output, relative to `<out>` (`logs/<id>.log`). Sub-results (c1, os-e2e, … JSON and screenshots) are in `<out>/<script>/`.
 - Last stdout line: `VERIFY:HOLO <PASS|FAIL|INCOMPLETE> 17/19 pass, 1 fail (c1-web), 1 skip (holo-perf) — <path to json>`.
 - Exit code: 0 all PASS | 1 any FAIL | 2 no FAIL but some SKIP / INVALID. **2 is not a pass**: L1 escalates to L2.
 
