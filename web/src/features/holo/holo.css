@@ -1,7 +1,8 @@
 /*
  * 全像實驗室（H1 雛形）的樣式。每條規則都以 :root[data-mode="holo"] 開頭（holoCss.test.ts 把關）；
  * 檔尾的 @media print 隱藏所有全像元素。顏色一律用 token，不寫死色碼。
- * 注意：這裡不使用 data-fx（那是 Cyber 頁面特效的掛勾）。
+ * 注意：全像自己的元素不使用 data-fx（那是 Cyber 頁面特效的掛勾）；唯一的例外是 .holo-slate 內，
+ * 用來把原封 import 的 Combobox 自帶的 cyber 特效蓋回去（見檔案後段）。
  */
 :root[data-mode="holo"] .holo-root {
   position: fixed;

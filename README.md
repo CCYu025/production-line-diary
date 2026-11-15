@@ -84,17 +84,20 @@ backend/
 web/                   前端（網址 /）：React 18 + Vite + TypeScript + Tailwind CSS + shadcn/ui
   src/app/             外殼（側欄／底部分頁列）、hash 路由
   src/components/      共用元件（ui/ 是 shadcn 風格元件）
-  src/features/        os/（PLD/OS 體驗模式，延遲載入）與各頁面：dashboard（儀表板）、records（列表／篩選／詳情面板／新增與編輯表單 form/）、calendar、trash、settings（設備對照）、report（列印報表；report.css 是報紙式排版與列印規則）
+  src/features/        os/（PLD/OS 體驗模式，延遲載入）、holo/（全像模式 H1 實驗室 `#/_holo`，只在 `dev:web` 或 `VITE_HOLO_LAB=1` 建置才有）與各頁面：dashboard（儀表板）、records（列表／篩選／詳情面板／新增與編輯表單 form/）、calendar、trash、settings（設備對照）、report（列印報表；report.css 是報紙式排版與列印規則）
   src/lib/             api.ts（型別化 API client）、TanStack Query、URL query helper、toast、theme.ts（介面主題）、fx/（Cyber 主題的動畫工具：useFx、ScrambleNumber、useStagger、useReplayPhase、useGhostRows）
   src/styles/          設計 token（淺色／深色／Cyber）、cyber.css（Cyber 主題的元件層樣式）
 docs/
   refactor-plan.md      重構計畫書（分階段工作包、必須保留的行為、進度表）
   cyber-theme-spec.md   Cyber-Terminal 主題設計規格書（紅線、token、分期；P0 主題骨架、P1 靜態外觀、P2 微互動已合併，P3 招牌效果已合併，P4 效能與列印收尾已合併（PR #46））
   os-mode-spec.md       PLD/OS 1995 體驗模式設計規格書（向量線框 3D 控制室；X0（PR #49）、X1（PR #50）、X2（PR #51）、X3（PR #53）、X4（PR #54）、X5 收尾（PR #55）已合併）
+  holo-mode-spec.md     PLD/OS 1995 全像模式（HOLO）設計規格書（抽象佈局；H0（PR #57）、H1 技術驗證（PR #62）已合併）
+  holo-mode-inventory.md 全像模式必須保留的功能清單（規格附錄 A）
+  holo-handoff.md       全像模式交接文件（現況、里程碑、下一步、角色）
 scripts/
   migrate.js            一次性搬遷腳本
   ensure-web-build.js   npm start 前置：web/dist 不存在或過期時自動建置（失敗時印錯誤並留下 .web-build-error.log，伺服器仍啟動並顯示「介面建置失敗」頁）
-  verify/               驗證腳本（C1 樣式比對、OS 模式交接／e2e／截圖／效能／延遲載入大小檢查；沿用 Chrome DevTools Protocol，不新增相依套件；`npm run verify:os-bundle` 是 CI 第六步，用法見 verify/README.md）
+  verify/               驗證腳本（C1 樣式比對、OS 模式交接／e2e／截圖／效能／延遲載入大小檢查、全像合成資料／效能／IME／靜止檢查；沿用 Chrome DevTools Protocol，不新增相依套件；`npm run verify:os-bundle` 是 CI 第六步，用法見 verify/README.md）
 test/                   後端 node:test，見下方
 .github/workflows/ci.yml
 ```

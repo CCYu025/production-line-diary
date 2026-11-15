@@ -58,6 +58,7 @@ node process listening on the port).
 | `holo-ime.mjs` | HF3 automated part: Chinese IME composition in the H1 lab slate (CDP `Input.imeSetComposition`). | lab |
 | `holo-perf.mjs` | HP1 / HP2 / HP5 / HP7 + slate typing latency (headed, real GPU, 4× CPU option). | lab |
 | `holo-slate-compare.mjs` | Slate positioning, method P (projection) vs C (CSS3DRenderer): sharpness, hit, focus ring, frame cost, red lines. | lab |
+| `holo-still.mjs` | Reduced-motion stillness (spec §4.2): pixel diff 0, runtime toggle both ways, legacy `?scene=machine` falls back to the spiral. | lab |
 | `os-common.mjs` | selectors (`SEL`, `hudCh(n)`), page hook, helpers (`waitPhase` auto-passes B1, `passB1(page)`), `Reporter`. | – |
 | `serve.mjs` | safe server launcher. | – |
 
@@ -231,9 +232,10 @@ node scripts/verify/holo-seed.mjs 3114 5000 [--scratch dir] [--photos 2] [--seed
 node scripts/verify/holo-ime.mjs   --url http://localhost:3114/ [--methods proj,css3d] [--freeze 1,0] [--out dir]
 node scripts/verify/holo-perf.mjs  --url http://localhost:3114/ --n 5000 [--throttle 4] [--modes fps,hp2,hp5,input,hp7] [--duration 10] [--soak 300]
 node scripts/verify/holo-slate-compare.mjs --url http://localhost:3114/ [--out dir]
+node scripts/verify/holo-still.mjs --url http://localhost:3114/ [--gap 700] [--out dir] [--allow-software]
 ```
 
-- All three launch **headed** Chrome (`cdp.mjs`) and write nothing to the app data. `holo-perf` stops with `INVALID` (exit 2) when the WebGL renderer is SwiftShader / llvmpipe / software.
+- All four launch **headed** Chrome (`cdp.mjs`) and write nothing to the app data. `holo-perf` and `holo-still` stop with `INVALID` (exit 2) when the WebGL renderer is SwiftShader / llvmpipe / software.
 - `holo-ime` (HF3, automated half): for each positioning method × freeze setting, drives the slate while the (script-driven) world moves: the spiral does not turn by itself, so the script drifts the yaw and flips the cursor one day back and forth, which moves the slate anchor: composition then Enter (plain and IME-style key 229), ArrowDown/Up, Escape in the `<input>`,
   the `<textarea>` and the `Combobox`; checks no dropped text, no newline / option / submit during composition, and that Enter outside composition does submit. Key events during CDP composition are sent as keydown+keyup only
   (no char event), like a real IME. **Not measurable here: where the OS candidate window appears** - that is the manual Zhuyin session.
