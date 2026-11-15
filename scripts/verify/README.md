@@ -245,7 +245,7 @@ node scripts/verify/holo-slate-compare.mjs --url http://localhost:3114/ [--out d
 - `holo-slate-compare`: the six comparison points of spec §3.3 for `proj`, `css3d` (fixed plane) and `css3d-billboard`; results in `<out>/result.json` plus PNG crops.
   Sharpness uses one fixed-size crop (240×40 CSS px) around a fixed test-text block the script adds to the slate, identical for every method; click hits are reported as `hitRateInView` (controls whose centre is on screen) and `offscreenFraction` separately.
 - Page hooks: `#/_holo?slate=proj|css3d|off&crt=off|std|max&freeze=0&bb=1&holodebug=1`; with `holodebug=1` `window.__holoLab()` returns frames, `timing` (HP5 split),  `renderer.info`, camera, spiral counts, thumbnail stats and the slate probe
-  (`resetProbe()`, `setView(yaw, pitch, dist)`, `moveCursor(d)`, `setCursor(day)`, `autoRotate(bool)` are properties of the function).
+  (`resetProbe()`, `setView(yaw, pitch, dist)`, `moveCursor(d)`, `setCursor(day)` are properties of the function).
 
 ## os-p6.mjs — P6 (X5 §5.4 fixed method)
 
