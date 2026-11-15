@@ -7,11 +7,13 @@
 
 | 項目 | 狀態 |
 |---|---|
-| 目前階段 | H1 技術驗證已合併（PR #62）。使用者 2026-11-15 handoff 停機；H2 尚未開始 |
-| main | `8f433b0`（PR #62 合併後；本交接更新的 docs PR 合併後會再往前一個 commit） |
-| 進行中分支 | 開發主管這邊沒有：H1 的分支與 worktree（`holo-h1`、`h1-base`、`h1-verify3`、`h1-verify4`）都已清除；`.git/worktrees/*` 的中繼資料因權限刪不掉，殘留無害。設計師的 `pld-wt/holo-h15-spec`（分支 `docs/holo-h15-abstract`）由設計師處理 |
-| 伺服器 | 3114–3116 都已停止 |
-| 下一步 | 寫 H2 簡報；H2 第一個交付物是 `npm run verify:holo`（見 §3） |
+| 目前階段 | H2 共用核心進行中，停在 **H2-0（`npm run verify:holo`）**：程式已寫完（協調者自跑完整版 17/17 通過），L1（Haiku）跑到一半因使用者 2026-11-15 handoff 中斷；L2 未做、未開 PR |
+| main | `3d8a1ce`（PR #63 合併後；本交接更新的 docs PR 合併後會再往前一個 commit） |
+| 進行中分支 | `feat/holo-h2-0-verify`，HEAD `2ed07f8`（WIP 標記 commit；實作在 `e5fd791`…`ce0f80e`），worktree `pld-wt/h2-0`。baseline worktree `pld-wt/h2-base` 已移除。設計師的 `pld-wt/holo-h15-spec`（分支 `docs/holo-h15-abstract`）由設計師處理 |
+| 伺服器 | 3114–3116 都已停止；沒有背景中的協調者或驗證者 |
+| 下一步 | ① 從 main 重建 baseline worktree（`git worktree add --detach pld-wt/h2-base main`，裡面 `npm install`、`npm run build`）；② 在 `pld-wt/h2-0` 從頭跑完整版 `npm run verify:holo -- --base <h2-base>` 做 L1（約 45 分鐘，需可見桌面與真 GPU）；③ L2（含 holo-ime 失焦→INVALID、拿掉 `isComposing`→FAIL、c1 故意改壞一處要抓到）；④ 開 PR、CI、送設計師審查 |
+| H2 簡報 | 定稿在開發主管的筆記資料夾 `h2-brief.md`（不在 repo）。重點：共 7 個 PR（H2-0、H2-1+2、H2-3、H2-4、H2-5、H2-6、H2-7）；Q1 紀錄相關 hook 放 `features/records/core/`、`useModeShell` 拆成 `app/core/`（標題、換頁焦點）與 `features/os/core/`（模式生命週期），網頁入口不得 import `features/os`（A5／HB1）；Q2 H2-6 搬家與 H2-7 ColorManagement 初始化放本期；Q3 `holoAggregate` 延到 H6；Q4 H2-1 與 H2-2 合成一個 PR。只有 H2-0、H2-4 送設計師審查；突變沒被抓到時不合併、先問設計師 |
+| 待設計師裁定（H2-0） | 協調者與簡報不同的決定：(a) `os-handoff` 只跑 CPU 1×（完整 1×＋4× headed 超過 25 分鐘），並容許 DEVIATED（這台機器每次 11–12 個）：判定為 0 FAIL、樣本 ≥ 100、確定通過 ≥ 75；(b) `c1-os` 只比 1280 寬、標準淺色、README S4(b) 的 9 個情境（OS 固定 Cyber、< 1024 只有 DeviceGate），不是三主題 × 三寬度；(c) c1 組合數和 `holo-baseline.json` 比，不另跑 base 端；(d) 任何一步超過 40 分鐘記 INVALID；(e) 網頁入口 gzip 增量在 main 上已是 +1816 B（上限 2048，`bundle-baseline.json` 過舊），後面的 PR 容易踩線，要不要更新 baseline |
 | 規格 | `docs/holo-mode-spec.md`（H1.5 抽象佈局定稿版）、`docs/holo-mode-inventory.md`（附錄 A，必須保留的功能清單） |
 | 待決問題 | 規格 §6.7 Q1–Q4（見 §5） |
 
@@ -27,7 +29,7 @@
 
 ## 3. 下一步（依序）
 
-1. H2 共用核心抽出（規格 §12）：第一個交付物是 `npm run verify:holo`（順便處理 `holo-ime` 在 OS 視窗失焦時的假失敗）；先寫簡報，再走協調者 → 獨立驗證者流程。網頁與 OS 2D 行為零差異。
+1. H2 共用核心抽出（規格 §12，簡報已定稿，見 §1）：先完成 H2-0 的 L1／L2／PR（見 §1「下一步」），再依序 H2-1+2 → H2-3 → H2-4 → H2-5 → H2-6 → H2-7。網頁與 OS 2D 行為零差異。
 2. 之後依規格 §12：H3 引擎＋佈局框架 → H4 流場＋詳情 → H5 編輯新增 → H6 晶格＋儀器環 → H7 深層＋設定 → H8 轉場音效 → H9 星座（選配）→ H10 收尾。
 3. L1 詞彙設定（跨領域）：H4 展示後才開，需先修改紅線 1、3。L2 資料模型另立專案。
 
