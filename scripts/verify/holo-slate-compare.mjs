@@ -55,9 +55,9 @@ try {
     for (const dpr of [1, 1.5]) {
       const p = await browser.newPage({ width: 1600, height: 900 });
       await p.send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 900, deviceScaleFactor: dpr, mobile: false });
-      await p.goto(`${base}#/_holo?scene=machine&${v.q}&rot=0&holodebug=1`, { settle: 800 });
+      await p.goto(`${base}#/_holo?${v.q}&holodebug=1`, { settle: 800 });
       await p.waitFor('window.__holoLab && window.__holoLab().frames > 10', 15000);
-      await p.eval('window.__holoLab.setView(0.45, 0.3, 27)');
+      await p.eval('window.__holoLab.setView(0.45, 0.12, 14)');
       await sleep(600);
       const r = await p.eval(ADD_PROBE);
       await sleep(300);
@@ -73,14 +73,14 @@ try {
     }
 
     const p = await browser.newPage({ width: 1600, height: 900 });
-    await p.goto(`${base}#/_holo?scene=machine&${v.q}&rot=0&holodebug=1`, { settle: 800 });
+    await p.goto(`${base}#/_holo?${v.q}&holodebug=1`, { settle: 800 });
     await p.waitFor('window.__holoLab && window.__holoLab().frames > 10', 15000);
     const slateRect = () => p.rectOf(`document.querySelector('[data-holo="slate"]')`);
 
     // ---------------------------------------------------------------- 2 + 4 click hit at several yaws, IME anchor positions
     R.hit = []; R.imeAnchor = [];
     for (const yaw of YAWS) {
-      await p.eval(`window.__holoLab.setView(${yaw}, 0.3, 27)`);
+      await p.eval(`window.__holoLab.setView(${yaw}, 0.12, 14)`);
       await sleep(500);
       const row = { yaw, controls: {} };
       // buttons first: focusing the Combobox opens its suggestion list, which sits on top of the buttons
@@ -111,7 +111,7 @@ try {
       const caret = await p.eval(`(()=>{const e=document.getElementById('holo-problem');e.focus();const r=e.getBoundingClientRect();return {x:+r.x.toFixed(1),y:+r.y.toFixed(1),w:+r.width.toFixed(1),h:+r.height.toFixed(1)}})()`);
       R.imeAnchor.push({ yaw, inputBox: caret });
     }
-    await p.eval('window.__holoLab.setView(0.45, 0.3, 27)');
+    await p.eval('window.__holoLab.setView(0.45, 0.12, 14)');
     await sleep(400);
 
     // ---------------------------------------------------------------- 3 focus ring
@@ -132,7 +132,8 @@ try {
     await p.send('Page.captureScreenshot', { format: 'png', clip: { x: Math.max(0, s.x), y: Math.max(0, s.y), width: Math.min(s.width, 1600 - s.x), height: Math.min(s.height, 900 - s.y), scale: 1 } }).then((shot) => fs.writeFileSync(path.join(A.out, `focus-${v.id}.png`), Buffer.from(shot.data, 'base64')));
 
     // ---------------------------------------------------------------- 5 per-frame cost (world turning)
-    await p.eval('window.__holoLab.autoRotate(true)');
+    // the spiral does not turn by itself: drive the world (yaw drift every 50 ms, cursor one day back/forth every 300 ms) so the slate really follows it
+    await p.eval(`(()=>{let dir=-1;let n=0;window.__drive=setInterval(()=>{const L=window.__holoLab;const c=L().camera;L.setView(c.yaw+0.004,c.pitch,c.dist);if(++n%6===0){L.moveCursor(dir);dir=-dir}},50);return true})()`);
     await p.eval('document.activeElement && document.activeElement.blur()');
     await p.send('Performance.enable');
     const metrics = async () => Object.fromEntries((await p.send('Performance.getMetrics')).metrics.map((m) => [m.name, m.value]));

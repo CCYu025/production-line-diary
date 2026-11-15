@@ -13,6 +13,7 @@ import { advanceAnimTime, FOG_MIN_BRIGHTNESS } from "../engine/level";
 import {
   CARD_HEIGHT,
   clampDay,
+  cursorAnchor,
   DOT_WEEKS,
   FULL_CARD_CAP,
   lodRanges,
@@ -129,6 +130,9 @@ export interface SpiralCounts {
 }
 
 export interface SpiralWorld extends HoloWorld {
+  /** 終端板的錨點（世界座標）：游標那一天的卡片，沒有卡片時用游標位置的固定錨點；游標移動時就地更新（同一個 Vector3 物件） */
+  anchor: THREE.Vector3;
+  anchorIsCard(): boolean;
   setCursor(day: number): void;
   moveCursor(deltaDays: number): void;
   cursor(): number;
@@ -251,6 +255,8 @@ export function createSpiralWorld(engine: HoloEngine, model: SpiralModel): Spira
   let lastRanges: LodRanges | null = null;
   const counts: SpiralCounts = { fullCards: 0, dots: 0, tickLines: 0, cursorDay };
   let sweepAt = 0;
+  const anchor = new THREE.Vector3();
+  let anchorCard = false;
   let animSec = 0; // 只在 engine.animating 時推進：減少動態效果或強度「關」時虛線外框靜止
 
   const writeCard = (slot: number, i: number) => {
@@ -263,6 +269,9 @@ export function createSpiralWorld(engine: HoloEngine, model: SpiralModel): Spira
 
   const refresh = () => {
     if (!items.length) return;
+    const an = cursorAnchor(model, cursorDay);
+    anchor.set(an.x, an.y, an.z);
+    anchorCard = an.card;
     const r = lodRanges(model, cursorDay);
     lastRanges = r;
     let n = 0;
@@ -359,6 +368,8 @@ export function createSpiralWorld(engine: HoloEngine, model: SpiralModel): Spira
 
   const world: SpiralWorld = {
     root,
+    anchor,
+    anchorIsCard: () => anchorCard,
     fog: [fogNear, fogFar],
     setCursor,
     moveCursor: (delta) => setCursor(cursorDay + delta),

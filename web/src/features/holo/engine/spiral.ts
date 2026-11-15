@@ -111,6 +111,18 @@ export function zOfDay(day: number, originT: number): number {
   return ((day - originT) * ADVANCE_PER_TURN) / DAYS_PER_TURN;
 }
 
+/**
+ * 終端板的錨點：游標那一天的第一張卡片（最早的那筆）的位置；那天沒有卡片時用游標位置的固定錨點
+ * （螺旋上那一天的正中午、最內圈）。card 說明用的是哪一種。
+ */
+export function cursorAnchor(model: Pick<SpiralModel, "items" | "originT">, day: number): { x: number; y: number; z: number; card: boolean } {
+  const i = lowerBoundDay(model.items, day);
+  const it = model.items[i];
+  if (it && it.day === day) return { x: it.x, y: it.y, z: it.z, card: true };
+  const p = spiralPoint(day + DAY_SLICE_FILL / 2, model.originT, 0);
+  return { x: p.x, y: p.y, z: p.z, card: false };
+}
+
 export function buildSpiral(records: readonly DiaryRecord[]): SpiralModel {
   const active = chronological(records.filter((r) => !r.deleted));
   const parsed = active.map((r) => ({ r, day: dayNumber(r.date) })).filter((p) => Number.isFinite(p.day));

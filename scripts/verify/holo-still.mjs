@@ -1,8 +1,8 @@
 // Reduced-motion stillness check for the H1 lab (docs/holo-mode-spec.md section 4.2: with prefers-reduced-motion nothing may move).
 //   node scripts/verify/holo-still.mjs --url http://localhost:3114/ [--gap 700] [--out dir] [--allow-software]
-// For machine and spiral (spiral needs holo-seed data so tracked cards exist) x crt std / off / max: with prefers-reduced-motion: reduce emulated, nothing touched
-// (machine auto-rotate left on), two screenshots --gap ms apart must be pixel-identical (diff 0). A control run WITHOUT reduced motion (std) must differ,
-// otherwise the check proves nothing. Then the RUNTIME toggle, both directions, both scenes: load without reduced motion, switch it on with CDP
+// For the spiral (needs holo-seed data so tracked cards exist; the H1 machine sample was removed) x crt std / off / max: with prefers-reduced-motion: reduce emulated, nothing touched
+// two screenshots --gap ms apart must be pixel-identical (diff 0). A control run WITHOUT reduced motion (std) must differ,
+// otherwise the check proves nothing. Then the RUNTIME toggle, both directions: load without reduced motion, switch it on with CDP
 // Emulation.setEmulatedMedia while the page runs (within 1 s the world must be still: two shots --gap apart identical, page reducedMotion=true), switch it off again
 // (within 1 s the world must move again); and the reverse order (load reduced -> off -> on). Exit 1 on any failure, 2 if the renderer is software (unless --allow-software).
 import fs from 'node:fs';
@@ -24,11 +24,11 @@ const browser = await Browser.launch({ port: +A['cdp-port'], headless: false });
 const results = [];
 let bad = false;
 try {
-  for (const [scene, extra] of [['machine', ''], ['spiral', '']]) {
+  for (const [scene, extra] of [['spiral', '']]) {
     for (const [crt, reduced] of [['std', true], ['off', true], ['max', true], ['std', false]]) {
       const p = await browser.newPage({ width: 1280, height: 720 });
       await p.setMedia('dark', 'screen', [{ name: 'prefers-reduced-motion', value: reduced ? 'reduce' : 'no-preference' }]);
-      await p.goto(`${base}#/_holo?scene=${scene}&crt=${crt}&holodebug=1&slate=off${extra}`, { settle: 300 });
+      await p.goto(`${base}#/_holo?crt=${crt}&holodebug=1&slate=off${extra}`, { settle: 300 });
       const renderer = await p.webglRenderer();
       if (/swiftshader|llvmpipe|software|no-webgl/i.test(String(renderer)) && !A['allow-software']) { console.log(`INVALID: software renderer (${renderer})`); await browser.close(); process.exit(2); }
       await p.waitFor('window.__holoLab && window.__holoLab().frames > 10', 30000);
@@ -36,9 +36,12 @@ try {
       const info = JSON.parse(await p.eval('JSON.stringify(window.__holoLab())'));
       await p.eval("(()=>{const h=document.querySelector('.holo-lab-hud');if(h)h.style.visibility='hidden';return true})()"); // the lab's fps readout text changes every 500 ms: not part of the world
       await sleep(2500); // thumbnails decoded, fades done
+      const yaw0 = (JSON.parse(await p.eval('JSON.stringify(window.__holoLab())'))).camera.yaw;
       const a = await p.send('Page.captureScreenshot', { format: 'png' });
       await sleep(+A.gap);
       const b = await p.send('Page.captureScreenshot', { format: 'png' });
+      const info2 = JSON.parse(await p.eval('JSON.stringify(window.__holoLab())'));
+      if (info2.camera.autoRotate !== 0 || info2.camera.yaw !== yaw0) { bad = true; console.log(`FAIL the spiral must not turn by itself: autoRotate=${info2.camera.autoRotate}, yaw ${yaw0} -> ${info2.camera.yaw}`); }
       const d = await p.eval(`(${DIFF})(${JSON.stringify(a.data)}, ${JSON.stringify(b.data)})`, true);
       const tag = `${scene}-${crt}-${reduced ? 'reduced' : 'motion'}`;
       fs.writeFileSync(path.join(A.out, `${tag}-a.png`), Buffer.from(a.data, 'base64'));
@@ -50,6 +53,18 @@ try {
       await p.close();
     }
   }
+  // ---------------------------------------------------------------- legacy ?scene=machine falls back to the spiral (no error)
+  {
+    const p = await browser.newPage({ width: 1280, height: 720 });
+    await p.goto(`${base}#/_holo?scene=machine&slate=off&holodebug=1`, { settle: 300 });
+    await p.waitFor('window.__holoLab && window.__holoLab().spiral && window.__holoLab().spiral.total > 0', 60000);
+    const info = JSON.parse(await p.eval('JSON.stringify(window.__holoLab())'));
+    const ok = info.scene === 'spiral' && info.spiral !== null;
+    if (!ok) bad = true;
+    console.log(`${ok ? 'PASS' : 'FAIL'} ?scene=machine falls back to the spiral (scene=${info.scene})`);
+    await p.close();
+  }
+
   // ---------------------------------------------------------------- runtime toggle
   const shots = async (p, tag) => {
     const a = await p.send('Page.captureScreenshot', { format: 'png' });
@@ -60,11 +75,11 @@ try {
     return d;
   };
   const setRM = (p, on) => p.setMedia('dark', 'screen', [{ name: 'prefers-reduced-motion', value: on ? 'reduce' : 'no-preference' }]);
-  for (const scene of ['machine', 'spiral']) {
+  for (const scene of ['spiral']) {
     for (const startReduced of [false, true]) {
       const p = await browser.newPage({ width: 1280, height: 720 });
       await setRM(p, startReduced);
-      await p.goto(`${base}#/_holo?scene=${scene}&crt=std&holodebug=1&slate=off`, { settle: 300 });
+      await p.goto(`${base}#/_holo?crt=std&holodebug=1&slate=off`, { settle: 300 });
       await p.waitFor('window.__holoLab && window.__holoLab().frames > 10', 30000);
       if (scene === 'spiral') await p.waitFor('window.__holoLab().spiral && window.__holoLab().spiral.total > 0', 60000);
       await p.eval("(()=>{const h=document.querySelector('.holo-lab-hud');if(h)h.style.visibility='hidden';return true})()");

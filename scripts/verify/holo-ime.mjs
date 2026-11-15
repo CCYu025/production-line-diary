@@ -1,4 +1,4 @@
-// HF3 (automated part): Chinese IME composition inside the floating terminal slate of the H1 lab, while the world keeps turning.
+// HF3 (automated part): Chinese IME composition inside the floating terminal slate of the H1 lab, while the world keeps moving (the spiral does not turn by itself: the script drives it - yaw drifts and the cursor flips one day back and forth, so the slate anchor, a card, keeps moving).
 //   node scripts/verify/holo-ime.mjs --url http://localhost:3114/ [--methods proj,css3d] [--freeze 1,0] [--out dir] [--headless]
 // Needs the LAB build (VITE_HOLO_LAB=1 npm run build) served by serve.mjs (scratch data; this script writes nothing).
 // For every (method, freeze) combination it drives the real slate with CDP Input.imeSetComposition / insertText and key events:
@@ -6,7 +6,7 @@
 //   C2  <textarea> same, Enter must not add a newline while composing
 //   C3  Combobox  composition, ArrowDown / ArrowUp / Enter / Escape -> no option picked, list not committed, value intact, no submit
 //   C4  sanity    Enter outside composition does submit (the checks above are not vacuous)
-//   C5  world     the camera really kept turning during composition; slate position change during composition is reported
+//   C5  world     the world really kept moving during composition (yaw and the anchor's screen position); slate position change during composition is reported
 // What CDP cannot show: where the OS candidate window appears. That is part of the manual HF3 check (the user's Zhuyin session).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,7 +15,7 @@ import { Browser, sleep } from './cdp.mjs';
 
 const { values: A } = parseArgs({
   options: {
-    url: { type: 'string' }, methods: { type: 'string', default: 'proj,css3d' }, freeze: { type: 'string', default: '1,0' },
+    url: { type: 'string' }, methods: { type: 'string', default: 'proj,css3d' }, freeze: { type: 'string', default: '1,0' }, drive: { type: 'string', default: '1' },
     out: { type: 'string', default: 'verify-out/holo-ime' }, headless: { type: 'boolean', default: false }, 'cdp-port': { type: 'string', default: '9631' }, help: { type: 'boolean', default: false },
   },
 });
@@ -37,7 +37,7 @@ try {
     for (const freeze of A.freeze.split(',')) {
       const cfg = { method, freeze };
       const p = await browser.newPage({ width: 1600, height: 900 });
-      await p.goto(`${base}#/_holo?scene=machine&slate=${method}&freeze=${freeze}&holodebug=1`, { settle: 800 });
+      await p.goto(`${base}#/_holo?slate=${method}&freeze=${freeze}&holodebug=1`, { settle: 800 });
       await p.waitFor('window.__holoLab && window.__holoLab().frames > 10', 15000);
       const lab = async () => JSON.parse(await p.eval('JSON.stringify(window.__holoLab())'));
       const fld = (id) => `document.getElementById('${id}')`;
@@ -60,16 +60,23 @@ try {
       const keyEvents = async () => (await lab()).slate.probe.events.filter((e) => e.type === 'keydown');
       await p.eval('window.__holoLab.resetProbe()');
       const before = await lab();
-      record(cfg, 'world is turning (auto rotate on)', before.camera.autoRotate > 0, { autoRotate: before.camera.autoRotate });
+      // drive the world: yaw drift every 50 ms; cursor one day back / forth every 300 ms (the slate anchor is the cursor's card, so it jumps and drifts)
+      if (A.drive === '1') await p.eval(`(()=>{let dir=-1;let n=0;window.__drive=setInterval(()=>{const L=window.__holoLab;const c=L().camera;L.setView(c.yaw+0.004,c.pitch,c.dist);if(++n%6===0){L.moveCursor(dir);dir=-dir}},50);return true})()`);
+      await sleep(300);
+      const a0 = await p.eval('JSON.stringify(window.__holoLab.anchorScreen())').then(JSON.parse);
+      await sleep(400);
+      const a1 = await p.eval('JSON.stringify(window.__holoLab.anchorScreen())').then(JSON.parse);
+      record(cfg, 'world is moving (script-driven yaw drift + cursor flips)', Math.hypot(a1.x - a0.x, a1.y - a0.y) > 1, { anchorMovedPx: +Math.hypot(a1.x - a0.x, a1.y - a0.y).toFixed(1) });
 
       // ---------- C1 <input>
       await focus('holo-problem');
       const yaw0 = (await lab()).camera.yaw;
+      const anchor0 = await p.eval('JSON.stringify(window.__holoLab.anchorScreen())').then(JSON.parse);
       await comp('ㄋㄧˇ');
       await sleep(120); // the freeze applies from compositionstart on; measure the baseline only AFTER it took effect: a rect read before compositionstart can be
                         // one rendered frame older than the frozen position (css3d moves ~1px per frame while the world turns) and would look like movement
       const rect0 = await rectOfSlate();
-      await sleep(580); // the world keeps turning while composing
+      await sleep(580); // the world keeps moving while composing
       const mid = await lab();
       const rectMid = await rectOfSlate();
       await rawKey('Enter', 'Enter', 13);
@@ -96,10 +103,12 @@ try {
       const end1 = await lab();
       record(cfg, 'C1 no submit during composition', end1.slate.probe.submits === 0 && end1.slate.probe.compositions >= 2, { submits: end1.slate.probe.submits, compositions: end1.slate.probe.compositions });
 
-      // ---------- C5 world turning / slate position during composition
+      // ---------- C5 world moving / slate position during composition
       const yawMoved = Math.abs(mid.camera.yaw - yaw0);
       const slateMoved = Math.hypot(rectMid.x - rect0.x, rectMid.y - rect0.y);
-      record(cfg, 'C5 camera kept turning during composition', yawMoved > 0.01, { yawDeltaRad: +yawMoved.toFixed(4) });
+      const anchor1 = await p.eval('JSON.stringify(window.__holoLab.anchorScreen())').then(JSON.parse);
+      const anchorMoved = Math.hypot(anchor1.x - anchor0.x, anchor1.y - anchor0.y);
+      record(cfg, 'C5 world kept moving during composition (camera yaw drifted, anchor moved on screen)', yawMoved > 0.01 && anchorMoved > 1, { yawDeltaRad: +yawMoved.toFixed(4), anchorMovedPx: +anchorMoved.toFixed(1) });
       record(cfg, `C5 slate position during composition (freeze=${freeze})`, freeze === '1' ? slateMoved < 0.5 : true, {
         slateMovedPx: +slateMoved.toFixed(2), frozenFrames: mid.slate.stats.frozenFrames, note: freeze === '1' ? 'expected frozen (< 0.5px)' : 'freeze disabled: movement is the observation, not a failure',
       });

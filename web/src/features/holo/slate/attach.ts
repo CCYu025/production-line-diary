@@ -3,6 +3,7 @@
  *   P：每幀用 Vector3.project() 算出錨點的畫面座標，只在終端板自己身上設 transform: translate()；根節點不加 transform／filter。
  *   C：three 內建的 CSS3DRenderer，把終端板放進 3D 空間（會在 renderer 的容器與每個物件上設 matrix3d）。
  * 兩者內容完全相同（同一個 DOM 節點，由 Slate 元件經 portal 渲染進來）。
+ * 錨點是呼叫端給的 Vector3（H1：螺旋游標那一天的卡片），兩種方法每幀都讀它的目前值。
  * 「選字期間凍結」：isFrozen() 為 true 時兩種方法都不更新位置（設計師預設的 IME 因應）。
  */
 import * as THREE from "three";
@@ -29,7 +30,7 @@ export interface SlateOptions {
   isFrozen: () => boolean;
   /** 方法 P：對齊裝置像素（預設開） */
   snap?: boolean;
-  /** 方法 C：面向鏡頭（預設否＝固定在機台正面的平面，會隨世界旋轉而透視變形） */
+  /** 方法 C：面向鏡頭（預設否＝固定在錨點旁的一塊平面，會隨世界旋轉而透視變形） */
   billboard?: boolean;
   /** 除錯：數 style 變動 */
   countMutations?: boolean;
@@ -98,9 +99,12 @@ export function attachCss3dSlate(engine: HoloEngine, host: HTMLElement, el: HTML
   const unit = (2 * engine.rig.state.dist * Math.tan((CAMERA_FOV * Math.PI) / 360)) / Math.max(1, height);
   obj.scale.setScalar(unit);
   // 讓板子的左緣離錨點 SLATE_GAP px：板子中心在錨點右邊 (gap + 板寬/2) px
+  // 錨點會隨游標移動（同一個 Vector3 就地更新）：每幀重放；板寬用 ResizeObserver 快取，不在每幀讀版面
+  let slateW = el.offsetWidth || 560;
+  const offset = new THREE.Vector3();
   const place = () => {
-    const w = el.offsetWidth || 560;
-    obj.position.copy(anchor).add(new THREE.Vector3((SLATE_GAP + w / 2) * unit, 0, 0));
+    offset.set((SLATE_GAP + slateW / 2) * unit, 0, 0);
+    obj.position.copy(anchor).add(offset);
   };
   place();
   scene.add(obj);
@@ -112,15 +116,18 @@ export function attachCss3dSlate(engine: HoloEngine, host: HTMLElement, el: HTML
   resize();
   const ro = new ResizeObserver(() => {
     resize();
+    slateW = el.offsetWidth || slateW;
     place();
   });
   ro.observe(host);
+  ro.observe(el);
   const off = engine.onFrame(() => {
     stats.frames++;
     if (opts.isFrozen()) {
       stats.frozenFrames++;
       return;
     }
+    place();
     if (opts.billboard) obj.quaternion.copy(engine.camera.quaternion);
     renderer.render(scene, engine.camera);
     stats.writes++;

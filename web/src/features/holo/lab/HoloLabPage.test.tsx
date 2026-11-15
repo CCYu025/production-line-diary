@@ -56,7 +56,8 @@ describe("HoloLabPage 外殼", () => {
   it("控制條有場景與強度的連結", () => {
     const { getByRole } = mount();
     const group = getByRole("group", { name: "實驗室控制" });
-    expect(group).toHaveTextContent("機台");
-    expect(group).toHaveTextContent("螺旋");
+    expect(group).toHaveTextContent("時間螺旋");
+    expect(group).toHaveTextContent("投影");
+    expect(group).toHaveTextContent("CSS3D");
   });
 });

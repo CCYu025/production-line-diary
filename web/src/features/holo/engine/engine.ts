@@ -1,6 +1,6 @@
 /*
  * 全像引擎（H1 雛形）：原生 three（不經過 r3f）的世界迴圈。
- *   renderer（原生解析度、DPR ≤ 1.5）＋ 透視鏡頭 ＋ OrbitRig ＋ HoloPass ＋ 一個「世界」（機台或螢幕牆螺旋）。
+ *   renderer（原生解析度、DPR ≤ 1.5）＋ 透視鏡頭 ＋ OrbitRig ＋ HoloPass ＋ 一個「世界」（時間螺旋）。
  * 強度讀 pld.os.crt（getCrtLevel／subscribeCrt）；網址覆寫只在這次載入有效，不寫入偏好。
  * 迴圈只在分頁可見時由 rAF 驅動（瀏覽器對隱藏分頁本來就暫停 rAF）。
  */

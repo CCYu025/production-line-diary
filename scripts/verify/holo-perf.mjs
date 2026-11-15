@@ -1,12 +1,12 @@
 // HOLO performance probe for the H1 lab (docs/holo-mode-spec.md section 10.1: HP1, HP2, HP5, HP7 + slate input latency).
-//   node scripts/verify/holo-perf.mjs --url http://localhost:3114/ [--scene machine|spiral] [--n 5000] [--throttle 1|4]
+//   node scripts/verify/holo-perf.mjs --url http://localhost:3114/ [--n 5000] [--throttle 1|4]
 //        [--modes fps,hp2,hp5,input,hp7] [--duration 10] [--soak 300] [--crt std] [--out dir] [--allow-software]
 // Needs the LAB build (VITE_HOLO_LAB=1 npm run build) served by serve.mjs and, for the spiral, holo-seed data of the size you pass as --n
 // (--n is only a label + a sanity check against the number of records the page actually loaded).
 // HEADED Chrome with real GPU: a renderer name containing SwiftShader / llvmpipe / software makes every number INVALID (exit 2) unless --allow-software.
-//   fps   HP1: median fps of rAF over --duration seconds, idle (nothing touched; the machine's auto rotate stays on) and operating (rotate drag, wheel, cursor moves).
-//         Gate: spiral n<=5000 >= 55 fps (CPU 1x); n=20000 >= 30; CPU 4x with n<=5000 >= 30. The machine scene is measured for the record (gate 55 at 1x).
-//   hp2   HP2 (measure only): machine, slate open, world still (rot=0) 2 s after settling: fps of rAF and the number of world frames.
+//   fps   HP1: median fps of rAF over --duration seconds, idle (nothing touched) and operating (rotate drag, wheel, cursor moves).
+//         Gate: spiral n<=5000 >= 55 fps (CPU 1x); n=20000 >= 30; CPU 4x with n<=5000 >= 30.
+//   hp2   HP2 (measure only): slate open (proj), world still 2 s after settling: fps of rAF and the number of world frames.
 //   hp5   HP5 (measure only): readyMs = lab mount -> first frame that contains the world, split into dataLoad (mount -> records; spiral), engineCritical
 //         (engine init beyond data availability), modelBuild (buildSpiral), sceneBuild, firstWorldFrame and other (React commits / waits) - they add up to readyMs.
 //   input slate typing latency: keydown -> next animation frame while the world turns (ms, p50 / p95 / max).
@@ -21,20 +21,22 @@ import { Browser, sleep } from './cdp.mjs';
 
 const { values: A } = parseArgs({
   options: {
-    url: { type: 'string' }, scene: { type: 'string', default: 'spiral' }, n: { type: 'string' }, throttle: { type: 'string', default: '1' },
+    url: { type: 'string' }, n: { type: 'string' }, throttle: { type: 'string', default: '1' },
     modes: { type: 'string', default: 'fps' }, duration: { type: 'string', default: '10' }, soak: { type: 'string', default: '300' }, crt: { type: 'string', default: 'std' },
     out: { type: 'string', default: 'verify-out/holo-perf' }, 'allow-software': { type: 'boolean', default: false }, 'cdp-port': { type: 'string', default: '9641' },
     width: { type: 'string', default: '1920' }, height: { type: 'string', default: '1080' }, help: { type: 'boolean', default: false },
   },
 });
-if (A.help || !A.url) { console.log('node scripts/verify/holo-perf.mjs --url http://localhost:3114/ [--scene machine|spiral] [--n 5000] [--throttle 1|4] [--modes fps,hp2,hp5,input,hp7] [--duration 10] [--soak 300] [--crt std] [--out dir] [--allow-software]'); process.exit(A.help ? 0 : 2); }
+if (A.help || !A.url) { console.log('node scripts/verify/holo-perf.mjs --url http://localhost:3114/ [--n 5000] [--throttle 1|4] [--modes fps,hp2,hp5,input,hp7] [--duration 10] [--soak 300] [--crt std] [--out dir] [--allow-software]'); process.exit(A.help ? 0 : 2); }
+A.scene = 'spiral'; // the H1 machine sample was removed: the spiral is the only world
 fs.mkdirSync(A.out, { recursive: true });
 const base = A.url.replace(/\/?$/, '/');
 const modes = new Set(A.modes.split(','));
 const W = +A.width, H = +A.height;
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : NaN; };
 const pctl = (a, p) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))] : NaN; };
-const url = (extra = '') => `${base}#/_holo?scene=${A.scene}${A.n ? `&n=${A.n}` : ''}&crt=${A.crt}&holodebug=1${extra}`;
+// the slate is off unless a mode asks for it (hp2, input): HP1 / HP5 / HP7 measure the world alone, as before
+const url = (extra = '') => `${base}#/_holo?${A.n ? `n=${A.n}&` : ''}crt=${A.crt}&holodebug=1${extra.includes('slate=') ? '' : '&slate=off'}${extra}`;
 
 const out = { url: A.url, scene: A.scene, n: A.n ?? null, cpuThrottle: +A.throttle, crt: A.crt, viewport: `${W}x${H}`, startedAt: new Date().toISOString() };
 // Note: a blank headed page already runs at the monitor refresh rate (about 56-60 fps here), so fps is capped by vsync; the gates are judged against that cap.
@@ -55,7 +57,7 @@ async function open(extra = '') {
     process.exit(2);
   }
   await p.waitFor('window.__holoLab && window.__holoLab().frames > 10', 30000);
-  if (A.scene === 'spiral') await p.waitFor('window.__holoLab().spiral && window.__holoLab().spiral.total > 0', 60000);
+  await p.waitFor('window.__holoLab().spiral && window.__holoLab().spiral.total > 0', 60000);
   await p.throttleCPU(+A.throttle);
   await sleep(1200);
   return p;
@@ -72,13 +74,9 @@ async function operate(p, seconds) {
   let k = 0;
   while (Date.now() - t0 < seconds * 1000) {
     k++;
-    if (A.scene === 'spiral') {
-      await p.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: cx, y: cy, deltaX: 0, deltaY: k % 6 < 3 ? 120 : -120 });
-      if (k % 5 === 0) { await p.keyDown('PageUp'); await p.keyUp('PageUp'); }
-      if (k % 7 === 0) await p.eval('window.__holoLab.moveCursor(7)'); // Shift+wheel equivalent (a week)
-    } else {
-      await p.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: cx, y: cy, deltaX: 0, deltaY: k % 8 < 4 ? 100 : -100 });
-    }
+    await p.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: cx, y: cy, deltaX: 0, deltaY: k % 6 < 3 ? 120 : -120 });
+    if (k % 5 === 0) { await p.keyDown('PageUp'); await p.keyUp('PageUp'); }
+    if (k % 7 === 0) await p.eval('window.__holoLab.moveCursor(7)'); // Shift+wheel equivalent (a week)
     if (k % 4 === 0) { // rotate drag
       await p.mouseMove(cx, cy); await p.mouseDown(cx, cy);
       for (let i = 1; i <= 12; i++) { await p.mouseMove(cx + i * 14, cy + Math.sin(i / 2) * 20); await sleep(8); }
@@ -91,11 +89,11 @@ async function operate(p, seconds) {
 try {
   // ------------------------------------------------------------------ HP1
   if (modes.has('fps')) {
-    const p = await open(A.scene === 'machine' ? '' : '');
+    const p = await open();
     const info = await lab(p);
     out.records = info.records;
-    if (A.scene === 'spiral' && A.n && Math.abs(info.records - +A.n) > Math.max(5, +A.n * 0.02)) log(`WARN: page loaded ${info.records} records but --n ${A.n}`);
-    const min = A.scene === 'spiral' ? (+A.throttle > 1 ? 30 : (A.n && +A.n > 5000 ? 30 : 55)) : (+A.throttle > 1 ? 30 : 55);
+    if (A.n && Math.abs(info.records - +A.n) > Math.max(5, +A.n * 0.02)) log(`WARN: page loaded ${info.records} records but --n ${A.n}`);
+    const min = +A.throttle > 1 ? 30 : (A.n && +A.n > 5000 ? 30 : 55);
     out.hp1 = { gateMinFps: min };
     for (const [label, fn] of [['idle', async () => sleep(+A.duration * 1000)], ['operate', async () => operate(p, +A.duration)]]) {
       await p.eval(FRAMES_START);
@@ -116,11 +114,9 @@ try {
     await p.close();
   }
 
-  // ------------------------------------------------------------------ HP2 (machine, slate open, world still)
+  // ------------------------------------------------------------------ HP2 (slate open, world still)
   if (modes.has('hp2')) {
-    const sc = A.scene;
-    A.scene = 'machine';
-    const p = await open('&rot=0&slate=proj');
+    const p = await open('&slate=proj');
     await sleep(2000); // world still for 2 s
     const f0 = (await lab(p)).frames;
     await p.eval(FRAMES_START);
@@ -132,7 +128,6 @@ try {
     log(`INFO HP2 slate open, world still, CPU ${A.throttle}x: rAF median ${st.medianFps} fps; world frames ${f1 - f0} in 3 s (${out.hp2.worldFps} fps)`);
     await p.throttleCPU(1);
     await p.close();
-    A.scene = sc;
   }
 
   // ------------------------------------------------------------------ HP5
@@ -155,10 +150,10 @@ try {
 
   // ------------------------------------------------------------------ input latency inside the slate
   if (modes.has('input')) {
-    const sc = A.scene;
-    A.scene = 'machine';
     for (const method of ['proj', 'css3d']) {
       const p = await open(`&slate=${method}`);
+      // the spiral does not turn by itself: drive it (yaw drift + cursor one day back/forth) so the slate keeps moving while typing
+      await p.eval(`(()=>{let dir=-1;let n=0;window.__drive=setInterval(()=>{const L=window.__holoLab;const c=L().camera;L.setView(c.yaw+0.004,c.pitch,c.dist);if(++n%6===0){L.moveCursor(dir);dir=-dir}},50);return true})()`);
       await p.eval(`(()=>{window.__lat=[];const el=document.getElementById('holo-problem');el.focus();
         el.addEventListener('keydown',(e)=>{const t=e.timeStamp;requestAnimationFrame(()=>{window.__lat.push(performance.now()-t)})},true)})()`);
       const text = 'abcdefghijklmnopqrstuvwxyz0123456789ABCD';
@@ -167,16 +162,14 @@ try {
       const lat = await p.eval('window.__lat');
       const val = await p.eval("document.getElementById('holo-problem').value");
       out[`input_${method}`] = { chars: lat.length, typedOk: val === text, p50Ms: +median(lat).toFixed(1), p95Ms: +pctl(lat, 95).toFixed(1), maxMs: +Math.max(...lat).toFixed(1) };
-      log(`INFO slate typing (${method}, world turning, CPU ${A.throttle}x): keydown -> next frame p50 ${out[`input_${method}`].p50Ms} ms, p95 ${out[`input_${method}`].p95Ms} ms, max ${out[`input_${method}`].maxMs} ms; text intact: ${val === text}`);
+      log(`INFO slate typing (${method}, world moving, CPU ${A.throttle}x): keydown -> next frame p50 ${out[`input_${method}`].p50Ms} ms, p95 ${out[`input_${method}`].p95Ms} ms, max ${out[`input_${method}`].maxMs} ms; text intact: ${val === text}`);
       await p.throttleCPU(1);
       await p.close();
     }
-    A.scene = sc;
   }
 
   // ------------------------------------------------------------------ HP7
   if (modes.has('hp7')) {
-    if (A.scene !== 'spiral') A.scene = 'spiral';
     const p = await open();
     await p.send('HeapProfiler.enable');
     const info0 = await lab(p);

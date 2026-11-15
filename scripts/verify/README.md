@@ -229,22 +229,22 @@ node scripts/verify/holo-seed.mjs 3114 5000 [--scratch dir] [--photos 2] [--seed
 
 ```
 node scripts/verify/holo-ime.mjs   --url http://localhost:3114/ [--methods proj,css3d] [--freeze 1,0] [--out dir]
-node scripts/verify/holo-perf.mjs  --url http://localhost:3114/ --scene spiral --n 5000 [--throttle 4] [--modes fps,hp2,hp5,input,hp7] [--duration 10] [--soak 300]
+node scripts/verify/holo-perf.mjs  --url http://localhost:3114/ --n 5000 [--throttle 4] [--modes fps,hp2,hp5,input,hp7] [--duration 10] [--soak 300]
 node scripts/verify/holo-slate-compare.mjs --url http://localhost:3114/ [--out dir]
 ```
 
 - All three launch **headed** Chrome (`cdp.mjs`) and write nothing to the app data. `holo-perf` stops with `INVALID` (exit 2) when the WebGL renderer is SwiftShader / llvmpipe / software.
-- `holo-ime` (HF3, automated half): for each positioning method × freeze setting, drives the slate while the world turns: composition then Enter (plain and IME-style key 229), ArrowDown/Up, Escape in the `<input>`,
+- `holo-ime` (HF3, automated half): for each positioning method × freeze setting, drives the slate while the (script-driven) world moves: the spiral does not turn by itself, so the script drifts the yaw and flips the cursor one day back and forth, which moves the slate anchor: composition then Enter (plain and IME-style key 229), ArrowDown/Up, Escape in the `<input>`,
   the `<textarea>` and the `Combobox`; checks no dropped text, no newline / option / submit during composition, and that Enter outside composition does submit. Key events during CDP composition are sent as keydown+keyup only
   (no char event), like a real IME. **Not measurable here: where the OS candidate window appears** - that is the manual Zhuyin session.
-- `holo-perf`: `fps` = HP1 (median rAF fps, idle and operating; gates 55 for 5k, 30 for 20k, 30 for 5k at 4× CPU) · `hp2` slate open + world still · `hp5` readyMs (mount → first frame that contains the world) split into data load, engine (critical part), buildSpiral, scene build, first world frame and other (they add up to readyMs) · `input` keydown → next frame in the slate ·
+- `holo-perf`: `fps` = HP1 (median rAF fps, idle and operating; gates 55 for 5k, 30 for 20k, 30 for 5k at 4× CPU) · `hp2` slate open (proj) + world still · `hp5` readyMs (mount → first frame that contains the world) split into data load, engine (critical part), buildSpiral, scene build, first world frame and other (they add up to readyMs) · `input` keydown → next frame in the slate ·
   `hp7` thumbnails: (a) decoding / resident / textures sampled every 250 ms for `--soak` s, heap after forced GC every 15 s; (b) TTL test without slot pressure: two disjoint sparse windows (A + B ≤ 24 thumbnails), cursor held on B after visiting A, resident must not drop before ~28 s, must drop at 29–33 s by A's count with `released` growing by the same amount (needs sparse photo windows, i.e. two disjoint 7-day windows with 3–12 photo cards each; with dense data such a pair may not exist, then the script prints `FAIL ... seed sparser data, e.g. holo-seed.mjs <port> 1000 --photos 0.5` and exits 1. 1k records at the default 2 photos did not have one, 1k at `--photos 0.5` did). fps cannot exceed the display refresh
   (a blank headed page measures ~56 fps on the dev machine), so the 55 fps gate is judged against that cap.
-- `holo-still`: reduced-motion stillness (spec §4.2). machine + spiral × crt std/off/max with `prefers-reduced-motion: reduce` emulated: two screenshots 0.7 s apart must be identical (control run without reduced motion must differ);
+- `holo-still`: reduced-motion stillness (spec §4.2). spiral × crt std/off/max (the H1 machine sample was removed; the spiral does not turn by itself, also asserted; a legacy `?scene=machine` URL must fall back to the spiral) with `prefers-reduced-motion: reduce` emulated: two screenshots 0.7 s apart must be identical (control run without reduced motion must differ);
   then the runtime toggle in both directions (load normal → reduce → normal, and load reduced → normal → reduced): the world must be still / moving again within 1 s of each `Emulation.setEmulatedMedia`. Hides the lab's fps readout. Exit 1 on failure.
 - `holo-slate-compare`: the six comparison points of spec §3.3 for `proj`, `css3d` (fixed plane) and `css3d-billboard`; results in `<out>/result.json` plus PNG crops.
   Sharpness uses one fixed-size crop (240×40 CSS px) around a fixed test-text block the script adds to the slate, identical for every method; click hits are reported as `hitRateInView` (controls whose centre is on screen) and `offscreenFraction` separately.
-- Page hooks: `#/_holo?scene=machine|spiral&slate=proj|css3d|off&crt=off|std|max&rot=0&freeze=0&bb=1&holodebug=1`; with `holodebug=1` `window.__holoLab()` returns frames, `timing` (HP5 split),  `renderer.info`, camera, spiral counts, thumbnail stats and the slate probe
+- Page hooks: `#/_holo?slate=proj|css3d|off&crt=off|std|max&freeze=0&bb=1&holodebug=1`; with `holodebug=1` `window.__holoLab()` returns frames, `timing` (HP5 split),  `renderer.info`, camera, spiral counts, thumbnail stats and the slate probe
   (`resetProbe()`, `setView(yaw, pitch, dist)`, `moveCursor(d)`, `setCursor(day)`, `autoRotate(bool)` are properties of the function).
 
 ## os-p6.mjs — P6 (X5 §5.4 fixed method)

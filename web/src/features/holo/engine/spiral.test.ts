@@ -6,6 +6,7 @@ import {
   CARD_MIN_WIDTH,
   cardWidth,
   clampDay,
+  cursorAnchor,
   dayNumber,
   dayNumberToDate,
   FULL_CARD_CAP,
@@ -151,5 +152,28 @@ describe("游標", () => {
     const m = buildSpiral(synth(10, 1));
     expect(clampDay(m.maxDay + 50, m)).toBe(m.maxDay);
     expect(clampDay(m.minDay - 50, m)).toBe(m.minDay);
+  });
+});
+
+describe("cursorAnchor（終端板錨點）", () => {
+  const m = buildSpiral([rec(1, "2026-05-01", "08:00"), rec(2, "2026-05-01", "15:00"), rec(3, "2026-05-04", "09:00")]);
+  it("游標那天有卡片：用那天第一張卡片（最早那筆）的位置", () => {
+    const d = dayNumber("2026-05-01");
+    const a = cursorAnchor(m, d);
+    const first = m.items.find((it) => it.day === d)!;
+    expect(a.card).toBe(true);
+    expect([a.x, a.y, a.z]).toEqual([first.x, first.y, first.z]);
+    expect(first.id).toBe(1);
+  });
+  it("那天沒有卡片：用螺旋上那一天的固定錨點（最內圈、與 z 軸位置一致）", () => {
+    const d = dayNumber("2026-05-02");
+    const a = cursorAnchor(m, d);
+    expect(a.card).toBe(false);
+    expect(Math.hypot(a.x, a.y)).toBeCloseTo(SPIRAL_RADIUS, 9);
+    const p = spiralPoint(d + 0.4, m.originT, 0);
+    expect([a.x, a.y, a.z]).toEqual([p.x, p.y, p.z]);
+  });
+  it("沒有紀錄時也不丟錯", () => {
+    expect(cursorAnchor(buildSpiral([]), 0).card).toBe(false);
   });
 });
