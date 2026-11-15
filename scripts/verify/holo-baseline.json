@@ -10,7 +10,7 @@
     "osScenarios": ["dashboard", "records", "new", "calendar", "trash", "settings", "report", "detail", "form-validation"]
   },
   "osE2e": { "pass": 36, "manual": 2 },
-  "osHandoff": { "args": ["--headed", "--throttles", "1", "--allow-deviated"], "samples": 0, "conclusiveMin": 0 },
+  "osHandoff": { "args": ["--headed", "--throttles", "1", "--allow-deviated"], "samples": 100, "conclusiveMin": 75 },
   "holoIme": { "checks": 26 },
   "holoStill": { "checks": 10 },
   "seed": { "records": 5000 },
