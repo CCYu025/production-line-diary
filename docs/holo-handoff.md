@@ -7,9 +7,11 @@
 
 | 項目 | 狀態 |
 |---|---|
-| 目前階段 | H1 技術驗證已合併（PR #62）→ 下一期 H2 共用核心抽出（簡報撰寫中） |
-| main | PR #62 合併後 |
-| 進行中分支 | 無（H1 的 worktree 已清除） |
+| 目前階段 | H1 技術驗證已合併（PR #62）。使用者 2026-11-15 handoff 停機；H2 尚未開始 |
+| main | `8f433b0`（PR #62 合併後；本交接更新的 docs PR 合併後會再往前一個 commit） |
+| 進行中分支 | 開發主管這邊沒有：H1 的分支與 worktree（`holo-h1`、`h1-base`、`h1-verify3`、`h1-verify4`）都已清除；`.git/worktrees/*` 的中繼資料因權限刪不掉，殘留無害。設計師的 `pld-wt/holo-h15-spec`（分支 `docs/holo-h15-abstract`）由設計師處理 |
+| 伺服器 | 3114–3116 都已停止 |
+| 下一步 | 寫 H2 簡報；H2 第一個交付物是 `npm run verify:holo`（見 §3） |
 | 規格 | `docs/holo-mode-spec.md`（H1.5 抽象佈局定稿版）、`docs/holo-mode-inventory.md`（附錄 A，必須保留的功能清單） |
 | 待決問題 | 規格 §6.7 Q1–Q4（見 §5） |
 
