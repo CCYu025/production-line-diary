@@ -5,14 +5,12 @@
   "backend": {
     "tests": 206,
     "pass": 203,
-    "skipped": 3,
-    "fail": 0
+    "skipped": 3
   },
   "web": {
     "tests": 1792,
     "files": 99,
-    "skipped": 0,
-    "failed": 0
+    "skipped": 0
   },
   "c1": {
     "webCombos": 102,
@@ -40,8 +38,6 @@
   "osHandoff": {
     "args": [
       "--headed",
-      "--throttles",
-      "1",
       "--allow-deviated"
     ],
     "samples": 100,
@@ -50,7 +46,7 @@
     "note": "1x run only (default). DEVIATED must be <= floor(baselineDeviated x 1.5) = 16, else INVALID. baselineDeviated: 11 measured 2026-11-15 on the machine in measuredOn (102 samples, 91 conclusive; earlier runs 11-12)."
   },
   "holoIme": {
-    "checks": 26
+    "checks": 30
   },
   "holoStill": {
     "checks": 10
@@ -60,21 +56,23 @@
   },
   "perf": {
     "hp1MinFps5k": 55,
-    "hp1MinFps20k": 30
+    "hp1MinFps20k": 30,
+    "hp1WarnFps20k": 45,
+    "note": "hp1MinFps5k / hp1MinFps20k are the spec HP1 hard minimums (FAIL below). hp1WarnFps20k is a regression tripwire: the 20k run measured about 56 fps, so below 45 (still above the 30 minimum) is INVALID and goes to L2."
   },
   "shims": [],
   "measuredOn": {
     "machine": "AMD Ryzen 7 PRO 8840HS / AMD Radeon 780M Graphics (real GPU, headed Chrome), 28 GB RAM",
     "os": "Windows 11 build 26200",
     "node": "v24.14.1",
-    "date": "2026-11-15",
-    "note": "os-handoff DEVIATED baseline and the perf numbers are machine-specific; re-measure and justify in the PR body when the machine changes"
+    "date": "2026-11-15 (the os-handoff 4x runs: 2026-11-16, see osHandoff4x)",
+    "note": "os-handoff DEVIATED baseline and the perf numbers are machine-specific; re-measure and justify in the PR body when the machine changes",
+    "chrome": "157.0.8103.51 (headed)",
+    "display": "1920x1200 physical, 125% scaling (1536x960 logical), AMD Radeon 780M"
   },
   "osHandoff4x": {
     "args": [
       "--headed",
-      "--throttles",
-      "1",
       "--allow-deviated"
     ],
     "samples": 100,
@@ -85,5 +83,9 @@
   "entry": {
     "deltaVsBaseMaxBytes": 100,
     "note": "web entry gzip of this branch minus the --base worktree (main at the start of the PR), same measuring code (os-bundle.mjs). bundle-baseline.json is deliberately NOT updated (HB1: whole-plan cumulative <= 2048 B); ci-bundle keeps its 2048 B limit against it."
+  },
+  "labBundle": {
+    "holoCoreMaxBytes": 225280,
+    "note": "holo-core gzip limit (220 KiB, spec HB limit); measured about 16.6 KB at H2-0, so this only catches a gross regression."
   }
 }

@@ -64,6 +64,12 @@ if (OUT.includes(REAL) || REPO.includes(REAL)) { console.error('verify-holo: ref
 const SCRATCH = fs.mkdtempSync(path.join(os.tmpdir(), 'pld-vh-'));
 const rel = (p) => path.relative(OUT, p).split(path.sep).join('/');
 const BL = JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8'));
+// The B group reads `git diff <diff-base>...HEAD` (commits only), while every other item judges the working tree. A dirty tree makes them judge different programs, so B is INVALID then.
+const DIRTY = (spawnSync('git', ['status', '--porcelain'], { cwd: REPO, encoding: 'utf8' }).stdout ?? '').split('\n').filter(Boolean);
+const dirtyInvalid = (L, th) => {
+  L.append(`working tree is not clean (${DIRTY.length} entries):\n${DIRTY.slice(0, 20).join('\n')}\n`);
+  return { status: 'INVALID', value: { dirty: true, entries: DIRTY.slice(0, 10) }, threshold: th, reason: `working tree not clean (${DIRTY.length} entries): commit first, this item only sees main...HEAD` };
+};
 const ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE_ENV = { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0', NO_OPEN_BROWSER: '1' };
@@ -102,7 +108,7 @@ let renderer = null;
 function writeJson(extra = {}) {
   const json = {
     schema: 1, startedAt, finishedAt: extra.finishedAt ?? null, head, base: A.base ? { head: baseHead } : null, diffBase: A['diff-base'],
-    args: { quick: A.quick, full: A.full, only: A.only ?? null, allowSoftware: A['allow-software'], hasBase: !!A.base }, renderer,
+    dirty: DIRTY.length > 0, args: { quick: A.quick, full: A.full, only: A.only ?? null, allowSoftware: A['allow-software'], hasBase: !!A.base }, renderer,
     baselineFile: 'scripts/verify/holo-baseline.json', baseline: BL, summary: summarize(), items, ...extra,
   };
   fs.writeFileSync(path.join(OUT, 'verify-holo.json'), JSON.stringify(json, null, 2));
@@ -314,6 +320,7 @@ async function entryDeltaVsBase(L) {
 // ------------------------------------------------------------------ B: static red lines
 const MB = () => gitOut(['merge-base', A['diff-base'], 'HEAD']);
 async function testsUntouched(L) {
+  if (DIRTY.length) return dirtyInvalid(L, { onlyStatus: 'A' });
   const r = spawnSync('git', ['diff', '--name-status', `${A['diff-base']}...HEAD`, '--', '*.test.*'], { cwd: REPO, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (r.status !== 0) throw invalid(`git diff ${A['diff-base']}...HEAD failed: ${r.stderr.trim()}`);
   L.append(r.stdout || '(no test file changes)\n');
@@ -338,16 +345,18 @@ function addedLines() {
 }
 const CODE_EXT = /\.(?:[cm]?[jt]sx?|css)$/;
 async function redlineGrep(L) {
+  if (DIRTY.length) return dirtyInvalid(L, 'all counts 0');
   const hits = { r1: [], r2: [], r3: [], r4: [], r5: [] };
   const lines = addedLines();
   // 1: View Transitions (code files only)
   const vt = new RegExp(['start', 'ViewTransition'].join('') + '|' + ['view', 'Transition'].join(''));
   for (const l of lines) if (CODE_EXT.test(l.file) && vt.test(l.text)) hits.r1.push(`${l.file}:${l.ln}`);
-  // 2: writing the theme preference outside theme.ts
-  const theme = new RegExp('localStorage\\s*\\.\\s*setItem\\(\\s*["\'`]' + ['pld', 'theme'].join('\\.') + '["\'`]');
-  for (const l of lines) if (/\.tsx?$/.test(l.file) && l.file !== 'web/src/lib/theme.ts' && theme.test(l.text)) hits.r2.push(`${l.file}:${l.ln}`);
-  // 3: personal absolute paths / real-data folder name in NEW files (patterns assembled so this file never contains them)
-  const PERSONAL = ['C:\\' + 'Users\\', '/Us' + 'ers/', 'One' + 'Drive', REAL];
+  // 2: the theme preference key as a quoted string anywhere outside theme.ts and tests (ts/tsx/js/mjs, comment lines excluded). Catches aliases, st.setItem, line breaks, ["setItem"].
+  const themeKey = new RegExp('["\'`]' + ['pld', 'theme'].join('\\.') + '["\'`]');
+  const isComment = (t) => /^\s*(?:\/\/|\/\*|\*)/.test(t);
+  for (const l of lines) if (/\.(?:[cm]?[jt]sx?)$/.test(l.file) && l.file !== 'web/src/lib/theme.ts' && !/\.test\.[^/]+$/.test(l.file) && !isComment(l.text) && themeKey.test(l.text)) hits.r2.push(`${l.file}:${l.ln}`);
+  // 3a: personal absolute paths / real-data folder name in NEW files (patterns assembled so this file never contains them)
+  const PERSONAL = ['C:\\' + 'Users\\','/Us' + 'ers/', 'One' + 'Drive', REAL];
   const added = (gitOut(['diff', '--name-only', '--diff-filter=A', `${A['diff-base']}...HEAD`]) ?? '').split('\n').filter(Boolean);
   for (const f of added) {
     const p = path.join(REPO, f); if (!fs.existsSync(p)) continue;
@@ -355,15 +364,20 @@ async function redlineGrep(L) {
     const txt = buf.toString('utf8');
     txt.split('\n').forEach((t, i) => { if (PERSONAL.some((s) => t.includes(s))) hits.r3.push(`${f}:${i + 1}`); });
   }
-  // 4: dependency changes (every package.json in the tree, against the merge base)
+  // 3b: user-profile style paths in the ADDED LINES of every file (the real-data folder name and the cloud-sync folder name legitimately appear in prose, so they stay new-file-only)
+  const PROFILE = ['C:\\' + 'Users\\','C:/' + 'Users/', '/Us' + 'ers/', '/ho' + 'me/'];
+  for (const l of lines) if (PROFILE.some((s) => l.text.includes(s))) hits.r3.push(`${l.file}:${l.ln} (added line)`);
+  // 4: dependency changes: the lockfile (any change), and every package.json field that can change what gets installed, against the merge base
   const mb = MB(); if (!mb) throw invalid(`no merge base with ${A['diff-base']}`);
+  const lockDiff = (gitOut(['diff', '--name-only', `${A['diff-base']}...HEAD`, '--', 'package-lock.json', '*/package-lock.json']) ?? '').split('\n').filter(Boolean);
+  for (const f of lockDiff) hits.r4.push(`${f}: lockfile changed`);
   const pkgs = (gitOut(['ls-files', '*package.json']) ?? '').split('\n').filter(Boolean);
   for (const f of pkgs) {
     const old = spawnSync('git', ['show', `${mb}:${f}`], { cwd: REPO, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
     let cur; try { cur = JSON.parse(fs.readFileSync(path.join(REPO, f), 'utf8')); } catch { hits.r4.push(`${f}: unreadable`); continue; }
     if (old.status !== 0) { hits.r4.push(`${f}: new package.json`); continue; }
     const o = JSON.parse(old.stdout);
-    for (const k of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) if (JSON.stringify(o[k] ?? {}) !== JSON.stringify(cur[k] ?? {})) hits.r4.push(`${f}: ${k} changed`);
+    for (const k of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies', 'overrides', 'resolutions', 'workspaces', 'bundledDependencies', 'bundleDependencies']) if (JSON.stringify(o[k] ?? null) !== JSON.stringify(cur[k] ?? null)) hits.r4.push(`${f}: ${k} changed`);
   }
   // 5: shims must be pure re-exports (list = holo-baseline.json "shims", filled by the features/os/core/ move table in H2-6)
   const shims = BL.shims ?? [];
@@ -388,7 +402,7 @@ async function labBundle(L) {
   const j = readJsonSafe(json);
   const core = j?.groups?.find((g) => g.id === 'holo-core');
   const v = { exit: r.code, holoCoreGzip: core?.gzip ?? null, holoCoreLimit: core?.limit ?? null, fails: j?.fails ?? null };
-  const th = { exit: 0, holoCoreMaxBytes: 220 * 1024 };
+  const th = { exit: 0, holoCoreMaxBytes: BL.labBundle.holoCoreMaxBytes };
   const bad = [];
   if (r.code !== 0) bad.push(`os-bundle --expect-holo exit ${r.code}`);
   if (core && core.gzip > th.holoCoreMaxBytes) bad.push(`holo-core ${core.gzip} > ${th.holoCoreMaxBytes}`);
@@ -441,13 +455,14 @@ async function osHandoffRun(L, dirName, throttle, B) {
   const j = readJsonSafe(path.join(dir, 'result.json'));
   if (!j || r.code === null || r.code > 3) throw invalid(`os-handoff exit ${r.code}, no result.json`);
   // DEVIATED = the planned click offset was not reachable on this machine (README: inconclusive, never a pass, never a failure).
-  // PASS needs 0 FAIL, samples >= B.samples, conclusive passes >= B.conclusiveMin, and DEVIATED <= baseline DEVIATED x 1.5.
+  // PASS needs 0 FAIL, samples >= B.samples, conclusive passes >= B.conclusiveMin, and DEVIATED <= B.deviatedMax (explicit) or, when the baseline gives none, floor(baselineDeviated x 1.5).
   const total = j.summary.total, failN = j.summary.fail, dev = j.summary.deviated;
-  const devMax = Math.floor(B.baselineDeviated * 1.5);
+  const devMax = B.deviatedMax ?? Math.floor(B.baselineDeviated * 1.5);
+  const devWhy = B.deviatedMax != null ? `baseline deviatedMax ${B.deviatedMax}` : `baseline ${B.baselineDeviated} x 1.5`;
   const v = { throttle, exit: r.code, samples: total, conclusivePass: total - failN - dev, fail: failN, deviated: dev };
   const th = { fail: 0, conclusivePassMin: B.conclusiveMin, samplesMin: B.samples, deviatedMax: devMax, baselineDeviated: B.baselineDeviated };
   if (failN > 0 || r.code === 1) return fail(v, th, `${failN} failing sample(s)`);
-  if (dev > devMax) return { status: 'INVALID', value: v, threshold: th, reason: `DEVIATED ${dev} > ${devMax} (baseline ${B.baselineDeviated} x 1.5): the machine is not behaving like the baseline run; escalate to L2` };
+  if (dev > devMax) return { status: 'INVALID', value: v, threshold: th, reason: `DEVIATED ${dev} > ${devMax} (${devWhy}): the machine is not behaving like the baseline run; escalate to L2` };
   if (v.conclusivePass < th.conclusivePassMin || total < th.samplesMin) return { status: 'INVALID', value: v, threshold: th, reason: `only ${v.conclusivePass} conclusive pass(es) of ${total} samples (${dev} DEVIATED): need >= ${th.conclusivePassMin} and >= ${th.samplesMin} samples` };
   return pass(v, th);
 }
@@ -486,17 +501,18 @@ async function holoStill(L) {
   if (v.reducedDiffMax !== 0 || !(v.controlDiffMin > 0) || j.length < th.checksMin) return fail(v, th, `reducedDiffMax ${v.reducedDiffMax}, controlDiffMin ${v.controlDiffMin}, checks ${j.length}`);
   return pass(v, th);
 }
-async function holoPerf(L, n, minFps) {
+async function holoPerf(L, n, minFps, warnFps = null) {
   const url = await ensureSeed(L, n);
   const dir = path.join(OUT, `holo-perf-${n}`);
   const r = await L.node(path.join(HERE, 'holo-perf.mjs'), ['--url', url, '--n', String(n), '--modes', 'fps', '--out', dir, ...swFlag()]);
   if (r.code === 2) return { status: 'INVALID', value: { exit: 2 }, threshold: { medianFpsMin: minFps }, reason: 'software WebGL renderer (holo-perf exit 2)' };
   const j = readJsonSafe(path.join(dir, `result-spiral${n}-cpu1-fps.json`));
   const v = { exit: r.code, idleMedianFps: j?.hp1?.idle?.medianFps ?? null, operateMedianFps: j?.hp1?.operate?.medianFps ?? null, records: j?.records ?? null, renderer: j?.renderer ?? null };
-  const th = { medianFpsMin: minFps };
+  const th = { medianFpsMin: minFps, ...(warnFps != null ? { regressionWarnFps: warnFps } : {}) };
   if (!j) throw invalid(`holo-perf wrote no result (exit ${r.code})`);
   const low = Math.min(v.idleMedianFps, v.operateMedianFps);
   if (r.code !== 0 || !(low >= minFps)) return fail(v, th, `median fps ${low} < ${minFps} (exit ${r.code})`);
+  if (warnFps != null && low < warnFps) return { status: 'INVALID', value: v, threshold: th, reason: `median fps ${low} < regression warning ${warnFps} (hard minimum ${minFps} still met): well below the baseline run, escalate to L2` };
   return pass(v, th);
 }
 
@@ -504,7 +520,7 @@ const RUNNERS = {
   'ci-check': (L) => ciSimple(L, 'run check'), 'ci-test': ciTest, 'ci-typecheck': (L) => ciSimple(L, 'run typecheck'), 'ci-test-web': ciTestWeb, 'ci-build': ciBuild, 'ci-bundle': ciBundle, 'entry-delta-vs-base': entryDeltaVsBase,
   'tests-untouched': testsUntouched, 'redline-grep': redlineGrep,
   'lab-bundle': labBundle, 'c1-web': c1Web, 'c1-os': c1Os, 'os-e2e': osE2e, 'os-handoff': osHandoff, 'os-handoff-4x': osHandoff4x,
-  'holo-ime': holoIme, 'holo-still': holoStill, 'holo-perf': (L) => holoPerf(L, BL.seed.records, BL.perf.hp1MinFps5k), 'holo-perf-20k': (L) => holoPerf(L, 20000, BL.perf.hp1MinFps20k),
+  'holo-ime': holoIme, 'holo-still': holoStill, 'holo-perf': (L) => holoPerf(L, BL.seed.records, BL.perf.hp1MinFps5k), 'holo-perf-20k': (L) => holoPerf(L, 20000, BL.perf.hp1MinFps20k, BL.perf.hp1WarnFps20k),
 };
 
 // ------------------------------------------------------------------ main

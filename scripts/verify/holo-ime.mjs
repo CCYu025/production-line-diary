@@ -4,7 +4,7 @@
 // For every (method, freeze) combination it drives the real slate with CDP Input.imeSetComposition / insertText and key events:
 //   C1  <input>   composition, Enter (plain Enter and IME-style key 229 "Process"), insert text  -> no dropped text, no submit, no stray commit
 //   C2  <textarea> same, Enter must not add a newline while composing
-//   C3  Combobox  composition, ArrowDown / ArrowUp / Enter / Escape -> no option picked, list not committed, value intact, no submit
+//   C3  Combobox  composition, ArrowDown / ArrowUp / Enter / Escape -> no option picked, list not committed, value intact, no submit; two scenarios: text that matches no option (ㄈ) and text that matches options (F)
 //   C4  sanity    Enter outside composition does submit (the checks above are not vacuous)
 //   C5  world     the world really kept moving during composition (yaw and the anchor's screen position); slate position change during composition is reported
 // What CDP cannot show: where the OS candidate window appears. That is part of the manual HF3 check (the user's Zhuyin session).
@@ -155,25 +155,32 @@ try {
       const ta2 = await val('holo-action');
       record(cfg, 'C2 textarea: commit', ta2 === '好', { value: ta2 });
 
-      // ---------- C3 Combobox
-      await p.eval('window.__holoLab.resetProbe()');
-      await focus('holo-equipment');
-      await sleep(120);
-      await comp('ㄈ');
-      await sleep(250);
-      for (const [k, vk] of [['ArrowDown', 40], ['ArrowDown', 40], ['ArrowUp', 38]]) { await rawKey(k, k, vk); await sleep(60); }
-      await rawKey('Enter', 'Enter', 13);
-      await imeKey('Enter', 13);
-      await rawKey('Escape', 'Escape', 27);
-      await sleep(120);
-      const cb = await p.eval(`(()=>{const e=${fld('holo-equipment')};return {value:e.value,active:document.activeElement===e,expanded:e.getAttribute('aria-expanded'),activedescendant:e.getAttribute('aria-activedescendant')||''}})()`);
-      const cbSub = await submits();
-      record(cfg, 'C3 combobox: ArrowDown/Up/Enter/Escape during composition pick nothing, keep focus and text, no submit',
-        cb.value.includes('ㄈ') && !['F3', 'F4', 'G5', 'G6', 'F7', 'F8', 'RB2', '原材區'].includes(cb.value) && cb.active && cbSub === 0, { ...cb, submits: cbSub });
-      await commit('設備X');
-      await sleep(100);
-      const cb2 = await val('holo-equipment');
-      record(cfg, 'C3 combobox: commit keeps exactly the typed text (no option substituted)', cb2 === '設備X', { value: cb2, submits: await submits() });
+      // ---------- C3 Combobox. Two scenarios: 'ㄈ' (matches no option) and 'F' (the composition text matches equipment options such as F3 / F4 / F7 / F8, so a Combobox that
+      // wrongly acts on ArrowDown/Enter while composing would substitute an option). The second one is what makes the check able to see a missing isComposing guard (H2-0 L2).
+      const OPTIONS = ['F3', 'F4', 'G5', 'G6', 'F7', 'F8', 'RB2', '原材區'];
+      for (const [tag, text] of [['no-match', 'ㄈ'], ['matches-options', 'F']]) {
+        await p.eval('window.__holoLab.resetProbe()');
+        await p.eval(`(()=>{const e=${fld('holo-equipment')};e.focus();return true})()`);
+        await sleep(120);
+        await comp(text);
+        await sleep(250);
+        for (const [k, vk] of [['ArrowDown', 40], ['ArrowDown', 40], ['ArrowUp', 38]]) { await rawKey(k, k, vk); await sleep(60); }
+        await rawKey('Enter', 'Enter', 13);
+        await imeKey('Enter', 13);
+        await rawKey('Escape', 'Escape', 27);
+        await sleep(120);
+        const cb = await p.eval(`(()=>{const e=${fld('holo-equipment')};return {value:e.value,active:document.activeElement===e,expanded:e.getAttribute('aria-expanded'),activedescendant:e.getAttribute('aria-activedescendant')||''}})()`);
+        const cbSub = await submits();
+        record(cfg, `C3 combobox [${tag}]: ArrowDown/Up/Enter/Escape during composition pick nothing, keep focus and text, no submit`,
+          cb.value.includes(text) && !OPTIONS.includes(cb.value) && cb.active && cbSub === 0, { ...cb, typed: text, submits: cbSub });
+        await commit(`設備X${tag === 'no-match' ? '' : 'Y'}`);
+        await sleep(100);
+        const cb2 = await val('holo-equipment');
+        record(cfg, `C3 combobox [${tag}]: commit keeps exactly the typed text (no option substituted)`, cb2 === `設備X${tag === 'no-match' ? '' : 'Y'}`, { value: cb2, submits: await submits() });
+        // empty the field for the next scenario (same trick as the focus gate; not part of any check)
+        await p.eval(`(()=>{const e=${fld('holo-equipment')};e.focus();const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(e,'');e.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
+        await sleep(80);
+      }
 
       // ---------- C4 sanity
       await p.eval('window.__holoLab.resetProbe()');
