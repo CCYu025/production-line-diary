@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { Browser } from './cdp.mjs';
 import { assertScratchServer } from './safety.mjs';
+import { classifyFails, countKnown } from './known-on-main.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
@@ -461,7 +462,23 @@ async function osHandoffRun(L, dirName, throttle, B) {
   const devWhy = B.deviatedMax != null ? `baseline deviatedMax ${B.deviatedMax}` : `baseline ${B.baselineDeviated} x 1.5`;
   const v = { throttle, exit: r.code, samples: total, conclusivePass: total - failN - dev, fail: failN, deviated: dev };
   const th = { fail: 0, conclusivePassMin: B.conclusiveMin, samplesMin: B.samples, deviatedMax: devMax, baselineDeviated: B.baselineDeviated };
-  if (failN > 0 || r.code === 1) return fail(v, th, `${failN} failing sample(s)`);
+  if (failN > 0 || r.code === 1) {
+    const plain = fail(v, th, `${failN} failing sample(s)`);
+    if (!B.knownOnMain?.length) return plain;                       // 1x os-handoff has no allowlist: always a plain FAIL
+    const cls = classifyFails(j, B.knownOnMain);
+    if (!cls.allKnown) return plain;                                // anything else (leak, swallowed input, non-I2, I2 not a phase timeout): FAIL, no comparison
+    if (!A.base) return fail(v, th, `${failN} failing sample(s), all known I2 phase timeouts, but no --base was given so they cannot be compared with main: FAIL`);
+    // designer ruling 2026-11-17: only I2 phase timeouts can be excused, and only if main shows them too in this same run
+    const bdir = path.join(OUT, `${dirName}-base-i2`);
+    const bUrl = await baseServer(L);
+    L.append(`\n[known-on-main: all ${failN} FAIL sample(s) are I2 phase timeouts; re-measuring I2 on main at CPU ${throttle}x, --reps ${B.knownOnMainReps}]\n`);
+    await L.node(path.join(HERE, 'os-handoff.mjs'), ['--url', bUrl, '--out', bdir, ...BL.osHandoff.args, '--throttles', String(throttle), '--only', 'i2', '--reps', String(B.knownOnMainReps)]);
+    const bj = readJsonSafe(path.join(bdir, 'result.json'));
+    const hits = bj ? countKnown(bj, B.knownOnMain) : 0;
+    const baseEv = { baseSamples: bj?.summary?.total ?? null, baseFail: bj?.summary?.fail ?? null, baseKnownTimeouts: hits, baseEvidence: rel(path.join(bdir, 'result.json')), reps: B.knownOnMainReps };
+    if (hits >= 1) return { status: 'INVALID', value: { ...v, knownOnMain: true, ...baseEv }, threshold: th, reason: `${failN} FAIL sample(s), all I2 phase timeouts; main shows ${hits} too in the same run (known-on-main, not caused by this branch): needs designer/L2 judgement` };
+    return fail({ ...v, ...baseEv }, th, `${failN} I2 phase timeout(s) and main showed none in ${baseEv.baseSamples ?? '?'} I2 samples: not known-on-main`);
+  }
   if (dev > devMax) return { status: 'INVALID', value: v, threshold: th, reason: `DEVIATED ${dev} > ${devMax} (${devWhy}): the machine is not behaving like the baseline run; escalate to L2` };
   if (v.conclusivePass < th.conclusivePassMin || total < th.samplesMin) return { status: 'INVALID', value: v, threshold: th, reason: `only ${v.conclusivePass} conclusive pass(es) of ${total} samples (${dev} DEVIATED): need >= ${th.conclusivePassMin} and >= ${th.samplesMin} samples` };
   return pass(v, th);

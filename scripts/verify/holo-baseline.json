@@ -76,9 +76,19 @@
       "--allow-deviated"
     ],
     "samples": 100,
-    "conclusiveMin": 35,
-    "baselineDeviated": 62,
-    "note": "PROVISIONAL. Single measurement 2026-11-16 (--only os-handoff-4x --full, main code 3d8a1ce + verify changes): 102 samples, 38 conclusive, 62 DEVIATED, 2 FAIL (I2 exit/first-click and I2 switch/first-click/hash: 'timeout waiting for phase exiting-post / switching-post' under CPU 4x), 30.5 min. DEVIATED cap = floor(62 x 1.5) = 93. The 2 FAILs are unresolved: do not treat os-handoff-4x as green until L2/designer has judged them."
+    "conclusiveMin": 20,
+    "baselineDeviated": 79,
+    "note": "4x gives very few conclusive passes, so it is only good for catching FAIL; the main evidence for the input gate comes from the 1x run. Thresholds come from three full 4x runs on main 3d8a1ce (same code as c8bc1b9), 2026-11-16/17, all 102 samples, taking the worst: run 1 (L2) 23 conclusive / 79 DEVIATED / 0 FAIL; run 2 37 / 64 / 1 FAIL (sample \"I2 switch/first-click/hash x4 planned=0\", timeout waiting for phase switching-post); run 3 24 / 78 / 0 FAIL. Worst conclusive 23 -> conclusiveMin 20; worst DEVIATED 79 -> deviatedMax 90 (an explicit number: x1.5 would exceed the sample count 102). An earlier measurement on the branch also had 2 I2 phase-timeout FAILs (exiting-post, switching-post). The I2 phase timeout is a known-on-main flake: see knownOnMain.",
+    "knownOnMain": [
+      {
+        "id": "I2",
+        "kind": "phase-timeout",
+        "notePattern": "^error: eval failed: Error: timeout waiting for phase [\\w-]+-post \\(have [\\w-]+-pre>[^)]*\\)$",
+        "source": "main 3d8a1ce, full 4x run 2 (2026-11-16): sample \"I2 switch/first-click/hash x4 planned=0\", note \"error: eval failed: Error: timeout waiting for phase switching-post (have switching-pre>station)\"; a first measurement the same day had the same shape on \"I2 exit/first-click\" (exiting-post)"
+      }
+    ],
+    "knownOnMainReps": 15,
+    "deviatedMax": 90
   },
   "entry": {
     "deltaVsBaseMaxBytes": 100,
