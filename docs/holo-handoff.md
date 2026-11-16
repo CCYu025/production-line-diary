@@ -7,11 +7,12 @@
 
 | 項目 | 狀態 |
 |---|---|
-| 目前階段 | H2 共用核心進行中，停在 **H2-0（`npm run verify:holo`）：設計師 2026-11-16 的 7 項裁定已落實，待 L1（Haiku）**。協調者自跑完整版 18/18 通過（`os-handoff-4x` 為 N/A，未加 `--full`）；另跑過一次 `--full`：4× 有 2 個 FAIL（I2 兩個樣本逾時）、62 個 DEVIATED，尚未判讀。L2 未做、未開 PR |
-| main | `3d8a1ce`（PR #63 合併後；本交接更新的 docs PR 合併後會再往前一個 commit） |
-| 進行中分支 | `feat/holo-h2-0-verify`，HEAD 見 `git log`（已 rebase 到 main `ceedd12`；實作在 `7a7cbb2` 之前的 commit），worktree `pld-wt/h2-0`。baseline worktree `pld-wt/h2-base`（main `3d8a1ce`，程式碼與 `ceedd12` 相同）。設計師的 `pld-wt/holo-h15-spec`（分支 `docs/holo-h15-abstract`）由設計師處理 |
+| 目前階段 | H2 共用核心進行中，停在 **H2-0（`npm run verify:holo`）**：裁定已落實；**L1（Haiku）2026-11-16 通過**（完整版 18/18、exit 0，`os-handoff-4x` 為 N/A）；**L2 做到一半中斷**（驗證者卡住逾時），使用者 2026-11-16 handoff。未開 PR |
+| main | `ceedd12` |
+| 進行中分支 | `feat/holo-h2-0-verify`（已 rebase 到 `ceedd12`；實作到 `7a7cbb2`，之後是文件 commit），worktree `pld-wt/h2-0`，只在本機、未 push。baseline worktree `pld-wt/h2-base`（main `3d8a1ce`，程式碼與 `ceedd12` 相同）。設計師的 `pld-wt/holo-h15-spec` 由設計師處理 |
 | 伺服器 | 3114–3116 都已停止；沒有背景中的協調者或驗證者 |
-| 下一步 | ① L1（Haiku）在 `pld-wt/h2-0` 跑完整版 `npm run verify:holo -- --base <h2-base>`（約 50 分鐘，需可見桌面與真 GPU）；② L2（含 holo-ime 失焦→INVALID、拿掉 `isComposing`→FAIL、c1 故意改壞一處要抓到、`holo-baseline.json` diff 逐行看、`--full` 4× 的 2 個 I2 FAIL 判讀）；③ 開 PR（本文要寫 `holo-baseline.json` 每處變動的理由與 main 多出 1816 B 的前 5 名模組）、CI、送設計師審查 |
+| L2 已得到的結果（未經 L2 本人整理，下一位 L2 要重驗） | **抓得到**：c1-web 與 c1-os 故意改壞都 FAIL；tests-untouched 改／改名／刪測試都 FAIL；redline-grep 規則 1、4、5 與規則 3（Windows 路徑、Unix 路徑、OneDrive、真實資料夾名）都 FAIL；entry-delta-vs-base 加大入口 FAIL、不給 `--base` 為 SKIP；逾時為 INVALID；壞的 `--diff-base` 為 INVALID。**可疑、要追**：① holo-ime 拿掉 `isComposing` 第一次跑是 PASS、第二次（另一組設定）才 FAIL；② 搶焦點兩次都是 PASS，只有強制情境是 INVALID；③ 規則 2 可用別名繞過（`const k="pld.theme"` 之類）；④ 規則 3 只掃新增檔案（照規格，但修改既有檔加個人路徑抓不到）；⑤ `web/package.json` 相依變動不被規則 4 掃到（要確認該檔是否存在）；⑥ 有未 commit 的改動時 B 組照樣 PASS（README 已註明要先 commit）。**4× 判讀**：main 與分支各跑 2 次 `--throttles 4 --only i2` 都是 0 FAIL；main 跑一次完整 4× 是 0 FAIL、79 個 DEVIATED——協調者那次的 2 個 FAIL 沒重現，傾向是不穩定；但 79 DEVIATED 代表確定通過只有 23，低於暫定門檻 conclusiveMin 35，`osHandoff4x` 門檻需要重訂。**沒做到**：holo-baseline.json 逐行審查、DeviceGate `inert` 手動驗、範圍與文件檢查。證據在開發主管 scratchpad `holoverify/h2/h2-0/l2/` |
+| 下一步 | ① 派新的 L2 從頭做 H2-0 最後一輪（重點：上面「可疑」六項與 4× 門檻、baseline 逐行審查、DeviceGate、範圍與文件）；② 發現的問題交協調者修，修完再 L1＋L2；③ push、開 PR（本文寫 `holo-baseline.json` 每處變動理由與 main 多出 1816 B 的前 5 名模組）、CI、送設計師審查 |
 | H2 簡報 | 定稿在開發主管的筆記資料夾 `h2-brief.md`（不在 repo）。重點：共 7 個 PR（H2-0、H2-1+2、H2-3、H2-4、H2-5、H2-6、H2-7）；Q1 紀錄相關 hook 放 `features/records/core/`、`useModeShell` 拆成 `app/core/`（標題、換頁焦點）與 `features/os/core/`（模式生命週期），網頁入口不得 import `features/os`（A5／HB1）；Q2 H2-6 搬家與 H2-7 ColorManagement 初始化放本期；Q3 `holoAggregate` 延到 H6；Q4 H2-1 與 H2-2 合成一個 PR。只有 H2-0、H2-4 送設計師審查；突變沒被抓到時不合併、先問設計師 |
 | H2-0 裁定 | 已於 2026-11-16 由設計師裁定並落實（(a) `--full` 補跑 4×、(b) DEVIATED ≤ 基準×1.5、(c) c1-os 1280＋1024 共 18 組、(d) 組合數和基準比、(e) 逾時 40 分鐘／軟體算圖 INVALID、(f) holo-ime 探針、(g) `bundle-baseline.json` 不動、新增 `entry-delta-vs-base` ≤ +100 B）。未解：`--full` 的 4× 有 2 個 FAIL 與 62 個 DEVIATED，基準是暫定值 |
 | 規格 | `docs/holo-mode-spec.md`（H1.5 抽象佈局定稿版）、`docs/holo-mode-inventory.md`（附錄 A，必須保留的功能清單） |
