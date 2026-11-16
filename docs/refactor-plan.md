@@ -196,7 +196,7 @@ App 每天在用，重構期間舊 UI 仍是正式版，所以 bug 先修在現�
 5. squash merge、刪分支，更新本文件〈進度追蹤〉。
 
 **資料安全（所有 agent 必須遵守）**
-- 真實資料夾 `C:\Users\tomof\OneDrive\桌面\20260918_工作日誌` **禁止讀寫、禁止當 `DATA_DIR`**。主 checkout 的 `.env` 指向它，所以**不要在主 checkout 執行 `npm start`／`npm run dev`**；啟動 App 一律明確設定 `DATA_DIR=<暫存資料夾中複製的 backend/data/example>`、`NO_OPEN_BROWSER=1`、非 3000 的 port。
+- 真實資料夾（`.env` 的 `DATA_DIR`，資料夾名稱含 `工作日誌`）**禁止讀寫、禁止當 `DATA_DIR`**。主 checkout 的 `.env` 指向它，所以**不要在主 checkout 執行 `npm start`／`npm run dev`**；啟動 App 一律明確設定 `DATA_DIR=<暫存資料夾中複製的 backend/data/example>`、`NO_OPEN_BROWSER=1`、非 3000 的 port。
 - 驗證結束關掉自己啟動的伺服器、移除自己的 worktree。
 
 ## 6. 風險與回退

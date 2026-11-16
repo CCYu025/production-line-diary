@@ -62,7 +62,7 @@ test("buildRecords：rootCause 一律是 null，不會替使用者瞎猜根本�
 
 test("buildRecords：photoPath 只取檔名，不保留這台電腦專屬的絕對路徑", () => {
   const records = buildRecords([
-    legacyRow({ photoPath: "C:\\Users\\tomof\\OneDrive\\桌面\\20260918_工作日誌\\照片\\20260921\\S__1.jpg" }),
+    legacyRow({ photoPath: "C:\\Users\\someone\\OneDrive\\桌面\\20260918_工作日誌\\照片\\20260921\\S__1.jpg" }),
   ]);
   assert.deepEqual(records[0].photos, ["S__1.jpg"]);
 });
