@@ -77,7 +77,16 @@ const dirtyInvalid = (L, th) => {
   return { status: 'INVALID', value: { dirty: true, entries: DIRTY.slice(0, 10) }, threshold: th, reason: `working tree not clean (${DIRTY.length} entries): commit first, this item only sees main...HEAD` };
 };
 // Test hooks for verify-holo.selftest.mjs ONLY (all inert unless VERIFY_HOLO_SELFTEST=1): stub the build and the servers, swap the os-handoff script, shorten the command timer.
-const ST = process.env.VERIFY_HOLO_SELFTEST === '1';
+// Hard conditions (designer ruling): (1) only the exact string "1" enables it, anything else warns on stderr and is ignored; (2) with CI set (non-empty) it is refused -> FAIL, exit 1, nothing is run;
+// (3) while enabled the overall result is NEVER PASS and the exit code is never 0 (see finish()).
+const ST_RAW = process.env.VERIFY_HOLO_SELFTEST;
+if (ST_RAW !== undefined && ST_RAW !== '1') console.error(`verify-holo: WARNING: VERIFY_HOLO_SELFTEST=${JSON.stringify(ST_RAW)} ignored (only the exact value "1" enables the test hooks)`);
+if (ST_RAW === '1' && process.env.CI) {
+  console.error('verify-holo: VERIFY_HOLO_SELFTEST=1 is refused while CI is set: the test hooks stub the build and servers and must never produce a real result');
+  console.log('VERIFY:HOLO FAIL VERIFY_HOLO_SELFTEST refused because CI is set (no item was run)');
+  process.exit(1);
+}
+const ST = ST_RAW === '1';
 const HANDOFF_SCRIPT = ST && process.env.VERIFY_HOLO_SELFTEST_HANDOFF ? process.env.VERIFY_HOLO_SELFTEST_HANDOFF : path.join(HERE, 'os-handoff.mjs');
 /** a result file written by an EARLIER run must never be read as this run's: delete it before every child process that is supposed to write it */
 const clearOut = (...files) => { for (const f of files) fs.rmSync(f, { force: true }); };
@@ -126,7 +135,7 @@ function writeJson(extra = {}) {
   const json = {
     schema: 1, startedAt, finishedAt: extra.finishedAt ?? null, head, base: A.base ? { head: baseHead } : null, diffBase: A['diff-base'],
     dirty: DIRTY.length > 0, args: { quick: A.quick, full: A.full, only: A.only ?? null, allowSoftware: A['allow-software'], hasBase: !!A.base }, renderer,
-    suspended: gaps.length > 0, suspendedGaps: gaps, baselineFile: 'scripts/verify/holo-baseline.json', baseline: BL, summary: summarize(), items, ...extra,
+    ...(ST ? { selftest: true } : {}), suspended: gaps.length > 0, suspendedGaps: gaps, baselineFile: 'scripts/verify/holo-baseline.json', baseline: BL, summary: summarize(), items, ...extra,
   };
   fs.writeFileSync(path.join(OUT, 'verify-holo.json'), JSON.stringify(json, null, 2));
 }
@@ -140,7 +149,8 @@ function finish(why = null) {
   if (finished) return; finished = true;
   if (why) for (const i of items) if (i.reason === 'not run') i.reason = why;
   const s = summarize();
-  const code = s.fail.length ? 1 : (s.skip.length || s.invalid.length || why) ? 2 : 0;
+  // test hooks active: never PASS, never exit 0. A FAIL keeps exit 1 (the more informative non-zero code; callers that test for "not 0" are safe either way), everything else is 2.
+  const code = s.fail.length ? 1 : (ST || s.skip.length || s.invalid.length || why) ? 2 : 0;
   writeJson({ finishedAt: new Date().toISOString(), exitCode: code });
   const parts = [`${s.pass}/${s.total} pass`];
   if (s.fail.length) parts.push(`${s.fail.length} fail (${s.fail.join(', ')})`);
@@ -149,7 +159,7 @@ function finish(why = null) {
   if (s.notApplicable.length) parts.push(`${s.notApplicable.length} n/a (${s.notApplicable.join(', ')})`);
   const sg = findGaps(heartbeats);
   if (sg.length) parts.push(`SUSPENDED ${sg.length}x (${sg.map((g) => `${g.seconds}s at ${clock(g.startMs)}`).join(', ')}): rerun required`);
-  const label = s.fail.length ? 'FAIL' : code === 0 ? 'PASS' : 'INCOMPLETE';
+  const label = ST ? 'SELFTEST' : s.fail.length ? 'FAIL' : code === 0 ? 'PASS' : 'INCOMPLETE';
   const jsonPath = path.relative(process.cwd(), path.join(OUT, 'verify-holo.json')).split(path.sep).join('/');
   cleanupAll();
   console.log(`VERIFY:HOLO ${label} ${parts.join(', ')} — ${jsonPath}`);
