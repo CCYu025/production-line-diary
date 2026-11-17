@@ -43,16 +43,16 @@ function childEnv(env) {
   return e;
 }
 const lastLine = (t) => t.trim().split(String.fromCharCode(10)).pop().trim();
-function run(name, specs, { env = {}, out = null } = {}) {
+function run(name, specs, { env = {}, out = null, item = 'os-handoff-4x' } = {}) {
   const d = path.join(TMP, name); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, 'branch.json'), JSON.stringify(specs.branch));
   if (specs.base) fs.writeFileSync(path.join(d, 'base.json'), JSON.stringify(specs.base));
   const o = out ?? path.join(d, 'out');
-  const r = spawnSync(process.execPath, [path.join(HERE, 'verify-holo.mjs'), '--only', 'os-handoff-4x', '--full', '--base', path.resolve(HERE, '..', '..'), '--out', o], {
+  const r = spawnSync(process.execPath, [path.join(HERE, 'verify-holo.mjs'), '--only', item, ...(item === 'os-handoff-4x' ? ['--full'] : []), '--base', path.resolve(HERE, '..', '..'), '--out', o], {
     cwd: d, encoding: 'utf8', env: childEnv({ FX_DIR: d, ...env }),
   });
   const json = JSON.parse(fs.readFileSync(path.join(o, 'verify-holo.json'), 'utf8'));
-  const it = json.items.find((i) => i.id === 'os-handoff-4x');
+  const it = json.items.find((i) => i.id === item);
   return { exit: r.status, it, out: o, json, last: lastLine(r.stdout), stderr: r.stderr };
 }
 const ok = (name, fn) => { fn(); n++; console.log(`PASS ${name}`); };
@@ -89,6 +89,15 @@ ok('(5) exit 2 (usage error) with a clean-looking result.json -> FAIL internal e
   const good3 = run('d4', { branch: { exit: 3, result: mk(rowsOf({ i1: 30, dev: 70 })) } }); assert.notEqual(good3.it.status, 'FAIL', 'a consistent exit 3 is not an internal error');
 });
 
+ok('(7) every item that needs --base (c1-web, c1-os) with a base server that cannot start / build -> FAIL (exit 1, SELFTEST label), saying base (main) side could not be started; not INVALID', () => {
+  for (const item of ['c1-web', 'c1-os']) {
+    const r = run(`i-${item}`, { branch: CLEAN }, { item, env: { VERIFY_HOLO_SELFTEST_BASE_FAIL: 'could not build the --base worktree' } });
+    assert.equal(r.it.status, 'FAIL', `${item}: ${r.it.reason}`); assert.equal(r.exit, 1);
+    assert.match(r.last, /^VERIFY:HOLO SELFTEST .*1 fail \(/);
+    assert.match(r.it.reason, /base \(main\) side could not be started/); assert.match(r.it.reason, /could not build the --base worktree/); assert.match(r.it.reason, /cannot be compared with main/);
+    assert.equal(r.it.value.baseUnavailable, true);
+  }
+});
 // ---- hard conditions of the VERIFY_HOLO_SELFTEST hook (designer ruling). Cases 6b/6c run the real redline-grep item only (static git scan: no build, no server, no port).
 const runStatic = (name, env) => {
   const d = path.join(TMP, name); fs.mkdirSync(d, { recursive: true }); const o = path.join(d, 'out');

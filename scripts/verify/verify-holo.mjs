@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { Browser } from './cdp.mjs';
 import { assertScratchServer } from './safety.mjs';
+import { overallExit } from './exit-code.mjs';
 import { baseUnavailableDecision, classifyFails, handoffExitProblem, knownOnMainDecision } from './known-on-main.mjs';
 import { HEARTBEAT_MS, applySuspend, applyTimeout, classifySuspend, clock, findGaps } from './suspend.mjs';
 import { personalHit, profilePathHit, themeKeyLines } from './redline-rules.mjs';
@@ -150,7 +151,7 @@ function finish(why = null) {
   if (why) for (const i of items) if (i.reason === 'not run') i.reason = why;
   const s = summarize();
   // test hooks active: never PASS, never exit 0. A FAIL keeps exit 1 (the more informative non-zero code; callers that test for "not 0" are safe either way), everything else is 2.
-  const code = s.fail.length ? 1 : (ST || s.skip.length || s.invalid.length || why) ? 2 : 0;
+  const code = overallExit({ fail: s.fail, skip: s.skip, invalid: s.invalid, selftest: ST, incomplete: !!why });
   writeJson({ finishedAt: new Date().toISOString(), exitCode: code });
   const parts = [`${s.pass}/${s.total} pass`];
   if (s.fail.length) parts.push(`${s.fail.length} fail (${s.fail.join(', ')})`);
@@ -169,6 +170,7 @@ function finish(why = null) {
 // ------------------------------------------------------------------ per-item context
 class Invalid extends Error {}
 const invalid = (m) => new Invalid(m);
+class BaseSide extends Error {}
 function makeCtx(id) {
   const file = path.join(LOGS, `${id}.log`);
   fs.writeFileSync(file, '');
@@ -332,7 +334,7 @@ async function entryDeltaVsBase(L) {
     L.append(`
 [base worktree has no web/dist: building it there (no source change)]
 `);
-    if ((await L.npm('run build', {}, root)).code !== 0) throw invalid('could not build the --base worktree');
+    if ((await L.npm('run build', {}, root)).code !== 0) return baseSideFail(invalid('could not build the --base worktree'), th);
   }
   // same measuring code for both sides (this worktree's os-bundle.mjs: gzip -9 of the entry static-graph JS)
   const measure = async (label, dist) => {
@@ -340,11 +342,11 @@ async function entryDeltaVsBase(L) {
     clearOut(json);
     await L.node(path.join(HERE, 'os-bundle.mjs'), ['--dist', dist, '--json', json]); // its own exit code (bundle-baseline) is not this item's concern
     const j = readJsonSafe(json);
-    if (!j || typeof j.entryGzip !== 'number') throw invalid(`os-bundle wrote no entryGzip for ${label}`);
+    if (!j || typeof j.entryGzip !== 'number') throw (label === 'base' ? new BaseSide(`os-bundle wrote no entryGzip for base`) : invalid(`os-bundle wrote no entryGzip for ${label}`));
     return j.entryGzip;
   };
   const branch = await measure('branch', path.join(REPO, 'web', 'dist'));
-  const base = await measure('base', path.join(root, 'web', 'dist'));
+  let base; try { base = await measure('base', path.join(root, 'web', 'dist')); } catch (e) { if (e instanceof BaseSide) return baseSideFail(e, th); throw e; }
   const v = { branchEntryGzip: branch, baseEntryGzip: base, deltaBytes: branch - base };
   return v.deltaBytes > th.entryDeltaVsBaseMaxBytes ? fail(v, th, `web entry gzip +${v.deltaBytes} B vs base > +${th.entryDeltaVsBaseMaxBytes} B (stop and ask the designer if H2 would push the total past 2048 B over bundle-baseline.json)`) : pass(v, th);
 }
@@ -446,10 +448,14 @@ async function labBundle(L) {
   if (core && core.gzip > th.holoCoreMaxBytes) bad.push(`holo-core ${core.gzip} > ${th.holoCoreMaxBytes}`);
   return bad.length ? fail(v, th, bad.join('; ')) : pass(v, th);
 }
+/** the --base (main) side could not be started or built: a zero-diff comparison with main is impossible. FAIL for every item that needs base (designer ruling), never INVALID. */
+const baseSideFail = (e, th) => fail({ baseUnavailable: true }, th, `the base (main) side could not be started: ${e.message ?? String(e)}; this is a problem on the base side, so the result cannot be compared with main`);
 async function c1Run(L, name, extraArgs, expectCombos) {
   if (!A.base) return { status: 'SKIP', value: null, threshold: { combos: expectCombos, diffs: 0, actFail: 0 }, reason: 'no --base given' };
   if (!(await defaultBuild(L))) throw invalid('default build failed');
-  const [branchUrl, baseUrl] = [await mainServer(L), await baseServer(L)];
+  const branchUrl = await mainServer(L);
+  let baseUrl;
+  try { baseUrl = await baseServer(L); } catch (e) { return baseSideFail(e, { combos: expectCombos, diffs: 0, actFail: 0 }); }
   const dir = path.join(OUT, name);
   clearOut(path.join(dir, 'c1-result.json'));
   const r = await L.node(path.join(HERE, 'c1.mjs'), ['--base', baseUrl, '--new', branchUrl, '--out', dir, '--scratch', SCRATCH, ...extraArgs]);
