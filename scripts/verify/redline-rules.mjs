@@ -44,8 +44,8 @@ export function stripComments(text) {
 const THEME_KEY = new RegExp('["\'`]' + ['pld', 'theme'].join('\\.') + '["\'`]');
 export const themeKeyHit = (codeLine) => THEME_KEY.test(codeLine);
 
-/**
- * A Windows user-profile path in any letter case, with forward or back slashes, single or double-escaped backslashes (`c:\users\x`, `C:/Users/x`, `C:\\Users\\x`).
+ * A Windows user-profile path in any letter case and drive letter, with forward or back slashes, single or double-escaped backslashes.
+ * The macOS and Linux spellings stay case-sensitive (that is how those systems spell them).
  * Unix style `/Users/` and `/home/` stay case-sensitive (that is how those systems spell them).
  */
 const WIN_PROFILE = new RegExp('[a-z]:[\\\\/]{1,2}' + 'us' + 'ers' + '[\\\\/]', 'i');
