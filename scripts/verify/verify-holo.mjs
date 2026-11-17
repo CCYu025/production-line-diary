@@ -26,6 +26,7 @@ import { parseArgs } from 'node:util';
 import { Browser } from './cdp.mjs';
 import { assertScratchServer } from './safety.mjs';
 import { classifyFails, knownOnMainDecision } from './known-on-main.mjs';
+import { HEARTBEAT_MS, applySuspend, classifySuspend, clock, findGaps } from './suspend.mjs';
 import { personalHit, profilePathHit, themeKeyLines } from './redline-rules.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -107,11 +108,17 @@ const head = gitOut(['rev-parse', '--short', 'HEAD']);
 const baseHead = A.base ? gitOut(['rev-parse', '--short', 'HEAD'], path.resolve(A.base)) : null;
 let renderer = null;
 
+// Suspend detection (Windows Modern Standby freezes node and Chrome together): wall-clock heartbeat every 5 s; a gap > 60 s = suspended. Pure logic: suspend.mjs.
+const heartbeats = [Date.now()];
+const beat = () => { heartbeats.push(Date.now()); };
+setInterval(beat, HEARTBEAT_MS).unref();
 function writeJson(extra = {}) {
+  beat();
+  const gaps = findGaps(heartbeats).map((g) => ({ start: clock(g.startMs), startedAt: new Date(g.startMs).toISOString(), seconds: g.seconds }));
   const json = {
     schema: 1, startedAt, finishedAt: extra.finishedAt ?? null, head, base: A.base ? { head: baseHead } : null, diffBase: A['diff-base'],
     dirty: DIRTY.length > 0, args: { quick: A.quick, full: A.full, only: A.only ?? null, allowSoftware: A['allow-software'], hasBase: !!A.base }, renderer,
-    baselineFile: 'scripts/verify/holo-baseline.json', baseline: BL, summary: summarize(), items, ...extra,
+    suspended: gaps.length > 0, suspendedGaps: gaps, baselineFile: 'scripts/verify/holo-baseline.json', baseline: BL, summary: summarize(), items, ...extra,
   };
   fs.writeFileSync(path.join(OUT, 'verify-holo.json'), JSON.stringify(json, null, 2));
 }
@@ -132,6 +139,8 @@ function finish(why = null) {
   if (s.skip.length) parts.push(`${s.skip.length} skip (${s.skip.join(', ')})`);
   if (s.invalid.length) parts.push(`${s.invalid.length} invalid (${s.invalid.join(', ')})`);
   if (s.notApplicable.length) parts.push(`${s.notApplicable.length} n/a (${s.notApplicable.join(', ')})`);
+  const sg = findGaps(heartbeats);
+  if (sg.length) parts.push(`SUSPENDED ${sg.length}x (${sg.map((g) => `${g.seconds}s at ${clock(g.startMs)}`).join(', ')}): rerun required`);
   const label = s.fail.length ? 'FAIL' : code === 0 ? 'PASS' : 'INCOMPLETE';
   const jsonPath = path.relative(process.cwd(), path.join(OUT, 'verify-holo.json')).split(path.sep).join('/');
   cleanupAll();
@@ -556,11 +565,14 @@ async function main() {
     if (A.quick && (it.group === 'C' || it.group === 'D')) { it.reason = 'skipped by --quick (groups A and B only)'; continue; }
     const L = makeCtx(it.id);
     const t0 = Date.now();
+    beat();
     it.log = rel(L.file);
     it.reason = null;
     let res;
     try { res = await RUNNERS[it.id](L); res = it.group === 'D' ? await softwareGuard(res) : res; if (L.timedOut && res.status !== 'INVALID') res = { ...res, status: 'INVALID', reason: 'a command timed out and was killed: result is inconclusive' }; }
     catch (e) { res = { status: 'INVALID', value: null, threshold: null, reason: (e instanceof Invalid ? '' : 'harness error: ') + (e.message ?? String(e)) }; L.append(`\n[${res.reason}]\n${e.stack ?? ''}\n`); }
+    beat();
+    res = applySuspend(res, classifySuspend(heartbeats, t0, Date.now())); // a suspend inside the run beats every other verdict, FAIL evidence stays in value
     Object.assign(it, { status: res.status, value: res.value ?? null, threshold: res.threshold ?? null, reason: res.reason ?? null, durationMs: Date.now() - t0 });
     if (res.status === 'SKIP' || res.status === 'N/A') it.log = null;
     console.log(`${res.status.padEnd(7)} ${it.id.padEnd(16)} ${(it.durationMs / 1000).toFixed(0).padStart(4)}s  ${JSON.stringify(it.value)}${it.reason ? '  — ' + it.reason : ''}`);
