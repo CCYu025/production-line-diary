@@ -26,6 +26,7 @@ import { parseArgs } from 'node:util';
 import { Browser } from './cdp.mjs';
 import { assertScratchServer } from './safety.mjs';
 import { classifyFails, countKnown } from './known-on-main.mjs';
+import { personalHit, profilePathHit, themeKeyLines } from './redline-rules.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
@@ -353,21 +354,26 @@ async function redlineGrep(L) {
   const vt = new RegExp(['start', 'ViewTransition'].join('') + '|' + ['view', 'Transition'].join(''));
   for (const l of lines) if (CODE_EXT.test(l.file) && vt.test(l.text)) hits.r1.push(`${l.file}:${l.ln}`);
   // 2: the theme preference key as a quoted string anywhere outside theme.ts and tests (ts/tsx/js/mjs, comment lines excluded). Catches aliases, st.setItem, line breaks, ["setItem"].
-  const themeKey = new RegExp('["\'`]' + ['pld', 'theme'].join('\\.') + '["\'`]');
-  const isComment = (t) => /^\s*(?:\/\/|\/\*|\*)/.test(t);
-  for (const l of lines) if (/\.(?:[cm]?[jt]sx?)$/.test(l.file) && l.file !== 'web/src/lib/theme.ts' && !/\.test\.[^/]+$/.test(l.file) && !isComment(l.text) && themeKey.test(l.text)) hits.r2.push(`${l.file}:${l.ln}`);
+  // Comments are removed by a real scanner over the WHOLE file (redline-rules.mjs: block-comment state across lines, strings kept), not by "this line starts with *":
+  // `*/ set("...")` is code, and a line inside a multi-line block comment is a comment whatever it starts with. Self-test: redline-rules.selftest.mjs.
+  const r2Files = new Map();
+  for (const l of lines) if (/\.(?:[cm]?[jt]sx?)$/.test(l.file) && l.file !== 'web/src/lib/theme.ts' && !/\.test\.[^/]+$/.test(l.file)) { if (!r2Files.has(l.file)) r2Files.set(l.file, []); r2Files.get(l.file).push(l.ln); }
+  for (const [f, lns] of r2Files) {
+    const p = path.join(REPO, f); if (!fs.existsSync(p)) continue;
+    for (const ln of themeKeyLines(fs.readFileSync(p, 'utf8'), lns)) hits.r2.push(`${f}:${ln}`);
+  }
   // 3a: personal absolute paths / real-data folder name in NEW files (patterns assembled so this file never contains them)
-  const PERSONAL = ['C:\\' + 'Users\\','/Us' + 'ers/', 'One' + 'Drive', REAL];
+  const PERSONAL_EXTRA = ['One' + 'Drive', REAL];
   const added = (gitOut(['diff', '--name-only', '--diff-filter=A', `${A['diff-base']}...HEAD`]) ?? '').split('\n').filter(Boolean);
   for (const f of added) {
     const p = path.join(REPO, f); if (!fs.existsSync(p)) continue;
     const buf = fs.readFileSync(p); if (buf.includes(0)) continue;
     const txt = buf.toString('utf8');
-    txt.split('\n').forEach((t, i) => { if (PERSONAL.some((s) => t.includes(s))) hits.r3.push(`${f}:${i + 1}`); });
+    txt.split('\n').forEach((t, i) => { if (personalHit(t, PERSONAL_EXTRA)) hits.r3.push(`${f}:${i + 1}`); });
   }
   // 3b: user-profile style paths in the ADDED LINES of every file (the real-data folder name and the cloud-sync folder name legitimately appear in prose, so they stay new-file-only)
-  const PROFILE = ['C:\\' + 'Users\\','C:/' + 'Users/', '/Us' + 'ers/', '/ho' + 'me/'];
-  for (const l of lines) if (PROFILE.some((s) => l.text.includes(s))) hits.r3.push(`${l.file}:${l.ln} (added line)`);
+  // (profile paths: any drive letter, any letter case, / or \ or escaped \\; see redline-rules.mjs)
+  for (const l of lines) if (profilePathHit(l.text)) hits.r3.push(`${l.file}:${l.ln} (added line)`);
   // 4: dependency changes: the lockfile (any change), and every package.json field that can change what gets installed, against the merge base
   const mb = MB(); if (!mb) throw invalid(`no merge base with ${A['diff-base']}`);
   const lockDiff = (gitOut(['diff', '--name-only', `${A['diff-base']}...HEAD`, '--', 'package-lock.json', '*/package-lock.json']) ?? '').split('\n').filter(Boolean);
