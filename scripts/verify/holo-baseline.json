@@ -46,7 +46,7 @@
     "note": "1x run only (default). DEVIATED must be <= floor(baselineDeviated x 1.5) = 16, else INVALID. baselineDeviated: 11 measured 2026-11-15 on the machine in measuredOn (102 samples, 91 conclusive; earlier runs 11-12)."
   },
   "holoIme": {
-    "checks": 30
+    "checks": 44
   },
   "holoStill": {
     "checks": 10
@@ -87,6 +87,7 @@
         "source": "main 3d8a1ce, full 4x run 2 (2026-11-16): sample \"I2 switch/first-click/hash x4 planned=0\", note \"error: eval failed: Error: timeout waiting for phase switching-post (have switching-pre>station)\"; a first measurement the same day had the same shape on \"I2 exit/first-click\" (exiting-post)"
       }
     ],
+    "knownOnMainRule": "INVALID (known-on-main) needs BOTH: (1) main timed out at least once in the same run, (2) branchTimeouts <= 3 x baseTimeouts x (branchSamples / baseSamples) + 2 (samples = I2 samples: the branch's I2 rows in the 4x run, the I2 rows of the base re-run). Otherwise FAIL. Designer ruling 2026-11-17. Reason: a fixed threshold does not depend on the sample count; the ratio answers whether it is a pre-existing property of main at that rate. value carries branchTimeouts, branchSamples, baseTimeouts, baseSamples, limit. Examples: 18/18 vs 1/60 FAIL; 2/18 vs 1/60 INVALID (limit 2.9); 3/18 vs 1/60 FAIL; base 0 FAIL; base re-run failed FAIL.",
     "knownOnMainReps": 15,
     "deviatedMax": 90
   },

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { classifyFails, countKnown, judgeBaseRerun } from './known-on-main.mjs';
+import { classifyFails, countKnown, judgeBaseRerun, knownOnMainDecision, ratioVerdict } from './known-on-main.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BL = JSON.parse(fs.readFileSync(path.join(HERE, 'holo-baseline.json'), 'utf8'));
@@ -76,6 +76,28 @@ ok('judgeBaseRerun: usable result (exit 0 or 1) -> known / none with real sample
   assert.equal(known.kind, 'known'); assert.equal(known.hits, 1); assert.equal(known.baseSamples, 2);
   const otherFail = judgeBaseRerun({ exitCode: 1, result: load('k5', mk([row('I2', 'FAIL', ['click leaked'])])), allowlist: allow });
   assert.equal(otherFail.kind, 'none'); // a non-timeout FAIL on main is not a known timeout
+});
+// ---------- ratio rule (designer ruling 2026-11-17): INVALID needs base >= 1 timeout AND branch <= 3 x base x (branchSamples / baseSamples) + 2
+const rows = (n, samples) => Array.from({ length: samples }, (_, i) => (i < n ? row('I2', 'FAIL', [TIMEOUT]) : row('I2', 'PASS', [])));
+const dec = (bT, bS, mT, mS, baseExit = 0, tag = 'r') => knownOnMainDecision({ branchResult: load(tag + 'b', mk(rows(bT, bS))), baseExit, baseResult: mT === null ? null : load(tag + 'm', mk(rows(mT, mS))), allowlist: allow, logPath: 'logs/os-handoff-4x.log' });
+ok('ratio: branch 18/18, base 1/60 -> FAIL', () => {
+  const d = dec(18, 18, 1, 60, 0, 'r1'); assert.equal(d.status, 'FAIL');
+  assert.deepEqual([d.value.branchTimeouts, d.value.branchSamples, d.value.baseTimeouts, d.value.baseSamples], [18, 18, 1, 60]); assert.ok(Math.abs(d.value.limit - 2.9) < 1e-9);
+});
+ok('ratio: branch 2/18, base 1/60 -> INVALID (limit 2.9)', () => {
+  const d = dec(2, 18, 1, 60, 1, 'r2'); assert.equal(d.status, 'INVALID'); assert.ok(Math.abs(d.value.limit - 2.9) < 1e-9); assert.equal(d.value.baseTimeouts, 1);
+});
+ok('ratio: branch 3/18, base 1/60 -> FAIL', () => { assert.equal(dec(3, 18, 1, 60, 1, 'r3').status, 'FAIL'); });
+ok('ratio: base 0 timeouts -> FAIL (condition 1 missing)', () => {
+  const d = dec(1, 18, 0, 60, 0, 'r4'); assert.equal(d.status, 'FAIL'); assert.equal(d.value.limit, null); assert.match(d.message, /main showed no timeout/);
+});
+ok('ratio: base re-run failed -> FAIL with the "cannot compare" message', () => {
+  const d = dec(2, 18, null, 0, 2, 'r5'); assert.equal(d.status, 'FAIL'); assert.match(d.message, /base re-run failed/); assert.match(d.message, /cannot be compared with main/); assert.doesNotMatch(d.message, /main showed none/);
+});
+ok('ratio: more base timeouts raise the limit; ratioVerdict edge cases', () => {
+  assert.equal(ratioVerdict({ branchTimeouts: 4, branchSamples: 18, baseTimeouts: 3, baseSamples: 60 }).invalid, true); // limit 3*3*0.3+2 = 4.7
+  assert.equal(ratioVerdict({ branchTimeouts: 5, branchSamples: 18, baseTimeouts: 3, baseSamples: 60 }).invalid, false);
+  assert.equal(ratioVerdict({ branchTimeouts: 1, branchSamples: 18, baseTimeouts: 1, baseSamples: 0 }).invalid, false); // unusable denominator
 });
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(`known-on-main selftest: ${n} groups passed`);

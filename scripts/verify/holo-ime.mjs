@@ -55,7 +55,7 @@ async function ensureFocused(p, id) {
 }
 // Page-side event trail (this script only, no product code): what the browser really did around each composition.
 // composing = compositionstart..compositionend as seen by the page; keyups lets the script wait for "the key reached the page" instead of sleeping;
-// winBlur / hidden / ev[].focus=false = the WINDOW lost focus (OS level). An element-only blur does not count: the product could cause that one.
+// winBlur / hidden / ev[].focus = window-level focus facts, recorded as evidence only (never judged).
 const TRAIL_JS = `(()=>{const T=window.__imeTrail={ev:[],composing:false,keyups:0,winBlur:0,hidden:0};
 const push=(type,t)=>{T.ev.push({t:Math.round(performance.now()),type,id:(t&&t.id)||(t===window?'window':(t&&t.nodeName)||''),focus:document.hasFocus()});if(T.ev.length>300)T.ev.shift()};
 for(const type of ['compositionstart','compositionupdate','compositionend','beforeinput','input','keydown','keyup','focusin','focusout'])document.addEventListener(type,(e)=>{push(type,e.target);if(type==='compositionstart')T.composing=true;if(type==='compositionend')T.composing=false;if(type==='keyup')T.keyups++},true);
@@ -64,21 +64,9 @@ window.addEventListener('focus',(e)=>{if(e.target===window)push('window-focus',w
 document.addEventListener('visibilitychange',()=>{if(document.hidden)T.hidden++;push('visibility-'+document.visibilityState,document)});
 return true})()`;
 let cur = null; // the page being driven (record() reads its trail)
-/** A FAIL while the WINDOW had lost OS focus at some point on this page is not a product verdict: INVALID (exit 2), evidence = the trail. */
+/** Records a check. A FAIL carries the page-side event trail (last 40 events) as evidence. There is deliberately NO "window lost focus -> INVALID" reclassification:
+ *  10 consecutive clean runs (H2-0 phase 2) showed no window blur and no FAIL, so nothing supports it and it could only hide a real FAIL. The trail is for diagnosing. */
 async function record(cfg, name, pass, evidence) {
-  let envLoss = null;
-  if (!pass && cur) {
-    try {
-      const t = JSON.parse(await cur.eval('JSON.stringify(window.__imeTrail)'));
-      if (t.winBlur > 0 || t.hidden > 0 || t.ev.some((e) => !e.focus)) envLoss = { winBlur: t.winBlur, hidden: t.hidden, trail: t.ev.slice(-40) };
-    } catch { /* no trail: plain FAIL */ }
-  }
-  if (envLoss) {
-    invalid ??= 'window lost OS focus during the run (a composition cannot survive that); not a product verdict';
-    results.push({ ...cfg, name, pass: false, invalid: true, evidence: { ...evidence, envLoss } });
-    console.log(`INVALID [${cfg.method} freeze=${cfg.freeze}] ${name}  ${JSON.stringify(evidence)}  window-focus-loss=${JSON.stringify({ winBlur: envLoss.winBlur, hidden: envLoss.hidden })}`);
-    return;
-  }
   let ev = evidence;
   if (!pass && cur) { try { ev = { ...evidence, trail: JSON.parse(await cur.eval('JSON.stringify(window.__imeTrail.ev.slice(-40))')) }; } catch { /* keep */ } }
   results.push({ ...cfg, name, pass, evidence: ev });
