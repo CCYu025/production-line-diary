@@ -35,3 +35,20 @@ export function classifyFails(result, allowlist) {
 export function countKnown(result, allowlist) {
   return classifyFails(result, allowlist).known.length;
 }
+
+/**
+ * Judge the --base (main) re-measurement. Pure.
+ * A re-run that itself failed (no usable result.json, or an exit code other than 0/1: os-handoff exits 1 when it has FAIL samples, which is a normal result)
+ * cannot be compared with anything: kind 'rerun-failed' (the caller still reports FAIL, the conservative direction, but must NOT say "main showed none").
+ * @param {{exitCode: number|null, result: object|null, allowlist: object[], logPath?: string}} p
+ * @returns {{kind: 'rerun-failed'|'known'|'none', hits: number, baseSamples: number|null, message: string}}
+ */
+export function judgeBaseRerun({ exitCode, result, allowlist, logPath = '' }) {
+  const total = result?.summary?.total;
+  const usable = result && typeof total === 'number' && Array.isArray(result.results) && (exitCode === 0 || exitCode === 1);
+  if (!usable) {
+    return { kind: 'rerun-failed', hits: 0, baseSamples: typeof total === 'number' ? total : null, message: `base re-run failed (exit ${exitCode ?? 'none'}${result ? '' : ', no result.json'}${logPath ? `, log ${logPath}` : ''}), so it cannot be compared with main: not known-on-main` };
+  }
+  const hits = countKnown(result, allowlist);
+  return { kind: hits >= 1 ? 'known' : 'none', hits, baseSamples: total, message: hits >= 1 ? `main shows ${hits} too` : `main showed none in ${total} I2 samples` };
+}

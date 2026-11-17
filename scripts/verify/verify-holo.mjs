@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { Browser } from './cdp.mjs';
 import { assertScratchServer } from './safety.mjs';
-import { classifyFails, countKnown } from './known-on-main.mjs';
+import { classifyFails, judgeBaseRerun } from './known-on-main.mjs';
 import { personalHit, profilePathHit, themeKeyLines } from './redline-rules.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -478,12 +478,14 @@ async function osHandoffRun(L, dirName, throttle, B) {
     const bdir = path.join(OUT, `${dirName}-base-i2`);
     const bUrl = await baseServer(L);
     L.append(`\n[known-on-main: all ${failN} FAIL sample(s) are I2 phase timeouts; re-measuring I2 on main at CPU ${throttle}x, --reps ${B.knownOnMainReps}]\n`);
-    await L.node(path.join(HERE, 'os-handoff.mjs'), ['--url', bUrl, '--out', bdir, ...BL.osHandoff.args, '--throttles', String(throttle), '--only', 'i2', '--reps', String(B.knownOnMainReps)]);
+    const br = await L.node(path.join(HERE, 'os-handoff.mjs'), ['--url', bUrl, '--out', bdir, ...BL.osHandoff.args, '--throttles', String(throttle), '--only', 'i2', '--reps', String(B.knownOnMainReps)]);
     const bj = readJsonSafe(path.join(bdir, 'result.json'));
-    const hits = bj ? countKnown(bj, B.knownOnMain) : 0;
-    const baseEv = { baseSamples: bj?.summary?.total ?? null, baseFail: bj?.summary?.fail ?? null, baseKnownTimeouts: hits, baseEvidence: rel(path.join(bdir, 'result.json')), reps: B.knownOnMainReps };
+    const jb = judgeBaseRerun({ exitCode: br.code, result: bj, allowlist: B.knownOnMain, logPath: `logs/${L.id}.log` });
+    const hits = jb.hits;
+    const baseEv = { baseSamples: bj?.summary?.total ?? null, baseFail: bj?.summary?.fail ?? null, baseKnownTimeouts: hits, baseEvidence: rel(path.join(bdir, 'result.json')), reps: B.knownOnMainReps, baseExit: br.code };
+    if (jb.kind === 'rerun-failed') return fail({ ...v, ...baseEv }, th, `${failN} I2 phase timeout(s), but ${jb.message}`);
     if (hits >= 1) return { status: 'INVALID', value: { ...v, knownOnMain: true, ...baseEv }, threshold: th, reason: `${failN} FAIL sample(s), all I2 phase timeouts; main shows ${hits} too in the same run (known-on-main, not caused by this branch): needs designer/L2 judgement` };
-    return fail({ ...v, ...baseEv }, th, `${failN} I2 phase timeout(s) and main showed none in ${baseEv.baseSamples ?? '?'} I2 samples: not known-on-main`);
+    return fail({ ...v, ...baseEv }, th, `${failN} I2 phase timeout(s) and ${jb.message}: not known-on-main`);
   }
   if (dev > devMax) return { status: 'INVALID', value: v, threshold: th, reason: `DEVIATED ${dev} > ${devMax} (${devWhy}): the machine is not behaving like the baseline run; escalate to L2` };
   if (v.conclusivePass < th.conclusivePassMin || total < th.samplesMin) return { status: 'INVALID', value: v, threshold: th, reason: `only ${v.conclusivePass} conclusive pass(es) of ${total} samples (${dev} DEVIATED): need >= ${th.conclusivePassMin} and >= ${th.samplesMin} samples` };
