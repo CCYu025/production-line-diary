@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { classifyFails, countKnown, judgeBaseRerun, knownOnMainDecision, ratioVerdict } from './known-on-main.mjs';
+import { baseUnavailableDecision, classifyFails, countKnown, handoffExitProblem, judgeBaseRerun, knownOnMainDecision, matchesKnown, phaseTimeoutPattern, ratioVerdict } from './known-on-main.mjs';
+import { PHASES, TRANSITIONS } from './os-phases.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BL = JSON.parse(fs.readFileSync(path.join(HERE, 'holo-baseline.json'), 'utf8'));
@@ -20,7 +21,7 @@ const load = (name, obj) => { const p = path.join(dir, `${name}.json`); fs.write
 let n = 0; const ok = (name, fn) => { fn(); n++; console.log(`PASS ${name}`); };
 
 ok('all FAILs are I2 phase timeouts -> allKnown', () => {
-  const c = classifyFails(load('a', mk([row('I2', 'FAIL', [TIMEOUT]), row('I2', 'FAIL', [TIMEOUT.replace('switching', 'exiting')]), row('I2', 'PASS', [])])), allow);
+  const c = classifyFails(load('a', mk([row('I2', 'FAIL', [TIMEOUT]), row('I2', 'FAIL', [TIMEOUT.replaceAll('switching', 'exiting')]), row('I2', 'PASS', [])])), allow);
   assert.equal(c.allKnown, true); assert.equal(c.known.length, 2); assert.equal(c.unknown.length, 0);
 });
 ok('one leaked click (I2 FAIL, other message) mixed in -> not allKnown', () => {
@@ -98,6 +99,37 @@ ok('ratio: more base timeouts raise the limit; ratioVerdict edge cases', () => {
   assert.equal(ratioVerdict({ branchTimeouts: 4, branchSamples: 18, baseTimeouts: 3, baseSamples: 60 }).invalid, true); // limit 3*3*0.3+2 = 4.7
   assert.equal(ratioVerdict({ branchTimeouts: 5, branchSamples: 18, baseTimeouts: 3, baseSamples: 60 }).invalid, false);
   assert.equal(ratioVerdict({ branchTimeouts: 1, branchSamples: 18, baseTimeouts: 1, baseSamples: 0 }).invalid, false); // unusable denominator
+});
+// ---------- L2-i fix 4: the note pattern accepts only real phase names, paired per transition; the names come from os-phases.mjs
+ok('notePattern tightened: any phase name that is not a real "<kind>-post" / paired "<kind>-pre" does NOT match (L2-i: foo-bar and "exiting" were accepted)', () => {
+  const T = (post, have) => `error: eval failed: Error: timeout waiting for phase ${post} (have ${have})`;
+  const known = (note) => classifyFails(load('t' + n, mk([row('I2', 'FAIL', [note])])), allow).allKnown;
+  for (const t of Object.values(TRANSITIONS)) assert.equal(known(T(t.post, `${t.pre}>${t.end}`)), true, `${t.post} real pair`);
+  assert.equal(known(T('exiting-post', 'exiting-pre')), true, 'have may be just the pre');
+  for (const bad of [T('foo-bar', 'foo-pre>station'), T('exiting', 'exiting-pre>hub'), T('station', 'switching-pre>station'), T('entering-pre', 'entering-pre'), T('exiting-post', 'switching-pre>station'),
+    T('switching-post', 'x-pre>station'), T('switching-post', 'switching-pre>nonsense'), T('switching-post', 'switching-pre>'), T('switching-post', 'switching-pre>station)  junk'), `${T('switching-post', 'switching-pre>station')} `]) assert.equal(known(bad), false, bad);
+});
+ok('notePattern is built from os-phases.mjs (not a copy): every phase name and transition name appears in it; baseline has no hand-written notePattern', () => {
+  const re = phaseTimeoutPattern();
+  for (const name of PHASES) assert.ok(re.includes(name), name);
+  for (const t of Object.values(TRANSITIONS)) assert.ok(re.includes(`${t.post} `) && re.includes(`have ${t.pre}`));
+  assert.equal(allow[0].notePattern, undefined, 'the allowlist entry carries no hand-written pattern');
+  assert.equal(matchesKnown({ id: 'I2', status: 'FAIL', notes: [TIMEOUT] }, { id: 'I2', kind: 'unknown-kind' }), false, 'an entry of an unknown kind excuses nothing');
+});
+// ---------- L2-i fix 5: contradictory exit codes
+ok('handoffExitProblem: exit 2 / exit 3 with DEVIATED 0 / exit 0 with FAIL or DEVIATED / exit 1 with 0 FAIL = internal error; consistent combos = null', () => {
+  const S = (fail, deviated) => ({ fail, deviated, total: 100 });
+  assert.match(handoffExitProblem(2, S(0, 0)), /exited 2/); assert.match(handoffExitProblem(2, S(1, 0)), /exited 2/);
+  assert.match(handoffExitProblem(3, S(0, 0)), /exited 3/); assert.match(handoffExitProblem(3, S(1, 4)), /exited 3/);
+  assert.match(handoffExitProblem(0, S(1, 0)), /exited 0/); assert.match(handoffExitProblem(0, S(0, 2)), /exited 0/);
+  assert.match(handoffExitProblem(1, S(0, 5)), /exited 1/);
+  assert.match(handoffExitProblem(0, {}), /numeric summary/); assert.match(handoffExitProblem(0, undefined), /numeric summary/);
+  for (const [e, s] of [[0, S(0, 0)], [1, S(3, 0)], [1, S(3, 9)], [3, S(0, 9)]]) assert.equal(handoffExitProblem(e, s), null, `${e} ${JSON.stringify(s)}`);
+});
+// ---------- L2-i fix 1: base side cannot be started
+ok('baseUnavailableDecision: FAIL, says it is the base side and cannot be compared with main', () => {
+  const d = baseUnavailableDecision(2, 'could not build the --base worktree');
+  assert.equal(d.status, 'FAIL'); assert.match(d.message, /base \(main\) side could not be started/); assert.match(d.message, /cannot be compared with main/); assert.match(d.message, /could not build/); assert.match(d.message, /^2 I2 phase timeout/);
 });
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(`known-on-main selftest: ${n} groups passed`);

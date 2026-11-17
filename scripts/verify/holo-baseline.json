@@ -83,7 +83,6 @@
       {
         "id": "I2",
         "kind": "phase-timeout",
-        "notePattern": "^error: eval failed: Error: timeout waiting for phase [\\w-]+-post \\(have [\\w-]+-pre>[^)]*\\)$",
         "source": "main 3d8a1ce, full 4x run 2 (2026-11-16): sample \"I2 switch/first-click/hash x4 planned=0\", note \"error: eval failed: Error: timeout waiting for phase switching-post (have switching-pre>station)\"; a first measurement the same day had the same shape on \"I2 exit/first-click\" (exiting-post)"
       }
     ],

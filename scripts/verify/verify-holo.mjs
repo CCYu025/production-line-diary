@@ -25,8 +25,8 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { Browser } from './cdp.mjs';
 import { assertScratchServer } from './safety.mjs';
-import { classifyFails, knownOnMainDecision } from './known-on-main.mjs';
-import { HEARTBEAT_MS, applySuspend, classifySuspend, clock, findGaps } from './suspend.mjs';
+import { baseUnavailableDecision, classifyFails, handoffExitProblem, knownOnMainDecision } from './known-on-main.mjs';
+import { HEARTBEAT_MS, applySuspend, applyTimeout, classifySuspend, clock, findGaps } from './suspend.mjs';
 import { personalHit, profilePathHit, themeKeyLines } from './redline-rules.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -38,11 +38,14 @@ const { values: A } = parseArgs({
     'allow-software': { type: 'boolean', default: false }, 'diff-base': { type: 'string', default: 'main' }, help: { type: 'boolean', default: false },
   },
 });
+// [id, group, timeSensitive]. timeSensitive = the result depends on the clock (browser, input timing, frame rate): only these are reclassified INVALID when the machine was suspended
+// during the run (suspend.mjs). Static items (build, tests, bundle sizes, diff scans) are not: a FAIL there stays a FAIL. A new item is NOT time-sensitive unless marked T.
+const T = true;
 const ITEM_DEFS = [
   ['ci-check', 'A'], ['ci-test', 'A'], ['ci-typecheck', 'A'], ['ci-test-web', 'A'], ['ci-build', 'A'], ['ci-bundle', 'A'], ['entry-delta-vs-base', 'A'],
   ['tests-untouched', 'B'], ['redline-grep', 'B'],
-  ['lab-bundle', 'C'], ['c1-web', 'C'], ['c1-os', 'C'], ['os-e2e', 'C'], ['os-handoff', 'C'], ['os-handoff-4x', 'C'],
-  ['holo-ime', 'D'], ['holo-still', 'D'], ['holo-perf', 'D'], ['holo-perf-20k', 'D'],
+  ['lab-bundle', 'C'], ['c1-web', 'C', T], ['c1-os', 'C', T], ['os-e2e', 'C', T], ['os-handoff', 'C', T], ['os-handoff-4x', 'C', T],
+  ['holo-ime', 'D', T], ['holo-still', 'D', T], ['holo-perf', 'D', T], ['holo-perf-20k', 'D', T],
 ];
 if (A.help) {
   console.log(`npm run verify:holo -- [--base <main worktree>] [--quick] [--full] [--only a,b] [--out <dir>] [--allow-software] [--diff-base main]
@@ -73,6 +76,11 @@ const dirtyInvalid = (L, th) => {
   L.append(`working tree is not clean (${DIRTY.length} entries):\n${DIRTY.slice(0, 20).join('\n')}\n`);
   return { status: 'INVALID', value: { dirty: true, entries: DIRTY.slice(0, 10) }, threshold: th, reason: `working tree not clean (${DIRTY.length} entries): commit first, this item only sees main...HEAD` };
 };
+// Test hooks for verify-holo.selftest.mjs ONLY (all inert unless VERIFY_HOLO_SELFTEST=1): stub the build and the servers, swap the os-handoff script, shorten the command timer.
+const ST = process.env.VERIFY_HOLO_SELFTEST === '1';
+const HANDOFF_SCRIPT = ST && process.env.VERIFY_HOLO_SELFTEST_HANDOFF ? process.env.VERIFY_HOLO_SELFTEST_HANDOFF : path.join(HERE, 'os-handoff.mjs');
+/** a result file written by an EARLIER run must never be read as this run's: delete it before every child process that is supposed to write it */
+const clearOut = (...files) => { for (const f of files) fs.rmSync(f, { force: true }); };
 const ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE_ENV = { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0', NO_OPEN_BROWSER: '1' };
@@ -100,7 +108,7 @@ process.on('SIGINT', () => { interrupted = true; cleanupAll(); finish('interrupt
 process.on('SIGTERM', () => { interrupted = true; cleanupAll(); finish('interrupted by SIGTERM'); });
 
 // ------------------------------------------------------------------ results
-const items = ITEM_DEFS.map(([id, group]) => ({ id, group, status: 'SKIP', value: null, threshold: null, durationMs: 0, log: null, reason: 'not run' }));
+const items = ITEM_DEFS.map(([id, group, timeSensitive = false]) => ({ id, group, timeSensitive, status: 'SKIP', value: null, threshold: null, durationMs: 0, log: null, reason: 'not run' }));
 const itemOf = (id) => items.find((i) => i.id === id);
 const startedAt = new Date().toISOString();
 const gitOut = (args, cwd = REPO) => { const r = spawnSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 512 * 1024 * 1024 }); return r.status === 0 ? r.stdout.trim() : null; };
@@ -157,7 +165,7 @@ function makeCtx(id) {
   const append = (t) => fs.appendFileSync(file, t);
   const ctx = { id, file, append, timedOut: false };
   /** run a command, append its output to this item's log, return { code, text } */
-  const run = (label, file2, args, { cwd = REPO, env = {}, shell = false, timeoutMs = 40 * 60 * 1000 } = {}) => new Promise((resolve) => {
+  const run = (label, file2, args, { cwd = REPO, env = {}, shell = false, timeoutMs = ST && process.env.VERIFY_HOLO_SELFTEST_TIMEOUT_MS ? Number(process.env.VERIFY_HOLO_SELFTEST_TIMEOUT_MS) : 40 * 60 * 1000 } = {}) => new Promise((resolve) => {
     append(`\n$ ${label}\n`);
     const child = spawn(file2, args, { cwd, env: { ...BASE_ENV, ...env }, shell, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     live.add(child);
@@ -179,7 +187,7 @@ const readJsonSafe = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')
 const memo = new Map();
 const once = (key, fn) => { if (!memo.has(key)) memo.set(key, fn()); return memo.get(key); };
 /** default build of this worktree -> web/dist (the ci-build item shares this result) */
-const defaultBuild = (L) => once('build', async () => (await L.npm('run build')).code === 0);
+const defaultBuild = (L) => once('build', async () => (ST || (await L.npm('run build')).code === 0));
 const LAB_DIST = path.join(SCRATCH, 'dist-holo-lab');
 const labBuild = (L) => once('labbuild', async () => (await L.npm('run build', { VITE_HOLO_LAB: '1', WEB_OUT_DIR: LAB_DIST })).code === 0);
 
@@ -210,8 +218,9 @@ async function startServer(L, key, root, port, env = {}) {
   servers.set(key, p);
   return p;
 }
-const mainServer = (L) => startServer(L, 'branch', REPO, 3114);
+const mainServer = (L) => (ST ? Promise.resolve('http://localhost:0/') : startServer(L, 'branch', REPO, 3114));
 const baseServer = async (L) => {
+  if (ST) { if (process.env.VERIFY_HOLO_SELFTEST_BASE_FAIL) throw invalid(process.env.VERIFY_HOLO_SELFTEST_BASE_FAIL); return 'http://localhost:0/'; }
   const root = path.resolve(A.base);
   if (!fs.existsSync(path.join(root, 'backend', 'server.js'))) throw invalid(`--base ${root} has no backend/server.js`);
   if (!fs.existsSync(path.join(root, 'web', 'dist', 'index.html'))) {
@@ -297,6 +306,7 @@ async function ciBuild(L) {
 async function ciBundle(L) {
   if (!(await defaultBuild(L))) throw invalid('default build failed: the bundle check needs web/dist');
   const json = path.join(OUT, 'ci-bundle.json');
+  clearOut(json);
   const r = await L.npm(`run verify:os-bundle -- --json "${json}"`);
   const j = readJsonSafe(json);
   const v = { exit: r.code, entryGzip: j?.entryGzip ?? null, baseline: j?.baseline ?? null, deltaBytes: j && j.baseline != null ? j.entryGzip - j.baseline : null, osLazyGzip: j?.osLazyGzip ?? null, fails: j?.fails ?? null };
@@ -317,6 +327,7 @@ async function entryDeltaVsBase(L) {
   // same measuring code for both sides (this worktree's os-bundle.mjs: gzip -9 of the entry static-graph JS)
   const measure = async (label, dist) => {
     const json = path.join(OUT, `entry-delta-${label}.json`);
+    clearOut(json);
     await L.node(path.join(HERE, 'os-bundle.mjs'), ['--dist', dist, '--json', json]); // its own exit code (bundle-baseline) is not this item's concern
     const j = readJsonSafe(json);
     if (!j || typeof j.entryGzip !== 'number') throw invalid(`os-bundle wrote no entryGzip for ${label}`);
@@ -414,6 +425,7 @@ async function redlineGrep(L) {
 async function labBundle(L) {
   if (!(await labBuild(L))) throw invalid('lab build failed');
   const json = path.join(OUT, 'lab-bundle.json');
+  clearOut(json);
   const r = await L.node(path.join(HERE, 'os-bundle.mjs'), ['--dist', LAB_DIST, '--expect-holo', '--json', json]);
   const j = readJsonSafe(json);
   const core = j?.groups?.find((g) => g.id === 'holo-core');
@@ -429,6 +441,7 @@ async function c1Run(L, name, extraArgs, expectCombos) {
   if (!(await defaultBuild(L))) throw invalid('default build failed');
   const [branchUrl, baseUrl] = [await mainServer(L), await baseServer(L)];
   const dir = path.join(OUT, name);
+  clearOut(path.join(dir, 'c1-result.json'));
   const r = await L.node(path.join(HERE, 'c1.mjs'), ['--base', baseUrl, '--new', branchUrl, '--out', dir, '--scratch', SCRATCH, ...extraArgs]);
   const j = readJsonSafe(path.join(dir, 'c1-result.json'));
   if (!j || r.code === null || r.code > 1) throw invalid(`c1 produced no result (exit ${r.code})`);
@@ -449,6 +462,7 @@ async function osE2e(L) {
   if (!(await defaultBuild(L))) throw invalid('default build failed');
   const url = await mainServer(L);
   const dir = path.join(OUT, 'os-e2e');
+  clearOut(path.join(dir, 'result.json'));
   const r = await L.node(path.join(HERE, 'os-e2e.mjs'), ['--url', url, '--scratch', SCRATCH, '--out', dir]);
   const j = readJsonSafe(path.join(dir, 'result.json'));
   if (!j) throw invalid(`os-e2e wrote no result.json (exit ${r.code})`);
@@ -462,14 +476,19 @@ async function osE2e(L) {
   if (v.fail) return fail(v, th, bad.join('; '));
   return bad.length ? { status: 'INVALID', value: v, threshold: th, reason: bad.join('; ') } : pass(v, th);
 }
+const countKnownOf = (cls) => cls.known.length;
 /** runs os-handoff.mjs with args (baseline osHandoff.args + --throttles), judges 0 FAIL / samples / conclusive / DEVIATED cap */
 async function osHandoffRun(L, dirName, throttle, B) {
   if (!(await defaultBuild(L))) throw invalid('default build failed');
   const url = await mainServer(L);
   const dir = path.join(OUT, dirName);
-  const r = await L.node(path.join(HERE, 'os-handoff.mjs'), ['--url', url, '--out', dir, ...BL.osHandoff.args, '--throttles', String(throttle)]);
+  clearOut(path.join(dir, 'result.json'));
+  const r = await L.node(HANDOFF_SCRIPT, ['--url', url, '--out', dir, ...BL.osHandoff.args, '--throttles', String(throttle)]);
   const j = readJsonSafe(path.join(dir, 'result.json'));
   if (!j || r.code === null || r.code > 3) throw invalid(`os-handoff exit ${r.code}, no result.json`);
+  // exit code and summary must agree (exit 2 = usage error, exit 3 with 0 DEVIATED, ...): otherwise os-handoff itself is broken: FAIL, never a pass
+  const contradiction = handoffExitProblem(r.code, j.summary);
+  if (contradiction) return fail({ throttle, exit: r.code, summary: j.summary ?? null }, { exitMatchesSummary: true }, `internal error: ${contradiction}`);
   // DEVIATED = the planned click offset was not reachable on this machine (README: inconclusive, never a pass, never a failure).
   // PASS needs 0 FAIL, samples >= B.samples, conclusive passes >= B.conclusiveMin, and DEVIATED <= B.deviatedMax (explicit) or, when the baseline gives none, floor(baselineDeviated x 1.5).
   const total = j.summary.total, failN = j.summary.fail, dev = j.summary.deviated;
@@ -485,9 +504,16 @@ async function osHandoffRun(L, dirName, throttle, B) {
     if (!A.base) return fail(v, th, `${failN} failing sample(s), all known I2 phase timeouts, but no --base was given so they cannot be compared with main: FAIL`);
     // designer ruling 2026-11-17: only I2 phase timeouts can be excused, and only if main shows them too in this same run
     const bdir = path.join(OUT, `${dirName}-base-i2`);
-    const bUrl = await baseServer(L);
+    let bUrl;
+    try { bUrl = await baseServer(L); } catch (e) {
+      // main's server could not be started or built: there is nothing to compare with. Always FAIL (a base-side problem must never excuse the branch's timeouts)
+      const d = baseUnavailableDecision(countKnownOf(cls), e.message ?? String(e));
+      L.append(`\n[${d.message}]\n`);
+      return fail({ ...v, branchTimeouts: countKnownOf(cls), baseUnavailable: true }, th, d.message);
+    }
     L.append(`\n[known-on-main: all ${failN} FAIL sample(s) are I2 phase timeouts; re-measuring I2 on main at CPU ${throttle}x, --reps ${B.knownOnMainReps}]\n`);
-    const br = await L.node(path.join(HERE, 'os-handoff.mjs'), ['--url', bUrl, '--out', bdir, ...BL.osHandoff.args, '--throttles', String(throttle), '--only', 'i2', '--reps', String(B.knownOnMainReps)]);
+    clearOut(path.join(bdir, 'result.json'));
+    const br = await L.node(HANDOFF_SCRIPT, ['--url', bUrl, '--out', bdir, ...BL.osHandoff.args, '--throttles', String(throttle), '--only', 'i2', '--reps', String(B.knownOnMainReps)]);
     const bj = readJsonSafe(path.join(bdir, 'result.json'));
     const dec = knownOnMainDecision({ branchResult: j, baseExit: br.code, baseResult: bj, allowlist: B.knownOnMain, logPath: `logs/${L.id}.log` });
     const baseEv = { ...dec.value, knownOnMain: dec.status === 'INVALID', baseFail: bj?.summary?.fail ?? null, baseEvidence: rel(path.join(bdir, 'result.json')), reps: B.knownOnMainReps };
@@ -509,6 +535,7 @@ const swFlag = () => (A['allow-software'] ? ['--allow-software'] : []);
 async function holoIme(L) {
   const url = await ensureSeed(L, BL.seed.records);
   const dir = path.join(OUT, 'holo-ime');
+  clearOut(path.join(dir, 'result.json'));
   const r = await L.node(path.join(HERE, 'holo-ime.mjs'), ['--url', url, '--methods', 'proj', '--freeze', '1,0', '--out', dir]);
   const j = readJsonSafe(path.join(dir, 'result.json'));
   const v = { exit: r.code, checks: j?.results.length ?? null, failed: j?.failed ?? null, invalid: j?.invalid ?? null };
@@ -522,6 +549,7 @@ async function holoIme(L) {
 async function holoStill(L) {
   const url = await ensureSeed(L, BL.seed.records);
   const dir = path.join(OUT, 'holo-still');
+  clearOut(path.join(dir, 'result.json'));
   const r = await L.node(path.join(HERE, 'holo-still.mjs'), ['--url', url, '--out', dir, ...swFlag()]);
   if (r.code === 2) return { status: 'INVALID', value: { exit: 2 }, threshold: null, reason: 'software WebGL renderer (holo-still exit 2)' };
   const j = readJsonSafe(path.join(dir, 'result.json')) ?? [];
@@ -536,6 +564,7 @@ async function holoStill(L) {
 async function holoPerf(L, n, minFps, warnFps = null) {
   const url = await ensureSeed(L, n);
   const dir = path.join(OUT, `holo-perf-${n}`);
+  clearOut(path.join(dir, `result-spiral${n}-cpu1-fps.json`));
   const r = await L.node(path.join(HERE, 'holo-perf.mjs'), ['--url', url, '--n', String(n), '--modes', 'fps', '--out', dir, ...swFlag()]);
   if (r.code === 2) return { status: 'INVALID', value: { exit: 2 }, threshold: { medianFpsMin: minFps }, reason: 'software WebGL renderer (holo-perf exit 2)' };
   const j = readJsonSafe(path.join(dir, `result-spiral${n}-cpu1-fps.json`));
@@ -569,10 +598,10 @@ async function main() {
     it.log = rel(L.file);
     it.reason = null;
     let res;
-    try { res = await RUNNERS[it.id](L); res = it.group === 'D' ? await softwareGuard(res) : res; if (L.timedOut && res.status !== 'INVALID') res = { ...res, status: 'INVALID', reason: 'a command timed out and was killed: result is inconclusive' }; }
-    catch (e) { res = { status: 'INVALID', value: null, threshold: null, reason: (e instanceof Invalid ? '' : 'harness error: ') + (e.message ?? String(e)) }; L.append(`\n[${res.reason}]\n${e.stack ?? ''}\n`); }
+    try { res = await RUNNERS[it.id](L); res = it.group === 'D' ? await softwareGuard(res) : res; res = applyTimeout(res, L.timedOut); }
+    catch (e) { res = applyTimeout({ status: 'INVALID', value: null, threshold: null, reason: (e instanceof Invalid ? '' : 'harness error: ') + (e.message ?? String(e)) }, L.timedOut); L.append(`\n[${res.reason}]\n${e.stack ?? ''}\n`); }
     beat();
-    res = applySuspend(res, classifySuspend(heartbeats, t0, Date.now())); // a suspend inside the run beats every other verdict, FAIL evidence stays in value
+    res = applySuspend(res, classifySuspend(heartbeats, t0, Date.now()), it.timeSensitive); // time-sensitive items only: a suspend inside the run beats every other verdict, FAIL evidence stays in value
     Object.assign(it, { status: res.status, value: res.value ?? null, threshold: res.threshold ?? null, reason: res.reason ?? null, durationMs: Date.now() - t0 });
     if (res.status === 'SKIP' || res.status === 'N/A') it.log = null;
     console.log(`${res.status.padEnd(7)} ${it.id.padEnd(16)} ${(it.durationMs / 1000).toFixed(0).padStart(4)}s  ${JSON.stringify(it.value)}${it.reason ? '  — ' + it.reason : ''}`);

@@ -5,12 +5,28 @@
 // a plain FAIL: verify-holo re-measures the same samples on the --base (main) worktree. Any other FAIL stays a FAIL.
 // Never used for the 1x os-handoff item.
 
-/** a FAIL row of os-handoff result.json counts as "known" only if it has this entry's id and EVERY note matches the entry's pattern */
+import { PHASES, TRANSITIONS } from './os-phases.mjs';
+
+/**
+ * The note os-common.mjs writes when an I2 sample waits for a phase that never comes: only the three real "<kind>-post" phases,
+ * each paired with ITS "<kind>-pre" first in the "have" list, and only real phase names after it. The names come from os-phases.mjs
+ * (checked against the product's Phase type), never from a hand-written list; any other phase name does not match.
+ */
+export function phaseTimeoutPattern() {
+  const all = PHASES.join('|');
+  const alts = Object.values(TRANSITIONS).map((t) => `${t.post} \\(have ${t.pre}(?:>(?:${all}))*\\)`);
+  return `^error: eval failed: Error: timeout waiting for phase (?:${alts.join('|')})$`;
+}
+const PATTERN_OF_KIND = { 'phase-timeout': phaseTimeoutPattern };
+
+/** a FAIL row of os-handoff result.json counts as "known" only if it has this entry's id and EVERY note matches the pattern of the entry's kind */
 export function matchesKnown(row, entry) {
   if (!row || row.status !== 'FAIL' || row.id !== entry.id) return false;
   const notes = Array.isArray(row.notes) ? row.notes : [];
   if (!notes.length) return false;
-  const re = new RegExp(entry.notePattern);
+  const make = PATTERN_OF_KIND[entry.kind];
+  if (!make) return false; // an entry of an unknown kind excuses nothing
+  const re = new RegExp(make());
   return notes.every((n) => typeof n === 'string' && re.test(n));
 }
 
@@ -88,4 +104,24 @@ export function knownOnMainDecision({ branchResult, baseExit, baseResult, allowl
   const value = { branchTimeouts, branchSamples, baseTimeouts: jb.hits, baseSamples, limit: rv.limit, baseExit };
   if (rv.invalid) return { status: 'INVALID', value, message: `${branchTimeouts} FAIL sample(s), all I2 phase timeouts; ${rv.reason} (known-on-main, not caused by this branch): needs designer/L2 judgement` };
   return { status: 'FAIL', value, message: `${branchTimeouts} I2 phase timeout(s); ${rv.reason}: not known-on-main` };
+}
+
+/**
+ * Sanity check of an os-handoff run: its exit code and its own summary must agree (exit codes: 0 clean, 1 any FAIL, 3 DEVIATED only; 2 is the usage error).
+ * Anything else means os-handoff itself broke (crashed, wrong arguments, a summary that is not the run's), which is a FAIL of the harness, never a pass or an INVALID.
+ * @returns {string|null} a message when contradictory, else null
+ */
+export function handoffExitProblem(exit, summary) {
+  const f = summary?.fail, d = summary?.deviated;
+  if (typeof f !== 'number' || typeof d !== 'number') return 'result.json has no numeric summary.fail / summary.deviated';
+  if (exit === 2) return 'os-handoff exited 2 (usage error): the run did not measure anything';
+  if (exit === 0 && (f > 0 || d > 0)) return `os-handoff exited 0 but its summary has ${f} FAIL and ${d} DEVIATED`;
+  if (exit === 1 && f === 0) return 'os-handoff exited 1 (FAIL) but its summary has 0 FAIL';
+  if (exit === 3 && (d === 0 || f > 0)) return `os-handoff exited 3 (DEVIATED only) but its summary has ${f} FAIL and ${d} DEVIATED`;
+  return null;
+}
+
+/** the --base (main) side could not be started or built: the known-on-main comparison is impossible. FAIL, in the same wording style as a failed re-run. */
+export function baseUnavailableDecision(branchTimeouts, errMessage) {
+  return { status: 'FAIL', message: `${branchTimeouts} I2 phase timeout(s), but the base (main) side could not be started: ${errMessage}; this is a problem on the base side, so it cannot be compared with main: not known-on-main` };
 }

@@ -30,11 +30,14 @@ export function classifySuspend(heartbeats, itemStart, itemEnd, thresholdMs = SU
 
 /**
  * Turn a finished item result into INVALID when a suspend overlapped its run. Takes precedence over timeouts.
+ * ONLY for items marked time-sensitive (browser, performance, input timing: ITEM_DEFS flag in verify-holo.mjs). Everything else is static: its result does not
+ * depend on the clock (a build, a test run, a diff scan), so a FAIL stays a FAIL and a PASS stays a PASS (the top-level suspendedGaps still records the gap).
+ * The default is "not time-sensitive": a new item is never reclassified unless it is explicitly marked.
  * Only a real overlap changes anything (a FAIL elsewhere stays a FAIL); the original verdict and its evidence stay in value.
  * SKIP / N/A items did not run: untouched.
  */
-export function applySuspend(res, suspend) {
-  if (!suspend.suspended || res.status === 'SKIP' || res.status === 'N/A') return res;
+export function applySuspend(res, suspend, timeSensitive = false) {
+  if (!timeSensitive || !suspend.suspended || res.status === 'SKIP' || res.status === 'N/A') return res;
   const g = suspend.gaps[0];
   const more = suspend.gaps.length > 1 ? ` (+${suspend.gaps.length - 1} more)` : '';
   return {
@@ -42,4 +45,15 @@ export function applySuspend(res, suspend) {
     value: { ...(res.value && typeof res.value === 'object' ? res.value : { originalValue: res.value ?? null }), suspendedGaps: suspend.gaps.map(({ start, seconds }) => ({ start, seconds })), originalStatus: res.status, originalReason: res.reason ?? null },
     reason: `system suspended (gap ${g.seconds}s at ${g.start})${more}, rerun required`,
   };
+}
+
+/**
+ * A command of the item hit the 40 minute timer and was killed. If the item already shows a FAIL, that FAIL is real evidence: it stays FAIL (the timeout is added to the reason).
+ * Otherwise the result is incomplete: INVALID. Both messages say the run was aborted on the timeout. SKIP / N/A untouched.
+ */
+export function applyTimeout(res, timedOut) {
+  if (!timedOut || res.status === 'SKIP' || res.status === 'N/A') return res;
+  const note = 'a command hit the timeout and was aborted';
+  if (res.status === 'FAIL') return { ...res, reason: `${res.reason ?? 'FAIL'} (${note}: the FAIL stands)` };
+  return { ...res, status: 'INVALID', reason: `aborted on timeout: ${note}${res.reason ? `; ${res.reason}` : ''}, result is inconclusive` };
 }
