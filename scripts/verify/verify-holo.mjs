@@ -27,6 +27,7 @@ import { Browser } from './cdp.mjs';
 import { assertScratchServer } from './safety.mjs';
 import { overallExit } from './exit-code.mjs';
 import { baseUnavailableDecision, classifyFails, handoffExitProblem, knownOnMainDecision } from './known-on-main.mjs';
+import { envKindOf, judgeRetry, summarizeAttempt } from './ime-env.mjs';
 import { HEARTBEAT_MS, applySuspend, applyTimeout, classifySuspend, clock, findGaps } from './suspend.mjs';
 import { personalHit, profilePathHit, themeKeyLines } from './redline-rules.mjs';
 
@@ -548,15 +549,37 @@ const osHandoff4x = async (L) => {
 
 // ------------------------------------------------------------------ D: lab scripts (headed Chrome, real GPU)
 const swFlag = () => (A['allow-software'] ? ['--allow-software'] : []);
+/** holo-ime: environmental exceptions (ime-env.mjs) are INVALID, never FAIL, but never silently: ONE in-place retry (decision recorded in README "holo-ime environmental exceptions").
+ *  Why retry here and not inside holo-ime.mjs: this is where the verdict is made, and the first attempt's result.json can be kept next to the retry's (result.attempt1.json). */
+const IME_SCRIPT = ST && process.env.VERIFY_HOLO_SELFTEST_IME ? process.env.VERIFY_HOLO_SELFTEST_IME : path.join(HERE, 'holo-ime.mjs');
 async function holoIme(L) {
-  const url = await ensureSeed(L, BL.seed.records);
+  const url = ST && process.env.VERIFY_HOLO_SELFTEST_IME ? 'http://localhost:0/' : await ensureSeed(L, BL.seed.records);
   const dir = path.join(OUT, 'holo-ime');
-  clearOut(path.join(dir, 'result.json'));
-  const r = await L.node(path.join(HERE, 'holo-ime.mjs'), ['--url', url, '--methods', 'proj', '--freeze', '1,0', '--out', dir]);
-  const j = readJsonSafe(path.join(dir, 'result.json'));
-  const v = { exit: r.code, checks: j?.results.length ?? null, failed: j?.failed ?? null, invalid: j?.invalid ?? null };
+  const attempt = async () => {
+    clearOut(path.join(dir, 'result.json'));
+    const r = await L.node(IME_SCRIPT, ['--url', url, '--methods', 'proj', '--freeze', '1,0', '--out', dir]);
+    const j = readJsonSafe(path.join(dir, 'result.json'));
+    return { r, j, a: summarizeAttempt(r.code, j) };
+  };
   const th = { failed: 0, checksMin: BL.holoIme.checks };
-  if (r.code === 2) return { status: 'INVALID', value: v, threshold: th, reason: j?.invalid ?? 'holo-ime exit 2' };
+  let { r, j, a } = await attempt();
+  const diagOf = (jj) => (jj ? { diag: jj.diag ?? null, ...(jj.diagFull ? { diagFull: 'see holo-ime/result.json' } : {}) } : {});
+  if (r.code === 2 && envKindOf(a)) {
+    L.append(`
+[holo-ime: first run ended in an environmental exception (${a.envError.kind} at ${a.envError.step}); retrying once in place]
+`);
+    try { fs.copyFileSync(path.join(dir, 'result.json'), path.join(dir, 'result.attempt1.json')); } catch { /* keep going */ }
+    const second = await attempt();
+    const jd = judgeRetry(a, second.a);
+    const value = { exit: second.r.code, checks: second.a.checks, failed: second.a.failed, invalid: second.a.invalid, retried: true, firstAttempt: jd.firstAttempt, retry: second.a, ...diagOf(second.j) };
+    L.append(`
+[holo-ime: ${jd.status}: ${jd.reason}]
+`);
+    return { status: jd.status, value, threshold: th, reason: jd.reason };
+  }
+  const v = { exit: r.code, checks: a.checks, failed: a.failed, invalid: a.invalid, retried: false, ...diagOf(j) };
+  if (r.code === 2 && j?.envError) return fail(v, th, `holo-ime reported an environmental exception of kind ${JSON.stringify(j.envError.kind)} which is not on the list (ime-env.mjs ENV_ERROR_KINDS): FAIL`);
+  if (r.code === 2) return { status: 'INVALID', value: v, threshold: th, reason: j?.invalid ?? (j?.envError ? `environmental exception ${j.envError.kind} (not retried)` : 'holo-ime exit 2') };
   if (r.code === 1) return fail(v, th, `${v.failed} failing check(s): ${(j?.results ?? []).filter((x) => !x.pass).map((x) => x.name).slice(0, 3).join(' | ')}`);
   if (r.code !== 0 || !j) throw invalid(`holo-ime exit ${r.code}`);
   if (v.checks < th.checksMin) return fail(v, th, `checks ${v.checks} < baseline ${th.checksMin}`);

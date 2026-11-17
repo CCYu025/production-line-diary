@@ -1,0 +1,45 @@
+// holo-ime: which exceptions are "the environment, not the product" (-> INVALID) and how a retried run is judged. Pure functions, no I/O.
+// Designer ruling 2026-11-17. holo-ime.mjs uses classifyEnvError(); verify-holo.mjs uses envKindOf() and judgeRetry().
+// Self-test: node scripts/verify/ime-env.selftest.mjs
+
+/** THE one list of environmental exception kinds. Anything not matched here is a FAIL (a harness exception that is not on this list is treated as a real problem). */
+export const ENV_ERROR_KINDS = {
+  'page-not-ready': 'the lab page never became ready (waitFor timeout on window.__holoLab().frames, or window.__holoLab missing) before the first check',
+  'cdp-connection-lost': 'the CDP connection broke or a CDP command timed out',
+  'target-closed': 'the Chrome target (tab) was closed',
+};
+
+/** @returns {'page-not-ready'|'cdp-connection-lost'|'target-closed'|null} phase is the script's own marker of where it was ('page-ready' = before the first check) */
+export function classifyEnvError(err, phase) {
+  const m = String(err?.message ?? err ?? '');
+  if (/Target closed|No target with given id|Session with given id not found|Inspected target navigated or closed/i.test(m)) return 'target-closed';
+  if (/CDP timeout|WebSocket is not open|readyState \d|ECONNRESET|socket (hang up|closed)|fetch failed/i.test(m)) return 'cdp-connection-lost';
+  if (phase === 'page-ready' && (/^waitFor timeout/.test(m) || /__holoLab/.test(m))) return 'page-not-ready';
+  return null;
+}
+
+/** one attempt's result.json (+ exit code) -> { exit, failed, checks, invalid, envError } */
+export const summarizeAttempt = (exit, j) => ({ exit, failed: j?.failed ?? null, checks: j?.results?.length ?? null, invalid: j?.invalid ?? null, envError: j?.envError ?? null });
+export const envKindOf = (a) => (a?.envError && Object.hasOwn(ENV_ERROR_KINDS, a.envError.kind) ? a.envError.kind : null);
+const envText = (e) => `${e.kind} at "${e.step}" (${String(e.message).slice(0, 160)})`;
+
+/**
+ * Judges a first attempt that ended in an environmental exception together with its single in-place retry.
+ *  - retry has a real check failure / unknown outcome            -> FAIL
+ *  - retry ends in the SAME environmental kind                   -> FAIL (two in a row: maybe the product's render loop did not start)
+ *  - retry is PASS                                               -> INVALID (a retry never washes the first exception out)
+ *  - retry is INVALID for another reason / another env kind      -> INVALID
+ * Always records retried:true and the first exception; the reason always says "retried 1x".
+ * @returns {{status:'FAIL'|'INVALID', reason:string, retried:true, firstAttempt:object, retry:object}}
+ */
+export function judgeRetry(first, retry) {
+  const e1 = first.envError;
+  const rec = { retried: true, firstAttempt: { kind: e1.kind, step: e1.step, message: e1.message }, retry };
+  const head = `retried 1x after the first run ended in an environmental exception: ${envText(e1)}`;
+  const k2 = envKindOf(retry);
+  if (retry.exit === 1 || retry.failed > 0) return { ...rec, status: 'FAIL', reason: `${head}; the retry has ${retry.failed ?? '?'} failing check(s) (retried 1x)` };
+  if (k2 && k2 === e1.kind) return { ...rec, status: 'FAIL', reason: `${head}; the retry ended in the SAME environmental exception (${envText(retry.envError)}): two consecutive ${e1.kind} exceptions, possibly the product's render loop did not start (retried 1x)` };
+  if (retry.exit === 0) return { ...rec, status: 'INVALID', reason: `${head}; the retry was PASS (${retry.checks} checks) but a retry does not wash out the first exception: INVALID (retried 1x)` };
+  if (retry.exit === 2) return { ...rec, status: 'INVALID', reason: `${head}; the retry was INVALID too: ${retry.envError ? envText(retry.envError) : retry.invalid} (retried 1x)` };
+  return { ...rec, status: 'FAIL', reason: `${head}; the retry ended with exit ${retry.exit} and no usable result (retried 1x)` };
+}

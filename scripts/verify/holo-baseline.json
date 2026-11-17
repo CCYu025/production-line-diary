@@ -46,7 +46,7 @@
     "note": "1x run only (default). DEVIATED must be <= floor(baselineDeviated x 1.5) = 16, else INVALID. baselineDeviated: 11 measured 2026-11-15 on the machine in measuredOn (102 samples, 91 conclusive; earlier runs 11-12)."
   },
   "holoIme": {
-    "checks": 44
+    "checks": 68
   },
   "holoStill": {
     "checks": 10

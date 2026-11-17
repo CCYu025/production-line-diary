@@ -131,5 +131,57 @@ ok('(6c) CI set (non-empty) + VERIFY_HOLO_SELFTEST=1: refused -> FAIL, exit 1, n
   const empty = runStatic('h3', { CI: '' }); assert.match(empty.last, /^VERIFY:HOLO SELFTEST/, 'empty CI is "not set"');
   const noHook = runStatic('h4', { CI: 'true', VERIFY_HOLO_SELFTEST: undefined }); assert.doesNotMatch(noHook.stderr, /refused/); assert.ok(noHook.json);
 });
+
+// ---- holo-ime environmental exceptions (H2-0 coordinator 8): a fake holo-ime replays <FX_DIR>/ime.json (one spec per attempt); the REAL verify-holo decides.
+const FAKE_IME = path.join(TMP, 'fake-holo-ime.mjs');
+fs.writeFileSync(FAKE_IME, [
+  "import fs from 'node:fs'; import path from 'node:path';",
+  "const a = process.argv.slice(2); const out = a[a.indexOf('--out') + 1];",
+  "const cf = path.join(process.env.FX_DIR, 'ime-count'); const k = fs.existsSync(cf) ? Number(fs.readFileSync(cf, 'utf8')) : 0; fs.writeFileSync(cf, String(k + 1));",
+  "const spec = JSON.parse(fs.readFileSync(path.join(process.env.FX_DIR, 'ime.json'), 'utf8'))[k] ?? { exit: 9 };",
+  "if (spec.result) { fs.mkdirSync(out, { recursive: true }); fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify(spec.result)); } process.exit(spec.exit);",
+  '',
+].join(String.fromCharCode(10)));
+const checks = (k) => Array.from({ length: k }, (_, i) => ({ name: 'c' + i, pass: true }));
+const IME_PASS = { exit: 0, result: { results: checks(50), failed: 0, invalid: null, envError: null } };
+const imeEnv = (kind, k = 22) => ({ exit: 2, result: { results: checks(k), failed: 0, invalid: null, envError: { kind, step: 'proj freeze=0 page-ready', message: 'waitFor timeout: window.__holoLab && window.__holoLab().frames > 10' } } });
+const IME_FAIL = { exit: 1, result: { results: [...checks(10), { name: 'bad', pass: false }], failed: 1, invalid: null, envError: null } };
+function runIme(name, specs) {
+  const d = path.join(TMP, name); fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'ime.json'), JSON.stringify(specs));
+  const r = run(name, { branch: {} }, { item: 'holo-ime', env: { VERIFY_HOLO_SELFTEST_IME: FAKE_IME } });
+  const f = path.join(d, 'ime-count');
+  return { ...r, attempts: fs.existsSync(f) ? Number(fs.readFileSync(f, 'utf8')) : 0 };
+}
+ok('(ime-1) env exception then retry PASS -> INVALID (not PASS): JSON value.retried=true with the first exception, summary text says "retried 1x", exactly 2 attempts', () => {
+  const r = runIme('ime1', [imeEnv('page-not-ready'), IME_PASS]);
+  assert.equal(r.attempts, 2); assert.equal(r.it.status, 'INVALID');
+  assert.equal(r.it.value.retried, true); assert.equal(r.it.value.firstAttempt.kind, 'page-not-ready'); assert.equal(r.it.value.firstAttempt.step, 'proj freeze=0 page-ready'); assert.match(r.it.value.firstAttempt.message, /waitFor timeout/);
+  assert.match(r.it.reason, /retried 1x/); assert.match(r.it.reason, /does not wash out/);
+  assert.match(fs.readFileSync(path.join(TMP, 'ime1', 'out', 'verify-holo.json'), 'utf8'), /retried 1x/);
+});
+ok('(ime-2) two consecutive environmental exceptions of the SAME kind -> FAIL (render loop may not start), says retried 1x', () => {
+  const r = runIme('ime2', [imeEnv('page-not-ready'), imeEnv('page-not-ready')]);
+  assert.equal(r.attempts, 2); assert.equal(r.it.status, 'FAIL'); assert.match(r.it.reason, /two consecutive page-not-ready/); assert.match(r.it.reason, /retried 1x/); assert.equal(r.it.value.retried, true);
+});
+ok('(ime-3) environmental exception, retry has a real failing check -> FAIL', () => {
+  const r = runIme('ime3', [imeEnv('cdp-connection-lost'), IME_FAIL]);
+  assert.equal(r.it.status, 'FAIL'); assert.equal(r.it.value.retried, true);
+});
+ok('(ime-4) clean PASS: no retry (1 attempt), retried:false', () => {
+  const r = runIme('ime4', [IME_PASS, IME_PASS]);
+  assert.equal(r.attempts, 1); assert.equal(r.it.status, 'PASS'); assert.equal(r.it.value.retried, false);
+});
+ok('(ime-5) a real FAIL (exit 1) is never retried, even if the result file also mentions an environmental exception seen after the failure', () => {
+  const bad = { exit: 1, result: { ...IME_FAIL.result, envErrorSeen: { kind: 'target-closed', step: 'x', message: 'Target closed' } } };
+  const r = runIme('ime5', [bad, IME_PASS]);
+  assert.equal(r.attempts, 1); assert.equal(r.it.status, 'FAIL');
+});
+ok('(ime-6) INVALID by the probe (no env error) is not retried; an exit 2 with an environmental kind NOT on the list is FAIL, not INVALID', () => {
+  const probe = runIme('ime6a', [{ exit: 2, result: { results: [], failed: 0, invalid: 'IME probe composition did not fire', envError: null } }, IME_PASS]);
+  assert.equal(probe.attempts, 1); assert.equal(probe.it.status, 'INVALID');
+  const unknown = runIme('ime6b', [imeEnv('some-new-kind'), IME_PASS]);
+  assert.equal(unknown.attempts, 1); assert.equal(unknown.it.status, 'FAIL'); assert.match(unknown.it.reason, /not on the list/);
+});
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log(`verify-holo selftest: ${n} groups passed`);

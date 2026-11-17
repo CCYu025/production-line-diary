@@ -6,12 +6,14 @@
 //   C2  <textarea> same, Enter must not add a newline while composing
 //   C3  Combobox  composition, ArrowDown / ArrowUp / Enter / Escape -> no option picked, list not committed, value intact, no submit; two scenarios: text that matches no option (ㄈ) and text that matches options (F)
 //   C4  sanity    Enter outside composition does submit (the checks above are not vacuous)
+//   C3  also asserts that Enter and Escape during composition leave the list open (aria-expanded stays true), and a third scenario hovers an option (highlight set) and presses Enter: nothing is picked
 //   C5  world     the world really kept moving during composition (yaw and the anchor's screen position); slate position change during composition is reported
 // What CDP cannot show: where the OS candidate window appears. That is part of the manual HF3 check (the user's Zhuyin session).
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { Browser, sleep } from './cdp.mjs';
+import { classifyEnvError } from './ime-env.mjs';
 
 const { values: A } = parseArgs({
   options: {
@@ -27,6 +29,11 @@ const browser = await Browser.launch({ port: +A['cdp-port'], headless: A.headles
 const results = [];
 let failed = 0;
 let invalid = null;
+/** environmental exception (ime-env.mjs ENV_ERROR_KINDS) that happened while every earlier check had passed: {kind, step, message}. exit 2, never FAIL; verify-holo retries once. */
+let envError = null;
+let envErrorSeen = null; // an environmental-looking exception that came AFTER a failed check: stays a FAIL, but is recorded
+let halt = false;
+const diags = []; // per (method, freeze): short diagnostics always, full ones only written when something failed or threw
 /** Focus gate. Rule (designer ruling 2026-11-17): focus emulation is ON, so the OS window focus does not matter; the ONLY thing that makes a run INVALID here is that the
  *  probe composition does not fire compositionstart on the field (the page cannot take IME input at all). document.hasFocus() is recorded, not judged.
  *  Up to 3 tries, 200 ms apart. KILL_PROBE (flag --kill-probe or env HOLO_IME_KILL_PROBE=1) is a mutation switch for validating the gate itself: it skips the probe composition,
@@ -63,6 +70,12 @@ window.addEventListener('blur',(e)=>{if(e.target===window){T.winBlur++;push('win
 window.addEventListener('focus',(e)=>{if(e.target===window)push('window-focus',window)},true);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)T.hidden++;push('visibility-'+document.visibilityState,document)});
 return true})()`;
+const DIAG_JS = `(()=>{const q=(id)=>document.getElementById(id);const R=window.__diagRef={slate:document.querySelector('[data-holo="slate"]'),lab:window.__holoLab,fields:['holo-problem','holo-action','holo-equipment'].map(q),longtasks:[]};
+try{new PerformanceObserver((l)=>{for(const e of l.getEntries())if(R.longtasks.length<50)R.longtasks.push({t:Math.round(e.startTime),d:Math.round(e.duration)})}).observe({type:'longtask',buffered:true})}catch(e){R.lt='unavailable'}return true})()`;
+const SNAP_JS = `(()=>{const R=window.__diagRef;if(!R)return {noRef:true};const ids=['holo-problem','holo-action','holo-equipment'];
+return {slateSwapped:R.slate?document.querySelector('[data-holo="slate"]')!==R.slate:null,fieldsConnected:R.fields.map((e)=>!!e&&e.isConnected),fieldsSwapped:R.fields.map((e,i)=>!e||document.getElementById(ids[i])!==e),
+labSwapped:window.__holoLab!==R.lab,visibility:document.visibilityState,hasFocus:document.hasFocus(),framesNow:(window.__holoLab&&window.__holoLab().frames)||null}})()`;
+const FULL_JS = `(()=>{const R=window.__diagRef||{};return {trail:(window.__imeTrail?window.__imeTrail.ev.slice(-80):null),longtasks:R.longtasks||null,longtaskObserver:R.lt||'ok'}})()`;
 let cur = null; // the page being driven (record() reads its trail)
 /** Records a check. A FAIL carries the page-side event trail (last 40 events) as evidence. There is deliberately NO "window lost focus -> INVALID" reclassification:
  *  10 consecutive clean runs (H2-0 phase 2) showed no window blur and no FAIL, so nothing supports it and it could only hide a real FAIL. The trail is for diagnosing. */
@@ -76,14 +89,21 @@ async function record(cfg, name, pass, evidence) {
 
 try {
   for (const method of A.methods.split(',')) {
-    if (invalid) break;
+    if (invalid || halt) break;
     for (const freeze of A.freeze.split(',')) {
       const cfg = { method, freeze };
-      const p = await browser.newPage({ width: 1600, height: 900 });
+      let phase = 'page-ready'; // where the script is: classifyEnvError() only treats a never-ready page as environmental before the first check
+      let p = null;
+      const D = { method, freeze, framesAtCompStart: null, framesMid: null, snap: null, full: null, exception: null };
+      diags.push(D);
+      try {
+      p = await browser.newPage({ width: 1600, height: 900 });
       await p.goto(`${base}#/_holo?slate=${method}&freeze=${freeze}&holodebug=1`, { settle: 800 });
       await p.waitFor('window.__holoLab && window.__holoLab().frames > 10', 15000);
       cur = p;
+      phase = 'focus-gate';
       await p.eval(TRAIL_JS);
+      await p.eval(DIAG_JS);
       const lab = async () => JSON.parse(await p.eval('JSON.stringify(window.__holoLab())'));
       const fld = (id) => `document.getElementById('${id}')`;
       const val = (id) => p.eval(`${fld(id)}.value`);
@@ -120,7 +140,7 @@ try {
       const submits = async () => (await lab()).slate.probe.submits;
       const keyEvents = async () => (await lab()).slate.probe.events.filter((e) => e.type === 'keydown');
       // Focus gate (H2-0, ruling 2026-11-17): focus emulation is on, so OS window focus is not judged. The probe composition not firing = INVALID (exit 2), never FAIL.
-      if (!(await ensureFocused(p, 'holo-problem'))) { invalid = 'IME probe composition did not fire compositionstart (the page cannot take IME input)'; console.log(`INVALID: ${invalid} [${method} freeze=${freeze}]`); await p.close(); break; }
+      if (!(await ensureFocused(p, 'holo-problem'))) { invalid = 'IME probe composition did not fire compositionstart (the page cannot take IME input)'; console.log(`INVALID: ${invalid} [${method} freeze=${freeze}]`); halt = true; break; }
       await p.eval('window.__holoLab.resetProbe()'); // also wipes the probe composition the focus gate made
       await p.eval('(()=>{const T=window.__imeTrail;T.ev=[];T.winBlur=0;T.hidden=0;T.composing=false;return true})()'); // the gate own focus churn is not part of the run
       const before = await lab();
@@ -133,15 +153,18 @@ try {
       await record(cfg, 'world is moving (script-driven yaw drift + cursor flips)', Math.hypot(a1.x - a0.x, a1.y - a0.y) > 1, { anchorMovedPx: +Math.hypot(a1.x - a0.x, a1.y - a0.y).toFixed(1) });
 
       // ---------- C1 <input>
+      phase = 'C1';
       await focus('holo-problem');
       const yaw0 = (await lab()).camera.yaw;
       const anchor0 = await p.eval('JSON.stringify(window.__holoLab.anchorScreen())').then(JSON.parse);
       await comp('ㄋㄧˇ', 'holo-problem');
+      D.framesAtCompStart = (await lab()).frames;
       await sleep(120); // the freeze applies from compositionstart on; measure the baseline only AFTER it took effect: a rect read before compositionstart can be
                         // one rendered frame older than the frozen position (css3d moves ~1px per frame while the world turns) and would look like movement
       const rect0 = await rectOfSlate();
       await sleep(580); // the world keeps moving while composing
       const mid = await lab();
+      D.framesMid = mid.frames; // frames must advance during composition: the world kept rendering
       const rectMid = await rectOfSlate();
       await rawKey('Enter', 'Enter', 13);
       await imeKey('Enter', 13);
@@ -172,6 +195,7 @@ try {
       });
 
       // ---------- C2 <textarea>
+      phase = 'C2';
       await focus('holo-action');
       await comp('ㄏㄠˇ', 'holo-action');
       await rawKey('Enter', 'Enter', 13);
@@ -185,34 +209,58 @@ try {
       // ---------- C3 Combobox. Two scenarios: 'ㄈ' (matches no option) and 'F' (the composition text matches equipment options such as F3 / F4 / F7 / F8, so a Combobox that
       // wrongly acts on ArrowDown/Enter while composing would substitute an option). The second one is what makes the check able to see a missing isComposing guard (H2-0 L2).
       const OPTIONS = ['F3', 'F4', 'G5', 'G6', 'F7', 'F8', 'RB2', '原材區'];
-      for (const [tag, text] of [['no-match', 'ㄈ'], ['matches-options', 'F']]) {
+      // Third scenario 'highlighted': the typed text matches options AND the mouse hovers an option row (Combobox onMouseMove sets the highlight; a keyboard highlight cannot survive the
+      // start of a composition because the input event resets it). Enter while composing must then still not pick that option (H2-0 coordinator 8).
+      for (const [tag, text, suffix, hover] of [['no-match', 'ㄈ', '', false], ['matches-options', 'F', 'Y', false], ['highlighted', 'F', 'Z', true]]) {
+        phase = `C3 ${tag}`;
         await p.eval('window.__holoLab.resetProbe()');
         await p.eval(`(()=>{const e=${fld('holo-equipment')};e.focus();return true})()`);
         await settle(`document.activeElement===${fld('holo-equipment')} && ${fld('holo-equipment')}.getAttribute('aria-expanded')==='true'`); // focused and the suggestion list is open
         await comp(text, 'holo-equipment');
         const adOf = () => p.eval(`${fld('holo-equipment')}.getAttribute('aria-activedescendant')||''`);
+        const stateOf = () => p.eval(`(()=>{const e=${fld('holo-equipment')};return {value:e.value,active:document.activeElement===e,expanded:e.getAttribute('aria-expanded'),activedescendant:e.getAttribute('aria-activedescendant')||''}})()`);
         const expandedBefore = await p.eval(`${fld('holo-equipment')}.getAttribute('aria-expanded')`);
         const ads = [await adOf()];
         for (const [k, vk] of [['ArrowDown', 40], ['ArrowDown', 40], ['ArrowUp', 38]]) { await rawKey(k, k, vk); ads.push(await adOf()); }
         // M4 (L2-d): a Combobox that guards only Enter and not the arrows still passes every value check below; the highlight (aria-activedescendant) is what the arrows would move.
         await record(cfg, `C3 combobox [${tag}]: ArrowDown/ArrowUp during composition do not move the highlight (aria-activedescendant unchanged, list open)`,
           expandedBefore === 'true' && ads.every((x) => x === ads[0]), { expandedBefore, activedescendantAfterEachKey: ads });
+        let hoverAd = '';
+        if (hover) {
+          for (let i = 0; i < 5 && !hoverAd; i++) {
+            const pt = await p.eval(`(()=>{const o=document.querySelector('[data-holo="slate"] [role="option"]')||document.querySelector('[role="option"]');if(!o)return null;const r=o.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+            if (pt) { await p.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x - 3, y: pt.y }); await p.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x, y: pt.y }); }
+            await settle(`${fld('holo-equipment')}.getAttribute('aria-activedescendant')`);
+            hoverAd = await adOf();
+          }
+          await record(cfg, `C3 combobox [${tag}]: precondition, hovering an option highlights it while composing (aria-activedescendant set)`, hoverAd !== '', { activedescendant: hoverAd });
+        }
         await rawKey('Enter', 'Enter', 13);
         await imeKey('Enter', 13);
+        const afterEnter = await stateOf();
+        // Enter: a Combobox that lost its composing guard would confirm the typed value and CLOSE the list (or, with a highlight, pick the option).
+        await record(cfg, `C3 combobox [${tag}]: Enter during composition leaves the suggestion list open (aria-expanded stays "true")`, afterEnter.expanded === 'true', { ...afterEnter, typed: text });
+        if (hover) {
+          await record(cfg, `C3 combobox [${tag}]: Enter during composition with a highlighted option picks nothing (value and aria-activedescendant unchanged)`,
+            afterEnter.value.includes(text) && !OPTIONS.includes(afterEnter.value) && afterEnter.activedescendant === hoverAd, { ...afterEnter, hoveredActivedescendant: hoverAd, typed: text });
+        }
         await rawKey('Escape', 'Escape', 27);
-        const cb = await p.eval(`(()=>{const e=${fld('holo-equipment')};return {value:e.value,active:document.activeElement===e,expanded:e.getAttribute('aria-expanded'),activedescendant:e.getAttribute('aria-activedescendant')||''}})()`);
+        const cb = await stateOf();
+        // Escape: a Combobox that lost its composing guard would close the list (and swallow the IME's Escape).
+        await record(cfg, `C3 combobox [${tag}]: Escape during composition leaves the suggestion list open (aria-expanded stays "true")`, cb.expanded === 'true', { ...cb, typed: text });
         const cbSub = await submits();
         await record(cfg, `C3 combobox [${tag}]: ArrowDown/Up/Enter/Escape during composition pick nothing, keep focus and text, no submit`,
           cb.value.includes(text) && !OPTIONS.includes(cb.value) && cb.active && cbSub === 0, { ...cb, typed: text, submits: cbSub });
-        await commit(`設備X${tag === 'no-match' ? '' : 'Y'}`, `C3 [${tag}]`);
+        await commit(`設備X${suffix}`, `C3 [${tag}]`);
         const cb2 = await val('holo-equipment');
-        await record(cfg, `C3 combobox [${tag}]: commit keeps exactly the typed text (no option substituted)`, cb2 === `設備X${tag === 'no-match' ? '' : 'Y'}`, { value: cb2, submits: await submits() });
+        await record(cfg, `C3 combobox [${tag}]: commit keeps exactly the typed text (no option substituted)`, cb2 === `設備X${suffix}`, { value: cb2, submits: await submits() });
         // empty the field for the next scenario (same trick as the focus gate; not part of any check)
         await p.eval(`(()=>{const e=${fld('holo-equipment')};e.focus();const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(e,'');e.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
         await settle(`${fld('holo-equipment')}.value===''`);
       }
 
       // ---------- C4 sanity
+      phase = 'C4';
       await p.eval('window.__holoLab.resetProbe()');
       await focus('holo-problem');
       await p.key('Enter');
@@ -220,12 +268,38 @@ try {
       const sub = await submits();
       await record(cfg, 'C4 sanity: Enter outside composition submits the form (checks above are not vacuous)', sub === 1, { submits: sub });
       await p.screenshot(path.join(A.out, `ime-${method}-freeze${freeze}.png`));
-      await p.close();
+      } catch (e) {
+        const message = String(e?.message ?? e).slice(0, 300);
+        const kind = classifyEnvError(e, phase);
+        const step = `${method} freeze=${freeze} ${phase}`;
+        D.exception = { phase, message, envKind: kind };
+        halt = true;
+        if (kind) envErrorSeen = { kind, step, message };
+        if (kind && failed === 0) { envError = { kind, step, message }; console.log(`INVALID (environmental exception ${kind}): ${message} [${step}]`); }
+        else {
+          const why = kind ? `environmental kind ${kind}, but earlier checks already failed` : 'not an environmental kind';
+          results.push({ ...cfg, name: `harness exception during ${phase} (${why})`, pass: false, evidence: { message } });
+          failed++;
+          console.log(`FAIL [${method} freeze=${freeze}] harness exception during ${phase} (${why}): ${message}`);
+        }
+      } finally {
+        if (p) {
+          try { D.snap = await p.eval(SNAP_JS); } catch (e2) { D.snap = { unavailable: String(e2?.message ?? e2).slice(0, 120) }; }
+          try { D.full = await p.eval(FULL_JS); } catch { D.full = null; }
+          try { await p.close(); } catch { /* the target may already be gone */ }
+        }
+      }
     }
   }
 } finally {
-  fs.writeFileSync(path.join(A.out, 'result.json'), JSON.stringify({ url: A.url, results, failed, invalid }, null, 2));
+  const shortD = (d) => ({ method: d.method, freeze: d.freeze, framesAtCompStart: d.framesAtCompStart, framesMid: d.framesMid, framesAdvanced: d.framesMid != null && d.framesAtCompStart != null ? d.framesMid > d.framesAtCompStart : null, ...(d.snap ?? {}), exception: d.exception });
+  const withFull = failed > 0 || !!envError || !!envErrorSeen || diags.some((d) => d.exception);
+  fs.writeFileSync(path.join(A.out, 'result.json'), JSON.stringify({
+    url: A.url, results, failed, invalid, envError, envErrorSeen,
+    diag: diags.map(shortD), // short fields, always
+    ...(withFull ? { diagFull: diags.map((d) => ({ ...shortD(d), ...(d.full ?? {}) })) } : {}), // trail / longtasks: only on a failure or an exception
+  }, null, 2));
   await browser.close();
 }
-console.log(failed ? `\nRESULT: FAIL (${failed} checks)` : invalid ? `\nRESULT: INVALID (${invalid})` : `\nRESULT: PASS (${results.length} checks)`);
-process.exit(failed ? 1 : invalid ? 2 : 0);
+console.log(failed ? `\nRESULT: FAIL (${failed} checks)` : envError ? `\nRESULT: INVALID (environmental exception ${envError.kind} at ${envError.step})` : invalid ? `\nRESULT: INVALID (${invalid})` : `\nRESULT: PASS (${results.length} checks)`);
+process.exit(failed ? 1 : invalid || envError ? 2 : 0);
