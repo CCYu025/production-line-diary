@@ -198,6 +198,15 @@ ok('(ime-6) INVALID by the probe (no env error) is not retried; an exit 2 with a
   assert.equal(unknown.attempts, 1); assert.equal(unknown.it.status, 'FAIL'); assert.match(unknown.it.reason, /not on the list/);
 });
 
+ok('(ime-7) exit 0 contradicting result.json (failed>0 / invalid / envError / results pass:false) -> FAIL "internal error: holo-ime exited 0 but", never PASS', () => {
+  const base = IME_PASS.result;
+  const cases = { failed: { ...base, failed: 3 }, invalid: { ...base, invalid: 'probe' }, env: { ...base, envError: { kind: 'target-closed', step: 's', message: 'm' } }, nopass: { ...base, results: [...checks(IME_CHECKS), { name: 'bad', pass: false }] } };
+  for (const [k, result] of Object.entries(cases)) {
+    const r = runIme('ime7' + k, [{ exit: 0, result }]);
+    assert.equal(r.attempts, 1, k); assert.equal(r.it.status, 'FAIL', k); assert.match(r.it.reason, /^internal error: holo-ime exited 0 but /, k);
+  }
+});
+
 // ---- H2-0 coordinator 10: gaps found by the L2 re-check (every case below has a mutation that makes it fail; see the PR body)
 const runRaw = (name, args, env = {}) => {
   const d = path.join(TMP, name); fs.mkdirSync(d, { recursive: true });

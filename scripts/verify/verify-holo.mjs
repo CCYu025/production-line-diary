@@ -29,7 +29,7 @@ import { Browser } from './cdp.mjs';
 import { assertScratchServer } from './safety.mjs';
 import { overallExit } from './exit-code.mjs';
 import { baseUnavailableDecision, classifyFails, buildHandoffArgs, handoffAllowsDeviated, handoffExitProblem, knownOnMainDecision } from './known-on-main.mjs';
-import { buildImeArgs, envKindOf, judgeRetry, summarizeAttempt } from './ime-env.mjs';
+import { buildImeArgs, envKindOf, imeExitProblem, judgeRetry, summarizeAttempt } from './ime-env.mjs';
 import { HEARTBEAT_MS, applySuspend, applyTimeout, classifySuspend, clock, findGaps } from './suspend.mjs';
 import { personalHit, profilePathHit, themeKeyLines } from './redline-rules.mjs';
 
@@ -598,6 +598,8 @@ async function holoIme(L) {
   if (r.code === 2) return { status: 'INVALID', value: v, threshold: th, reason: j?.invalid ?? (j?.envError ? `environmental exception ${j.envError.kind} (not retried)` : 'holo-ime exit 2') };
   if (r.code === 1) return fail(v, th, `${v.failed} failing check(s): ${(j?.results ?? []).filter((x) => !x.pass).map((x) => x.name).slice(0, 3).join(' | ')}`);
   if (r.code !== 0 || !j) throw invalid(`holo-ime exit ${r.code}`);
+  const contradiction = imeExitProblem(r.code, j);
+  if (contradiction) return fail(v, th, `internal error: ${contradiction}`);
   if (v.checks < th.checksMin) return fail(v, th, `checks ${v.checks} < baseline ${th.checksMin}`);
   return pass(v, th);
 }

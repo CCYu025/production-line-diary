@@ -94,6 +94,14 @@
 - 診斷欄位：`result.json` 每次都有 `diag`，內容包括 slate 節點與三個欄位是否被換、`isConnected`、`__holoLab` 是否被換、`visibilityState`、`hasFocus`，以及選字開始與中段的 frames、frames 是否前進。失敗或例外時才另有 `diagFull`（最後 80 筆事件、longtask）。若診斷指向產品（輸入框被重掛、slate 或 `__holoLab` 被換），要先修好，並請使用者用真的注音輸入法實測。
 - 不自動重跑 holo-ime 來掩蓋。唯一的重試是環境例外的就地一次，而且一定記成 `retried 1x`；重試後 PASS 仍判 INVALID。
 
+**H2-1 開工前置項目（H2-0 L2 留下，2026-11-18）。設計師裁定：不會造成錯誤 PASS 的缺口不在 H2-0 修，H2-1 開工前處理。**
+- G1：沒有測試證明 `--dump-hooks` 不寫 `verify-holo.json`。重現：把 `--dump-hooks` 的寫檔分支改成會寫出 `verify-holo.json`，所有自測仍通過。
+- G2：h-6 沒涵蓋「exit 3（0／1／2 以外的碼）加一份完整 PASS 的 result.json」。重現：把 `holoIme()` 的 `r.code !== 0` 放寬成 `r.code > 3`，自測仍通過。
+- G3：h-3 只測 CI 拒絕與正常路徑。重現：`--help`、`--out` 含真實資料夾名稱、未知 id 這三條路徑若洩漏 `pld-vh` 暫存資料夾，自測抓不到。
+- G5：holo-ime 的 halt 接線只有原始碼 regex 檢查，沒有行為層級測試。重現：在 `finally` 裡把 `halt` 重設成 `false`，或移除 catch 內的 `halt = true`，自測仍通過。
+- G6：`--out` 路徑含真實資料夾名稱時，資料夾在拒絕之前就已建立（`mkdirSync(LOGS)` 在拒絕檢查之前）。這是既有行為。重現：用含真實資料夾名稱的 `--out` 執行，拒絕之後該資料夾仍存在。
+- 前一輪 L2 留下的：錯誤訊息會帶出 `--base` 的絕對路徑（只進 log 與 JSON）。重現：給一個不存在的 `--base`，在 log 與 `verify-holo.json` 裡可看到完整絕對路徑。
+
 ## 6. 安全規則（每個 session、每個代理都要遵守）
 
 - **真實資料資料夾**（主 checkout 的 `.env` 所指的 DATA_DIR）：任何代理都不得讀寫，也不得當成 DATA_DIR。

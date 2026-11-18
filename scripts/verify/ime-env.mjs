@@ -56,3 +56,17 @@ export function* untilHalt(items, stop) {
     yield x;
   }
 }
+
+/** exit 0 must agree with holo-ime's own result.json (same idea as os-handoff's handoffExitProblem): failed === 0, no invalid, no envError, every results[] entry pass:true,
+ *  and `failed` equals the number of pass:false entries (holo-ime counts both together). Anything else = holo-ime itself is broken: FAIL, never PASS.
+ *  @returns {string|null} a message when contradictory, else null */
+export function imeExitProblem(exit, j) {
+  if (exit !== 0) return null;
+  if (!j || !Array.isArray(j.results) || typeof j.failed !== 'number') return 'holo-ime exited 0 but result.json has no results[] / numeric failed';
+  const bad = j.results.filter((x) => x?.pass !== true).length;
+  if (j.failed !== 0) return `holo-ime exited 0 but result.json has failed=${j.failed}`;
+  if (bad > 0) return `holo-ime exited 0 but ${bad} entr${bad === 1 ? 'y' : 'ies'} in results[] did not pass`;
+  if (j.invalid) return `holo-ime exited 0 but result.json has invalid=${JSON.stringify(j.invalid)}`;
+  if (j.envError) return `holo-ime exited 0 but result.json has an envError (${j.envError.kind ?? '?'})`;
+  return null;
+}

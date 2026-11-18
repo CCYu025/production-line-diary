@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ENV_ERROR_KINDS, HOLO_IME_ARGS, buildImeArgs, classifyEnvError, envKindOf, judgeRetry, summarizeAttempt, untilHalt } from './ime-env.mjs';
+import { ENV_ERROR_KINDS, HOLO_IME_ARGS, buildImeArgs, classifyEnvError, envKindOf, imeExitProblem, judgeRetry, summarizeAttempt, untilHalt } from './ime-env.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 let n = 0;
 const ok = (name, fn) => { fn(); n++; console.log(`PASS ${name}`); };
@@ -64,5 +64,17 @@ ok('holo-ime.mjs really iterates its freeze settings through untilHalt with the 
 ok('holo-ime arguments: one constant (README: method proj, freeze 1,0 = on and off); buildImeArgs puts url and out around it', () => {
   assert.deepEqual(HOLO_IME_ARGS, ['--methods', 'proj', '--freeze', '1,0']);
   assert.deepEqual(buildImeArgs('http://u/', 'o'), ['--url', 'http://u/', '--methods', 'proj', '--freeze', '1,0', '--out', 'o']);
+});
+ok('imeExitProblem: exit 0 with failed>0 / results pass:false / invalid / envError / failed-vs-results mismatch / no result = contradiction; the real PASS shape and non-zero exits = null', () => {
+  const P = (k) => Array.from({ length: k }, (_, i) => ({ name: 'c' + i, pass: true }));
+  const good = { results: P(68), failed: 0, invalid: null, envError: null };
+  assert.equal(imeExitProblem(0, good), null);
+  assert.match(imeExitProblem(0, { ...good, failed: 2 }), /^holo-ime exited 0 but .*failed=2/);
+  assert.match(imeExitProblem(0, { ...good, invalid: 'probe' }), /^holo-ime exited 0 but .*invalid/);
+  assert.match(imeExitProblem(0, { ...good, envError: { kind: 'target-closed' } }), /^holo-ime exited 0 but .*envError/);
+  assert.match(imeExitProblem(0, { ...good, results: [...P(5), { name: 'x', pass: false }] }), /^holo-ime exited 0 but .*did not pass/);
+  assert.match(imeExitProblem(0, { ...good, failed: 1, results: [...P(5), { name: 'x', pass: false }] }), /^holo-ime exited 0 but/);
+  assert.match(imeExitProblem(0, null), /^holo-ime exited 0 but/);
+  for (const e of [1, 2, 3]) assert.equal(imeExitProblem(e, { ...good, failed: 1 }), null);
 });
 console.log(`\n${n} passed`);
