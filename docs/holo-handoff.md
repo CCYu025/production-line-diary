@@ -101,6 +101,10 @@
 - G5：holo-ime 的 halt 接線只有原始碼 regex 檢查，沒有行為層級測試。重現：在 `finally` 裡把 `halt` 重設成 `false`，或移除 catch 內的 `halt = true`，自測仍通過。
 - G6：`--out` 路徑含真實資料夾名稱時，資料夾在拒絕之前就已建立（`mkdirSync(LOGS)` 在拒絕檢查之前）。這是既有行為。重現：用含真實資料夾名稱的 `--out` 執行，拒絕之後該資料夾仍存在。
 - 前一輪 L2 留下的：錯誤訊息會帶出 `--base` 的絕對路徑（只進 log 與 JSON）。重現：給一個不存在的 `--base`，在 log 與 `verify-holo.json` 裡可看到完整絕對路徑。
+- **E1 檢查的殘餘問題**（14827b7 的 L2 找到；真實 holo-ime 都不會走到，因為它只有在 `failed` 為 0、`invalid` 與 `envError` 都是 null 時才會 exit 0）：
+  - **型別判斷太寬**：`imeExitProblem` 用 truthy 判斷 `invalid`／`envError`，所以 `invalid` 為 `0`、`""`、`false`，或 `envError` 為 `0` 時，會判成 PASS。建議改成 `!= null`。
+  - **漏查欄位**：沒有檢查 `envErrorSeen`。
+  - **自測沒把關型別**：下列突變自測都抓不到：`pass !== true` 改成 `!pass`、`failed !== 0` 改成 `> 0`、拿掉 `typeof failed`、拿掉 `Array.isArray`。
 
 ## 6. 安全規則（每個 session、每個代理都要遵守）
 
