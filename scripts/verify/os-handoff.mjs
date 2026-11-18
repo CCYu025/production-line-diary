@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { sleep } from './cdp.mjs';
+import { PHASES, TRANSITIONS } from './os-phases.mjs';
 import { SEL, SORT_EXPR, PHASE_EXPR, VISIBLE_FN, q, hudCh, osUrl, launchChrome, openPage, waitPhase, centerOf, calibrate } from './os-common.mjs';
 
 const { values: A } = parseArgs({
@@ -48,13 +49,13 @@ const range = (a, b, s) => { const r = []; for (let o = a; o <= b; o += s) r.pus
 // ---------------------------------------------------------------- scenario table
 const SC = {
   enter: {
-    pre: 'entering-pre', post: 'entering-post', end: 'station', total: 1200, handoff: 875,
+    ...TRANSITIONS.enter, total: 1200, handoff: 875,
     url: () => osUrl(A.url, { osdebug: A.osdebug }), ready: q(SEL.hudCh02),
     offsets: range(0, 850, +A['enter-step']), keyOffsets: [50, 400, 850], variants: ['sort', 'hud'],
     focusCandidates: [hudCh(5), SEL.exit, SEL.hudCh02],
   },
   exit: {
-    pre: 'exiting-pre', post: 'exiting-post', end: 'hub', total: 900, handoff: 300,
+    ...TRANSITIONS.exit, total: 900, handoff: 300,
     url: () => osUrl(A.url, { hash: '#/records', osdebug: A.osdebug }), ready: q(SEL.back),
     offsets: range(0, 300, +A['exit-step']), keyOffsets: [50, 150, 250], variants: ['hud'],
     // I2 offsets are measured from the *-post stamp (= handoff). Exit: 300..900 ms after the transition start == 0..600 ms after the handoff;
@@ -63,7 +64,7 @@ const SC = {
     focusCandidates: [SORT_EXPR_SEL()],
   },
   switch: {
-    pre: 'switching-pre', post: 'switching-post', end: 'station', total: 300, handoff: 75,
+    ...TRANSITIONS.switch, total: 300, handoff: 75,
     url: () => osUrl(A.url, { hash: '#/records', osdebug: A.osdebug }), ready: q(SEL.back),
     offsets: range(0, 75, +A['switch-step']), keyOffsets: [25, 50], variants: ['back', 'kpi'], triggers: ['hash', 'palette'],
     focusCandidates: [SEL.back],
@@ -308,7 +309,7 @@ async function runI3(throttle) {
     const bc = (await centerOf(p, q(SEL.back))) ?? pts.back; await p.click(bc.x, bc.y);
     await waitPhase(p, 'hub', 8000); await sleep(500);
     const S = await p.eval('(window.__samp.stop=true, JSON.parse(JSON.stringify(window.__samp)))');
-    const need = ['hub', 'entering-pre', 'entering-post', 'station', 'exiting-pre', 'exiting-post', 'switching-pre', 'switching-post'];
+    const need = PHASES.filter((ph) => ph !== 'boot');
     const missing = need.filter((ph) => !S.phases[ph]);
     if (S.viol.length) { status = 'FAIL'; notes.push(`${S.viol.length} violation(s): ${JSON.stringify(S.viol.slice(0, 3))}`); }
     if (!S.overlaySeen) { status = 'FAIL'; notes.push('canvas#os-overlay never present in DOM'); }

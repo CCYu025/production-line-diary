@@ -1,0 +1,101 @@
+{
+  "note": "verify:holo thresholds. Re-measured at H2-0 start on main 3d8a1ce; update after every merged PR (counts only grow). scripts/verify/verify-holo.mjs reads every threshold from here.",
+  "recordedAt": "2026-11-15",
+  "mainCommit": "3d8a1ce",
+  "backend": {
+    "tests": 206,
+    "pass": 203,
+    "skipped": 3
+  },
+  "web": {
+    "tests": 1792,
+    "files": 99,
+    "skipped": 0
+  },
+  "c1": {
+    "webCombos": 102,
+    "osCombos": 18,
+    "osScenarios": [
+      "dashboard",
+      "records",
+      "new",
+      "calendar",
+      "trash",
+      "settings",
+      "report",
+      "detail",
+      "form-validation"
+    ],
+    "osWidths": [
+      1280,
+      1024
+    ]
+  },
+  "osE2e": {
+    "pass": 36,
+    "manual": 2
+  },
+  "osHandoff": {
+    "args": [
+      "--headed",
+      "--allow-deviated"
+    ],
+    "samples": 100,
+    "conclusiveMin": 75,
+    "baselineDeviated": 11,
+    "note": "1x run only (default). DEVIATED must be <= floor(baselineDeviated x 1.5) = 16, else INVALID. baselineDeviated: 11 measured 2026-11-15 on the machine in measuredOn (102 samples, 91 conclusive; earlier runs 11-12)."
+  },
+  "holoIme": {
+    "checks": 68
+  },
+  "holoStill": {
+    "checks": 10
+  },
+  "seed": {
+    "records": 5000
+  },
+  "perf": {
+    "hp1MinFps5k": 55,
+    "hp1MinFps20k": 30,
+    "hp1WarnFps20k": 45,
+    "note": "hp1MinFps5k / hp1MinFps20k are the spec HP1 hard minimums (FAIL below). hp1WarnFps20k is a regression tripwire: the 20k run measured about 56 fps, so below 45 (still above the 30 minimum) is INVALID and goes to L2."
+  },
+  "shims": [],
+  "measuredOn": {
+    "machine": "AMD Ryzen 7 PRO 8840HS / AMD Radeon 780M Graphics (real GPU, headed Chrome), 28 GB RAM",
+    "os": "Windows 11 build 26200",
+    "node": "v24.14.1",
+    "date": "2026-11-15 (the os-handoff 4x runs: 2026-11-16, see osHandoff4x)",
+    "note": "os-handoff DEVIATED baseline and the perf numbers are machine-specific; re-measure and justify in the PR body when the machine changes",
+    "chrome": "157.0.8103.51 (headed)",
+    "display": "1920x1200 physical, 125% scaling (1536x960 logical), AMD Radeon 780M"
+  },
+  "osHandoff4x": {
+    "args": [
+      "--headed",
+      "--allow-deviated"
+    ],
+    "samples": 100,
+    "conclusiveMin": 20,
+    "baselineDeviated": 79,
+    "note": "4x gives very few conclusive passes, so it is only good for catching FAIL; the main evidence for the input gate comes from the 1x run. Thresholds come from three full 4x runs on main 3d8a1ce (same code as c8bc1b9), 2026-11-16/17, all 102 samples, taking the worst: run 1 (L2) 23 conclusive / 79 DEVIATED / 0 FAIL; run 2 37 / 64 / 1 FAIL (sample \"I2 switch/first-click/hash x4 planned=0\", timeout waiting for phase switching-post); run 3 24 / 78 / 0 FAIL. Worst conclusive 23 -> conclusiveMin 20; worst DEVIATED 79 -> deviatedMax 90 (an explicit number: x1.5 would exceed the sample count 102). An earlier measurement on the branch also had 2 I2 phase-timeout FAILs (exiting-post, switching-post). The I2 phase timeout is a known-on-main flake: see knownOnMain.",
+    "knownOnMain": [
+      {
+        "id": "I2",
+        "kind": "phase-timeout",
+        "source": "main 3d8a1ce, full 4x run 2 (2026-11-16): sample \"I2 switch/first-click/hash x4 planned=0\", note \"error: eval failed: Error: timeout waiting for phase switching-post (have switching-pre>station)\"; a first measurement the same day had the same shape on \"I2 exit/first-click\" (exiting-post)"
+      }
+    ],
+    "knownOnMainRule": "INVALID (known-on-main) needs BOTH: (1) main timed out at least once in the same run, (2) branchTimeouts <= 3 x baseTimeouts x (branchSamples / baseSamples) + 2 (samples = I2 samples: the branch's I2 rows in the 4x run, the I2 rows of the base re-run). Otherwise FAIL. Designer ruling 2026-11-17. Reason: a fixed threshold does not depend on the sample count; the ratio answers whether it is a pre-existing property of main at that rate. value carries branchTimeouts, branchSamples, baseTimeouts, baseSamples, limit. Examples: 18/18 vs 1/60 FAIL; 2/18 vs 1/60 INVALID (limit 2.9); 3/18 vs 1/60 FAIL; base 0 FAIL; base re-run failed FAIL.",
+    "knownOnMainReps": 15,
+    "deviatedMax": 90
+  },
+  "entry": {
+    "deltaVsBaseMaxBytes": 100,
+    "note": "web entry gzip of this branch minus the --base worktree (main at the start of the PR), same measuring code (os-bundle.mjs). bundle-baseline.json is deliberately NOT updated (HB1: whole-plan cumulative <= 2048 B); ci-bundle keeps its 2048 B limit against it."
+  },
+  "labBundle": {
+    "holoCoreMaxBytes": 225280,
+    "note": "holo-core gzip limit (220 KiB, spec HB limit); measured about 16.6 KB at H2-0, so this only catches a gross regression."
+  }
+}

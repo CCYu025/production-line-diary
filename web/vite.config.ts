@@ -45,7 +45,8 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "dist",
+    // 預設 dist。scripts/verify/verify-holo.mjs 的實驗室建置用 WEB_OUT_DIR（絕對路徑，或相對於執行目錄）輸出到別處，才不會覆蓋預設的 web/dist。
+    outDir: process.env.WEB_OUT_DIR ? path.resolve(process.env.WEB_OUT_DIR) : "dist",
     emptyOutDir: true,
     sourcemap: false,
     // dist/.vite/manifest.json：scripts/verify/os-bundle.mjs 用它把 chunk 對回原始模組路徑（群組制，HB4）。只多一個檔案，不改任何 chunk 的內容。
