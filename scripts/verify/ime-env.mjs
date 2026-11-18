@@ -43,3 +43,16 @@ export function judgeRetry(first, retry) {
   if (retry.exit === 2) return { ...rec, status: 'INVALID', reason: `${head}; the retry was INVALID too: ${retry.envError ? envText(retry.envError) : retry.invalid} (retried 1x)` };
   return { ...rec, status: 'FAIL', reason: `${head}; the retry ended with exit ${retry.exit} and no usable result (retried 1x)` };
 }
+
+/** THE one definition of the arguments verify:holo gives holo-ime.mjs (README: method proj, freeze on and off). The real run and verify-holo.selftest.mjs both build the command line here. */
+export const HOLO_IME_ARGS = ['--methods', 'proj', '--freeze', '1,0'];
+export const buildImeArgs = (url, outDir) => ['--url', url, ...HOLO_IME_ARGS, '--out', outDir];
+
+/** yields the items until stop() says halt. holo-ime.mjs iterates its freeze settings through this, so after the first exception (halt = true) no further combination runs
+ *  (no overwritten envError / first exception, no extra CDP timeout). stop() is evaluated before every item. */
+export function* untilHalt(items, stop) {
+  for (const x of items) {
+    if (stop()) return;
+    yield x;
+  }
+}

@@ -12,6 +12,8 @@
 // Output: <out>/verify-holo.json  {schema, items:[{id, group, status, value, threshold, durationMs, log}], ...}
 //         <out>/logs/<id>.log      the full output of every item (the `log` field is the path relative to <out>)
 //         last stdout line:  VERIFY:HOLO <PASS|FAIL|INCOMPLETE> N/T pass, X fail (ids), Y skip (ids), Z invalid (ids) — <path to json>
+//                            two more forms, only for the self-test hook VERIFY_HOLO_SELFTEST=1 (README "Last stdout line"): the label SELFTEST instead of PASS|FAIL|INCOMPLETE (a stubbed run is never a result),
+//                            and "VERIFY:HOLO FAIL VERIFY_HOLO_SELFTEST refused because CI is set (no item was run)" (exit 1, no json) when the hook is on while CI is set
 // Exit code: 0 all PASS | 1 any FAIL | 2 no FAIL but some SKIP / INVALID (2 is NOT a pass: escalate).
 //
 // Servers (always scratch copies of the example data, started with serve.mjs and proved with assertScratchServer):
@@ -27,17 +29,16 @@ import { Browser } from './cdp.mjs';
 import { assertScratchServer } from './safety.mjs';
 import { overallExit } from './exit-code.mjs';
 import { baseUnavailableDecision, classifyFails, buildHandoffArgs, handoffAllowsDeviated, handoffExitProblem, knownOnMainDecision } from './known-on-main.mjs';
-import { envKindOf, judgeRetry, summarizeAttempt } from './ime-env.mjs';
+import { buildImeArgs, envKindOf, judgeRetry, summarizeAttempt } from './ime-env.mjs';
 import { HEARTBEAT_MS, applySuspend, applyTimeout, classifySuspend, clock, findGaps } from './suspend.mjs';
 import { personalHit, profilePathHit, themeKeyLines } from './redline-rules.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
-const BASELINE_FILE = path.join(HERE, 'holo-baseline.json');
 const { values: A } = parseArgs({
   options: {
     base: { type: 'string' }, quick: { type: 'boolean', default: false }, full: { type: 'boolean', default: false }, only: { type: 'string' }, out: { type: 'string', default: 'verify-out/holo' },
-    'allow-software': { type: 'boolean', default: false }, 'diff-base': { type: 'string', default: 'main' }, help: { type: 'boolean', default: false },
+    'allow-software': { type: 'boolean', default: false }, 'diff-base': { type: 'string', default: 'main' }, 'dump-hooks': { type: 'boolean', default: false }, help: { type: 'boolean', default: false },
   },
 });
 // [id, group, timeSensitive]. timeSensitive = the result depends on the clock (browser, input timing, frame rate): only these are reclassified INVALID when the machine was suspended
@@ -64,21 +65,8 @@ exit: 0 all PASS | 1 any FAIL | 2 SKIP / INVALID without FAIL`);
 const only = A.only ? new Set(A.only.split(',').map((s) => s.trim()).filter(Boolean)) : null;
 if (only) for (const id of only) if (!ITEM_DEFS.some((d) => d[0] === id)) { console.error(`verify-holo: unknown id "${id}"; known: ${ITEM_DEFS.map((d) => d[0]).join(', ')}`); process.exit(2); }
 
-const OUT = path.resolve(A.out);
-const LOGS = path.join(OUT, 'logs');
-fs.mkdirSync(LOGS, { recursive: true });
-const REAL = '工作' + '日誌'; // real-data folder name, assembled so this file never contains the literal
-if (OUT.includes(REAL) || REPO.includes(REAL)) { console.error('verify-holo: refusing a path that contains the real-data folder name'); process.exit(2); }
-const SCRATCH = fs.mkdtempSync(path.join(os.tmpdir(), 'pld-vh-'));
-const rel = (p) => path.relative(OUT, p).split(path.sep).join('/');
-const BL = JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8'));
-// The B group reads `git diff <diff-base>...HEAD` (commits only), while every other item judges the working tree. A dirty tree makes them judge different programs, so B is INVALID then.
-const DIRTY = (spawnSync('git', ['status', '--porcelain'], { cwd: REPO, encoding: 'utf8' }).stdout ?? '').split('\n').filter(Boolean);
-const dirtyInvalid = (L, th) => {
-  L.append(`working tree is not clean (${DIRTY.length} entries):\n${DIRTY.slice(0, 20).join('\n')}\n`);
-  return { status: 'INVALID', value: { dirty: true, entries: DIRTY.slice(0, 10) }, threshold: th, reason: `working tree not clean (${DIRTY.length} entries): commit first, this item only sees main...HEAD` };
-};
-// Test hooks for verify-holo.selftest.mjs ONLY (all inert unless VERIFY_HOLO_SELFTEST=1): stub the build and the servers, swap the os-handoff script, shorten the command timer.
+// Test hooks for verify-holo.selftest.mjs ONLY (all inert unless VERIFY_HOLO_SELFTEST=1): stub the build and the servers, swap the os-handoff / holo-ime scripts, shorten the command timer,
+// make every item a fake PASS, replace the baseline file. Each hook is its own constant below, gated by ST; `--dump-hooks` prints them (the self-test proves every one is inert without ST).
 // Hard conditions (designer ruling): (1) only the exact string "1" enables it, anything else warns on stderr and is ignored; (2) with CI set (non-empty) it is refused -> FAIL, exit 1, nothing is run;
 // (3) while enabled the overall result is NEVER PASS and the exit code is never 0 (see finish()).
 const ST_RAW = process.env.VERIFY_HOLO_SELFTEST;
@@ -90,6 +78,30 @@ if (ST_RAW === '1' && process.env.CI) {
 }
 const ST = ST_RAW === '1';
 const HANDOFF_SCRIPT = ST && process.env.VERIFY_HOLO_SELFTEST_HANDOFF ? process.env.VERIFY_HOLO_SELFTEST_HANDOFF : path.join(HERE, 'os-handoff.mjs');
+const IME_SCRIPT = ST && process.env.VERIFY_HOLO_SELFTEST_IME ? process.env.VERIFY_HOLO_SELFTEST_IME : path.join(HERE, 'holo-ime.mjs');
+const IME_STUB = ST && !!process.env.VERIFY_HOLO_SELFTEST_IME; // the fake holo-ime needs no seeded lab server
+const TIMEOUT_MS = ST && process.env.VERIFY_HOLO_SELFTEST_TIMEOUT_MS ? Number(process.env.VERIFY_HOLO_SELFTEST_TIMEOUT_MS) : 40 * 60 * 1000;
+const BASE_FAIL = ST && process.env.VERIFY_HOLO_SELFTEST_BASE_FAIL ? process.env.VERIFY_HOLO_SELFTEST_BASE_FAIL : null; // the base (main) side cannot be started / built
+const FAKE_PASS = ST && process.env.VERIFY_HOLO_SELFTEST_FAKEPASS === '1'; // every item is a fake PASS: proves a stubbed all-PASS run still never exits 0
+const BASELINE_FILE = ST && process.env.VERIFY_HOLO_SELFTEST_BASELINE ? process.env.VERIFY_HOLO_SELFTEST_BASELINE : path.join(HERE, 'holo-baseline.json');
+if (A['dump-hooks']) {
+  console.log(JSON.stringify({ st: ST, handoffScript: path.basename(HANDOFF_SCRIPT), imeScript: path.basename(IME_SCRIPT), imeStub: IME_STUB, timeoutMs: TIMEOUT_MS, baseFail: BASE_FAIL, fakePass: FAKE_PASS, baselineFile: path.basename(BASELINE_FILE) }));
+  process.exit(0);
+}
+
+const OUT = path.resolve(A.out);
+const LOGS = path.join(OUT, 'logs');
+fs.mkdirSync(LOGS, { recursive: true });
+const REAL = '工作' + '日誌'; // real-data folder name, assembled so this file never contains the literal
+if (OUT.includes(REAL) || REPO.includes(REAL)) { console.error('verify-holo: refusing a path that contains the real-data folder name'); process.exit(2); }
+const rel = (p) => path.relative(OUT, p).split(path.sep).join('/');
+const BL = JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8'));
+// The B group reads `git diff <diff-base>...HEAD` (commits only), while every other item judges the working tree. A dirty tree makes them judge different programs, so B is INVALID then.
+const DIRTY = (spawnSync('git', ['status', '--porcelain'], { cwd: REPO, encoding: 'utf8' }).stdout ?? '').split('\n').filter(Boolean);
+const dirtyInvalid = (L, th) => {
+  L.append(`working tree is not clean (${DIRTY.length} entries):\n${DIRTY.slice(0, 20).join('\n')}\n`);
+  return { status: 'INVALID', value: { dirty: true, entries: DIRTY.slice(0, 10) }, threshold: th, reason: `working tree not clean (${DIRTY.length} entries): commit first, this item only sees main...HEAD` };
+};
 /** a result file written by an EARLIER run must never be read as this run's: delete it before every child process that is supposed to write it */
 const clearOut = (...files) => { for (const f of files) fs.rmSync(f, { force: true }); };
 const ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
@@ -98,6 +110,8 @@ const BASE_ENV = { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0', NO_OPEN_BROW
 delete BASE_ENV.WEB_DIST_DIR; delete BASE_ENV.WEB_OUT_DIR; delete BASE_ENV.VITE_HOLO_LAB;
 
 // ------------------------------------------------------------------ process bookkeeping (everything is killed on any exit)
+// SCRATCH is created only after every early exit (help, unknown id, hook refusal, real-data path): a refused run leaves no pld-vh-* folder in os.tmpdir() (self-test h1)
+const SCRATCH = fs.mkdtempSync(path.join(os.tmpdir(), 'pld-vh-'));
 const live = new Set();
 const markers = new Set();
 function killTree(child) {
@@ -178,7 +192,7 @@ function makeCtx(id) {
   const append = (t) => fs.appendFileSync(file, t);
   const ctx = { id, file, append, timedOut: false };
   /** run a command, append its output to this item's log, return { code, text } */
-  const run = (label, file2, args, { cwd = REPO, env = {}, shell = false, timeoutMs = ST && process.env.VERIFY_HOLO_SELFTEST_TIMEOUT_MS ? Number(process.env.VERIFY_HOLO_SELFTEST_TIMEOUT_MS) : 40 * 60 * 1000 } = {}) => new Promise((resolve) => {
+  const run = (label, file2, args, { cwd = REPO, env = {}, shell = false, timeoutMs = TIMEOUT_MS } = {}) => new Promise((resolve) => {
     append(`\n$ ${label}\n`);
     const child = spawn(file2, args, { cwd, env: { ...BASE_ENV, ...env }, shell, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     live.add(child);
@@ -233,7 +247,7 @@ async function startServer(L, key, root, port, env = {}) {
 }
 const mainServer = (L) => (ST ? Promise.resolve('http://localhost:0/') : startServer(L, 'branch', REPO, 3114));
 const baseServer = async (L) => {
-  if (ST) { if (process.env.VERIFY_HOLO_SELFTEST_BASE_FAIL) throw invalid(process.env.VERIFY_HOLO_SELFTEST_BASE_FAIL); return 'http://localhost:0/'; }
+  if (ST) { if (BASE_FAIL) throw invalid(BASE_FAIL); return 'http://localhost:0/'; }
   const root = path.resolve(A.base);
   if (!fs.existsSync(path.join(root, 'backend', 'server.js'))) throw invalid(`--base ${root} has no backend/server.js`);
   if (!fs.existsSync(path.join(root, 'web', 'dist', 'index.html'))) {
@@ -326,6 +340,8 @@ async function ciBundle(L) {
   const th = { exit: 0, entryDeltaMaxBytes: 2048 };
   return r.code === 0 ? pass(v, th) : fail(v, th, `os-bundle exit ${r.code}`);
 }
+/** builds the --base worktree in place; BASE_FAIL (self-test hook, null otherwise) simulates a failed build */
+const buildBase = async (L, root) => (BASE_FAIL ? false : (await L.npm('run build', {}, root)).code === 0);
 async function entryDeltaVsBase(L) {
   const th = { entryDeltaVsBaseMaxBytes: BL.entry.deltaVsBaseMaxBytes };
   if (!A.base) return { status: 'SKIP', value: null, threshold: th, reason: 'no --base given' };
@@ -335,7 +351,7 @@ async function entryDeltaVsBase(L) {
     L.append(`
 [base worktree has no web/dist: building it there (no source change)]
 `);
-    if ((await L.npm('run build', {}, root)).code !== 0) return baseSideFail(invalid('could not build the --base worktree'), th);
+    if (!(await buildBase(L, root))) return baseSideFail(invalid('could not build the --base worktree'), th);
   }
   // same measuring code for both sides (this worktree's os-bundle.mjs: gzip -9 of the entry static-graph JS)
   const measure = async (label, dist) => {
@@ -552,13 +568,12 @@ const osHandoff4x = async (L) => {
 const swFlag = () => (A['allow-software'] ? ['--allow-software'] : []);
 /** holo-ime: environmental exceptions (ime-env.mjs) are INVALID, never FAIL, but never silently: ONE in-place retry (decision recorded in README "holo-ime environmental exceptions").
  *  Why retry here and not inside holo-ime.mjs: this is where the verdict is made, and the first attempt's result.json can be kept next to the retry's (result.attempt1.json). */
-const IME_SCRIPT = ST && process.env.VERIFY_HOLO_SELFTEST_IME ? process.env.VERIFY_HOLO_SELFTEST_IME : path.join(HERE, 'holo-ime.mjs');
 async function holoIme(L) {
-  const url = ST && process.env.VERIFY_HOLO_SELFTEST_IME ? 'http://localhost:0/' : await ensureSeed(L, BL.seed.records);
+  const url = IME_STUB ? 'http://localhost:0/' : await ensureSeed(L, BL.seed.records);
   const dir = path.join(OUT, 'holo-ime');
   const attempt = async () => {
     clearOut(path.join(dir, 'result.json'));
-    const r = await L.node(IME_SCRIPT, ['--url', url, '--methods', 'proj', '--freeze', '1,0', '--out', dir]);
+    const r = await L.node(IME_SCRIPT, buildImeArgs(url, dir));
     const j = readJsonSafe(path.join(dir, 'result.json'));
     return { r, j, a: summarizeAttempt(r.code, j) };
   };
@@ -638,7 +653,7 @@ async function main() {
     it.log = rel(L.file);
     it.reason = null;
     let res;
-    try { res = await RUNNERS[it.id](L); res = it.group === 'D' ? await softwareGuard(res) : res; res = applyTimeout(res, L.timedOut); }
+    try { res = FAKE_PASS ? { status: 'PASS', value: { fake: true }, threshold: null } : await RUNNERS[it.id](L); res = it.group === 'D' ? await softwareGuard(res) : res; res = applyTimeout(res, L.timedOut); }
     catch (e) { res = applyTimeout({ status: 'INVALID', value: null, threshold: null, reason: (e instanceof Invalid ? '' : 'harness error: ') + (e.message ?? String(e)) }, L.timedOut); L.append(`\n[${res.reason}]\n${e.stack ?? ''}\n`); }
     beat();
     res = applySuspend(res, classifySuspend(heartbeats, t0, Date.now()), it.timeSensitive); // time-sensitive items only: a suspend inside the run beats every other verdict, FAIL evidence stays in value

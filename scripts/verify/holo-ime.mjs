@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { Browser, sleep } from './cdp.mjs';
-import { classifyEnvError } from './ime-env.mjs';
+import { classifyEnvError, untilHalt } from './ime-env.mjs';
 
 const { values: A } = parseArgs({
   options: {
@@ -90,7 +90,7 @@ async function record(cfg, name, pass, evidence) {
 try {
   for (const method of A.methods.split(',')) {
     if (invalid || halt) break;
-    for (const freeze of A.freeze.split(',')) {
+    for (const freeze of untilHalt(A.freeze.split(','), () => invalid || halt)) { // halt: no further combination after the first exception (it keeps envError / the first exception)
       const cfg = { method, freeze };
       let phase = 'page-ready'; // where the script is: classifyEnvError() only treats a never-ready page as environmental before the first check
       let p = null;

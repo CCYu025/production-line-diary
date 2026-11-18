@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildHandoffArgs, handoffAllowsDeviated } from './known-on-main.mjs';
+import { buildHandoffArgs, handoffAllowsDeviated, handoffExitProblem } from './known-on-main.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'pld-vhst-'));
@@ -45,12 +45,12 @@ function childEnv(env) {
   return e;
 }
 const lastLine = (t) => t.trim().split(String.fromCharCode(10)).pop().trim();
-function run(name, specs, { env = {}, out = null, item = 'os-handoff-4x' } = {}) {
+function run(name, specs, { env = {}, out = null, item = 'os-handoff-4x', base = path.resolve(HERE, '..', '..') } = {}) {
   const d = path.join(TMP, name); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, 'branch.json'), JSON.stringify(specs.branch));
   if (specs.base) fs.writeFileSync(path.join(d, 'base.json'), JSON.stringify(specs.base));
   const o = out ?? path.join(d, 'out');
-  const r = spawnSync(process.execPath, [path.join(HERE, 'verify-holo.mjs'), '--only', item, ...(item === 'os-handoff-4x' ? ['--full'] : []), '--base', path.resolve(HERE, '..', '..'), '--out', o], {
+  const r = spawnSync(process.execPath, [path.join(HERE, 'verify-holo.mjs'), '--only', item, ...(item === 'os-handoff-4x' ? ['--full'] : []), '--base', base, '--out', o], {
     cwd: d, encoding: 'utf8', env: childEnv({ FX_DIR: d, ...env }),
   });
   const json = JSON.parse(fs.readFileSync(path.join(o, 'verify-holo.json'), 'utf8'));
@@ -149,6 +149,7 @@ const FAKE_IME = path.join(TMP, 'fake-holo-ime.mjs');
 fs.writeFileSync(FAKE_IME, [
   "import fs from 'node:fs'; import path from 'node:path';",
   "const a = process.argv.slice(2); const out = a[a.indexOf('--out') + 1];",
+  "const k0 = fs.existsSync(path.join(process.env.FX_DIR, 'ime-count')) ? Number(fs.readFileSync(path.join(process.env.FX_DIR, 'ime-count'), 'utf8')) : 0; fs.writeFileSync(path.join(process.env.FX_DIR, 'ime-args-' + k0 + '.json'), JSON.stringify(a));",
   "const cf = path.join(process.env.FX_DIR, 'ime-count'); const k = fs.existsSync(cf) ? Number(fs.readFileSync(cf, 'utf8')) : 0; fs.writeFileSync(cf, String(k + 1));",
   "const spec = JSON.parse(fs.readFileSync(path.join(process.env.FX_DIR, 'ime.json'), 'utf8'))[k] ?? { exit: 9 };",
   "if (spec.result) { fs.mkdirSync(out, { recursive: true }); fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify(spec.result)); } process.exit(spec.exit);",
@@ -195,6 +196,88 @@ ok('(ime-6) INVALID by the probe (no env error) is not retried; an exit 2 with a
   assert.equal(probe.attempts, 1); assert.equal(probe.it.status, 'INVALID');
   const unknown = runIme('ime6b', [imeEnv('some-new-kind'), IME_PASS]);
   assert.equal(unknown.attempts, 1); assert.equal(unknown.it.status, 'FAIL'); assert.match(unknown.it.reason, /not on the list/);
+});
+
+// ---- H2-0 coordinator 10: gaps found by the L2 re-check (every case below has a mutation that makes it fail; see the PR body)
+const runRaw = (name, args, env = {}) => {
+  const d = path.join(TMP, name); fs.mkdirSync(d, { recursive: true });
+  const r = spawnSync(process.execPath, [path.join(HERE, 'verify-holo.mjs'), ...args], { cwd: d, encoding: 'utf8', env: childEnv(env) });
+  return { exit: r.status, last: lastLine(r.stdout), stdout: r.stdout, stderr: r.stderr, dir: d };
+};
+const dumpHooks = (name, env) => JSON.parse(runRaw(name, ['--dump-hooks'], env).stdout);
+const HOOK_VARS = { VERIFY_HOLO_SELFTEST_HANDOFF: '/x/fake-handoff.mjs', VERIFY_HOLO_SELFTEST_IME: '/x/fake-ime.mjs', VERIFY_HOLO_SELFTEST_TIMEOUT_MS: '1234', VERIFY_HOLO_SELFTEST_BASE_FAIL: 'boom',
+  VERIFY_HOLO_SELFTEST_FAKEPASS: '1', VERIFY_HOLO_SELFTEST_BASELINE: '/x/other-baseline.json' };
+const INERT = { st: false, handoffScript: 'os-handoff.mjs', imeScript: 'holo-ime.mjs', imeStub: false, timeoutMs: 40 * 60 * 1000, baseFail: null, fakePass: false, baselineFile: 'holo-baseline.json' };
+
+ok('(h-1) every sub-hook (handoff script, holo-ime script, holo-ime url stub, timeout, base-fail, fake-pass, baseline file) is inert without VERIFY_HOLO_SELFTEST=1 (unset, "0", "true"), even with all their variables set; with "1" each one takes effect (control)', () => {
+  for (const [i, v] of [undefined, '0', 'true'].entries()) {
+    const d = dumpHooks(`hk${i}`, { ...HOOK_VARS, VERIFY_HOLO_SELFTEST: v });
+    for (const k of Object.keys(INERT)) assert.deepEqual(d[k], INERT[k], `with VERIFY_HOLO_SELFTEST=${JSON.stringify(v)} the hook "${k}" must be inert (got ${JSON.stringify(d[k])})`);
+  }
+  const on = dumpHooks('hk-on', HOOK_VARS);
+  assert.deepEqual(on, { st: true, handoffScript: 'fake-handoff.mjs', imeScript: 'fake-ime.mjs', imeStub: true, timeoutMs: 1234, baseFail: 'boom', fakePass: true, baselineFile: 'other-baseline.json' });
+});
+ok('(h-2) VERIFY_HOLO_SELFTEST=1 with every item a fake PASS (all items PASS) still never exits 0: exit 2, label SELFTEST (not PASS), json exitCode 2 and selftest:true', () => {
+  const o = path.join(TMP, 'fp-out');
+  const r = runRaw('fp', ['--full', '--out', o], { VERIFY_HOLO_SELFTEST_FAKEPASS: '1' });
+  const json = JSON.parse(fs.readFileSync(path.join(o, 'verify-holo.json'), 'utf8'));
+  assert.ok(json.items.length > 10 && json.items.every((i) => i.status === 'PASS'), 'premise: every item is PASS: ' + json.items.filter((i) => i.status !== 'PASS').map((i) => `${i.id}=${i.status}`).join(','));
+  assert.match(r.last, /^VERIFY:HOLO SELFTEST (\d+)\/\1 pass — /); assert.doesNotMatch(r.last, /^VERIFY:HOLO (PASS|FAIL|INCOMPLETE)/);
+  assert.equal(r.exit, 2); assert.equal(json.exitCode, 2); assert.equal(json.selftest, true);
+});
+ok('(h-3) the CI refusal leaves nothing behind: no pld-vh-* scratch folder in os.tmpdir() (own TEMP per child), while a normal run cleans its folder up too', () => {
+  const countIn = (dir) => fs.readdirSync(dir).filter((x) => x.startsWith('pld-vh-')).length;
+  const tmpOf = (n) => { const t = path.join(TMP, n); fs.mkdirSync(t, { recursive: true }); return { TEMP: t, TMP: t, TMPDIR: t, dir: t }; };
+  const a = tmpOf('tmp-ci'); const r = runRaw('ci-leak', ['--only', 'redline-grep', '--out', path.join(TMP, 'ci-leak-out')], { CI: 'true', TEMP: a.TEMP, TMP: a.TMP, TMPDIR: a.TMPDIR });
+  assert.equal(r.exit, 1); assert.match(r.last, /refused because CI is set/);
+  assert.equal(countIn(a.dir), 0, 'a refused run must not leave a pld-vh-* folder: ' + fs.readdirSync(a.dir).join(','));
+  const b = tmpOf('tmp-ok'); const r2 = runRaw('ci-ok', ['--only', 'redline-grep', '--out', path.join(TMP, 'ci-ok-out')], { TEMP: b.TEMP, TMP: b.TMP, TMPDIR: b.TMPDIR });
+  assert.match(r2.last, /^VERIFY:HOLO SELFTEST/); assert.equal(countIn(b.dir), 0, 'a finished run removes its scratch folder');
+});
+ok('(h-4) entry-delta-vs-base: the --base worktree cannot be built -> FAIL (not INVALID), exit 1, value.baseUnavailable, says base (main) side / cannot be compared with main', () => {
+  const emptyBase = path.join(TMP, 'empty-base'); fs.mkdirSync(emptyBase, { recursive: true }); // no web/dist there: verify-holo tries to build it, the hook makes that fail
+  const r = run('eb', { branch: CLEAN }, { item: 'entry-delta-vs-base', base: emptyBase, env: { VERIFY_HOLO_SELFTEST_BASE_FAIL: 'could not build the --base worktree' } });
+  assert.equal(r.it.status, 'FAIL', JSON.stringify(r.it)); assert.equal(r.exit, 1); assert.match(r.last, /^VERIFY:HOLO SELFTEST .*1 fail \(entry-delta-vs-base\)/);
+  assert.equal(r.it.value.baseUnavailable, true); assert.match(r.it.reason, /base \(main\) side could not be started/); assert.match(r.it.reason, /could not build the --base worktree/); assert.match(r.it.reason, /cannot be compared with main/);
+});
+ok('(h-5) handoffAllowsDeviated / handoffExitProblem defaults mean "no --allow-deviated": DEVIATED-only is exit 3, exit 0 with DEVIATED and exit 3 under the flag are contradictions', () => {
+  assert.equal(handoffAllowsDeviated(['--headed']), false); assert.equal(handoffAllowsDeviated(['--headed', '--allow-deviated']), true);
+  const dev = { fail: 0, deviated: 3 };
+  assert.notEqual(handoffExitProblem(0, dev), null, 'default: exit 0 with DEVIATED is a contradiction'); assert.equal(handoffExitProblem(3, dev), null, 'default: DEVIATED only is exit 3');
+  assert.equal(handoffExitProblem(0, dev, { allowDeviated: true }), null); assert.notEqual(handoffExitProblem(3, dev, { allowDeviated: true }), null);
+});
+ok('(h-5b) real args WITHOUT --allow-deviated (baseline copy): exit 0 with DEVIATED rows -> FAIL internal error; DEVIATED-only exit 3 -> not an internal error', () => {
+  const BLJ = JSON.parse(fs.readFileSync(path.join(HERE, 'holo-baseline.json'), 'utf8'));
+  const noAllow = path.join(TMP, 'baseline-no-allow.json');
+  fs.writeFileSync(noAllow, JSON.stringify({ ...BLJ, osHandoff: { ...BLJ.osHandoff, args: BLJ.osHandoff.args.filter((x) => x !== '--allow-deviated') } }));
+  assert.ok(!handoffAllowsDeviated(buildHandoffArgs(JSON.parse(fs.readFileSync(noAllow, 'utf8')).osHandoff, 'u', 'o', 4)), 'premise: these args do not allow DEVIATED');
+  const dev = mk(rowsOf({ i1: 30, dev: 5 }));
+  const bad = run('nd1', { branch: { exit: 0, result: dev } }, { env: { VERIFY_HOLO_SELFTEST_BASELINE: noAllow } });
+  assert.equal(bad.it.status, 'FAIL', JSON.stringify(bad.it)); assert.match(bad.it.reason, /internal error.*exited 0/);
+  const good = run('nd2', { branch: { real: true, result: dev } }, { env: { VERIFY_HOLO_SELFTEST_BASELINE: noAllow } }); // the fake follows os-handoff's own rule: no flag -> DEVIATED only exits 3
+  assert.doesNotMatch(String(good.it.reason ?? ''), /internal error/, JSON.stringify(good.it));
+});
+ok('(h-6) holo-ime verdict branches: fewer checks than the baseline -> FAIL; an exit code other than 0/1/2, or exit 0 without a result file -> INVALID (harness)', () => {
+  const few = runIme('imeh1', [{ exit: 0, result: { ...IME_PASS.result, results: checks(IME_CHECKS - 1) } }]);
+  assert.equal(few.it.status, 'FAIL'); assert.match(few.it.reason, new RegExp(`checks ${IME_CHECKS - 1} < baseline ${IME_CHECKS}`)); assert.equal(few.attempts, 1);
+  const odd = runIme('imeh2', [{ exit: 9, result: IME_PASS.result }]);
+  assert.equal(odd.it.status, 'INVALID'); assert.match(odd.it.reason, /holo-ime exit 9/);
+  const none = runIme('imeh3', [{ exit: 0 }]);
+  assert.equal(none.it.status, 'INVALID'); assert.match(none.it.reason, /holo-ime exit 0/); assert.equal(none.it.value, null);
+});
+ok('(h-7) a retried holo-ime keeps the first attempt in result.attempt1.json next to the retry\'s result.json', () => {
+  const r = runIme('imeh4', [imeEnv('page-not-ready'), IME_PASS]);
+  const dir = path.join(TMP, 'imeh4', 'out', 'holo-ime');
+  const a1 = JSON.parse(fs.readFileSync(path.join(dir, 'result.attempt1.json'), 'utf8')), a2 = JSON.parse(fs.readFileSync(path.join(dir, 'result.json'), 'utf8'));
+  assert.equal(a1.envError.kind, 'page-not-ready'); assert.equal(a1.results.length, 22); assert.equal(a2.results.length, IME_CHECKS); assert.equal(r.attempts, 2);
+});
+ok('(h-8) the real holo-ime command line (both attempts) is exactly the README one: --methods proj --freeze 1,0, nothing else but --url and --out', () => {
+  const readme = fs.readFileSync(path.join(HERE, 'README.md'), 'utf8');
+  assert.ok(readme.includes('`--methods proj --freeze 1,0`'), 'README must state the real holo-ime arguments');
+  const r = runIme('imeh5', [imeEnv('page-not-ready'), IME_PASS]);
+  const dir = path.join(TMP, 'imeh5', 'out', 'holo-ime');
+  for (const k of [0, 1]) assert.deepEqual(JSON.parse(fs.readFileSync(path.join(TMP, 'imeh5', `ime-args-${k}.json`), 'utf8')), ['--url', 'http://localhost:0/', '--methods', 'proj', '--freeze', '1,0', '--out', dir]);
+  assert.equal(r.attempts, 2);
 });
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log(`verify-holo selftest: ${n} groups passed`);
