@@ -9,8 +9,8 @@
 |---|---|
 | 目前階段 | **H2-0（`npm run verify:holo`）已以 PR #67 合併（2026-11-18）**。H2-1 開工前置項目（§5）與兩項驗證加速在分支 `feat/holo-h2-1-prereq` 處理中，之後進 H2-1+2（見 §3） |
 | main | `bfd5c12`（PR #67，squash；H2-0 verify:holo） |
-| 進行中分支 | `feat/holo-h2-1-prereq`（worktree `pld-wt/h2-1`）：§5 的 H2-1 前置項目、main 依 commit 快取、完整版先跑 quick 階段（fail-fast）；只改 `scripts/verify/`。`pld-wt/h2-0` 已移除；baseline worktree `pld-wt/h2-base` 已改指 main `bfd5c12`。`.git/worktrees/` 底下有 `h2-0-l2b`、`h2-0-l2j`、`h2-0-l2k`、`h2-0-l2k-old`、`h2-0-l2m` 等刪不掉的空殼（Permission denied），照慣例留著 |
-| 伺服器 | 3114–3116 都已停止；沒有背景中的協調者或驗證者 |
+| 進行中分支 | `feat/holo-h2-1-prereq`（worktree `pld-wt/h2-1`，已推上遠端備份、未開 PR）：§5 的 H2-1 前置項目、main 依 commit 快取、完整版先跑 quick 階段（fail-fast）；只改 `scripts/verify/`。**2026-11-18 handoff 時停在 L1 中途**：check、test、8 個自測全過；完整版 `verify:holo` 跑到 c1-os 被中止（A／B 組全 PASS、entry-delta 命中快取；c1-web 因系統睡眠被判 INVALID、要重跑）。恢復順序：新的 L1 重跑完整版 → L2 → 開 PR → H2-1+2 實作。`pld-wt/h2-0` 已移除；baseline worktree `pld-wt/h2-base` 已改指 main `bfd5c12`。`.git/worktrees/` 底下有 `h2-0-l2b`、`h2-0-l2j`、`h2-0-l2k`、`h2-0-l2k-old`、`h2-0-l2m` 等刪不掉的空殼（Permission denied），照慣例留著 |
+| 伺服器 | 3114–3116 都已停止（2026-11-18 handoff 時確認）；沒有背景中的協調者或驗證者 |
 | H2-0 驗證結果 | 完整 L1（`c131c88`）17/19：os-handoff 兩項被「exit 與結果矛盾」檢查誤判（帶 `--allow-deviated` 時只有 DEVIATED 就是 exit 0），已在 `3f608ac` 修正（`buildHandoffArgs` 統一產生參數）。os-handoff 兩項重跑：coord9 的 4× 出現 1 筆真實 FAIL，已記為已知問題（見 §5）；l1-r8 的 1× 與 4× 都 PASS。後續 commit（`146e24e` 自測缺口、`14827b7` E1：holo-ime 的 exit 0 必須與 result.json 一致）跑過自測、check、test 的 L1，並各有一位新的 L2 複驗，都沒有找到真實會發生的錯誤 PASS。L2 共 l2i、l2h、l2j、l2k、l2m 五輪；證據放在開發主管的 scratchpad（不進版控） |
 | 停止條件（設計師 2026-11-18） | L2 只找到「不會造成錯誤 PASS」的缺口時，一律記成下一期的前置項目，不再回頭修；只有會讓結果變成錯誤 PASS 的缺陷才在本期修 |
 | 新紅線（2026-11-16） | 協調者與驗證者**不得執行 `git config`**（`--local`／`--global` 都不行，2026-11-18 起連只讀取設定也不行）、不得改 `.git/config` 與 hooks，突變只改 worktree 內的追蹤檔案（暫時 commit 用 `git -c user.name=… -c user.email=… commit`）；**寫檔一律用絕對路徑**（PowerShell 的 .NET 檔案 API 相對路徑以行程啟動目錄為準，曾因此誤寫主 checkout） |
