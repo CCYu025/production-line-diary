@@ -26,7 +26,7 @@ import { parseArgs } from 'node:util';
 import { Browser } from './cdp.mjs';
 import { assertScratchServer } from './safety.mjs';
 import { overallExit } from './exit-code.mjs';
-import { baseUnavailableDecision, classifyFails, handoffExitProblem, knownOnMainDecision } from './known-on-main.mjs';
+import { baseUnavailableDecision, classifyFails, buildHandoffArgs, handoffAllowsDeviated, handoffExitProblem, knownOnMainDecision } from './known-on-main.mjs';
 import { envKindOf, judgeRetry, summarizeAttempt } from './ime-env.mjs';
 import { HEARTBEAT_MS, applySuspend, applyTimeout, classifySuspend, clock, findGaps } from './suspend.mjs';
 import { personalHit, profilePathHit, themeKeyLines } from './redline-rules.mjs';
@@ -500,11 +500,12 @@ async function osHandoffRun(L, dirName, throttle, B) {
   const url = await mainServer(L);
   const dir = path.join(OUT, dirName);
   clearOut(path.join(dir, 'result.json'));
-  const r = await L.node(HANDOFF_SCRIPT, ['--url', url, '--out', dir, ...BL.osHandoff.args, '--throttles', String(throttle)]);
+  const hArgs = buildHandoffArgs(BL.osHandoff, url, dir, throttle);
+  const r = await L.node(HANDOFF_SCRIPT, hArgs);
   const j = readJsonSafe(path.join(dir, 'result.json'));
   if (!j || r.code === null || r.code > 3) throw invalid(`os-handoff exit ${r.code}, no result.json`);
   // exit code and summary must agree (exit 2 = usage error, exit 3 with 0 DEVIATED, ...): otherwise os-handoff itself is broken: FAIL, never a pass
-  const contradiction = handoffExitProblem(r.code, j.summary);
+  const contradiction = handoffExitProblem(r.code, j.summary, { allowDeviated: handoffAllowsDeviated(hArgs) });
   if (contradiction) return fail({ throttle, exit: r.code, summary: j.summary ?? null }, { exitMatchesSummary: true }, `internal error: ${contradiction}`);
   // DEVIATED = the planned click offset was not reachable on this machine (README: inconclusive, never a pass, never a failure).
   // PASS needs 0 FAIL, samples >= B.samples, conclusive passes >= B.conclusiveMin, and DEVIATED <= B.deviatedMax (explicit) or, when the baseline gives none, floor(baselineDeviated x 1.5).
@@ -530,7 +531,7 @@ async function osHandoffRun(L, dirName, throttle, B) {
     }
     L.append(`\n[known-on-main: all ${failN} FAIL sample(s) are I2 phase timeouts; re-measuring I2 on main at CPU ${throttle}x, --reps ${B.knownOnMainReps}]\n`);
     clearOut(path.join(bdir, 'result.json'));
-    const br = await L.node(HANDOFF_SCRIPT, ['--url', bUrl, '--out', bdir, ...BL.osHandoff.args, '--throttles', String(throttle), '--only', 'i2', '--reps', String(B.knownOnMainReps)]);
+    const br = await L.node(HANDOFF_SCRIPT, buildHandoffArgs(BL.osHandoff, bUrl, bdir, throttle, ['--only', 'i2', '--reps', String(B.knownOnMainReps)]));
     const bj = readJsonSafe(path.join(bdir, 'result.json'));
     const dec = knownOnMainDecision({ branchResult: j, baseExit: br.code, baseResult: bj, allowlist: B.knownOnMain, logPath: `logs/${L.id}.log` });
     const baseEv = { ...dec.value, knownOnMain: dec.status === 'INVALID', baseFail: bj?.summary?.fail ?? null, baseEvidence: rel(path.join(bdir, 'result.json')), reps: B.knownOnMainReps };

@@ -106,16 +106,25 @@ export function knownOnMainDecision({ branchResult, baseExit, baseResult, allowl
   return { status: 'FAIL', value, message: `${branchTimeouts} I2 phase timeout(s); ${rv.reason}: not known-on-main` };
 }
 
+/** the one place that builds os-handoff's command line (real run and self-test both use it); `extra` = e.g. ['--only','i2','--reps','3'] */
+export function buildHandoffArgs(handoffBaseline, url, outDir, throttle, extra = []) {
+  return ['--url', url, '--out', outDir, ...handoffBaseline.args, '--throttles', String(throttle), ...extra];
+}
+export const handoffAllowsDeviated = (args) => args.includes('--allow-deviated');
+
 /**
  * Sanity check of an os-handoff run: its exit code and its own summary must agree (exit codes: 0 clean, 1 any FAIL, 3 DEVIATED only; 2 is the usage error).
+ * With --allow-deviated os-handoff never exits 3: DEVIATED-only is exit 0 (any DEVIATED count), exit 3 is a contradiction.
  * Anything else means os-handoff itself broke (crashed, wrong arguments, a summary that is not the run's), which is a FAIL of the harness, never a pass or an INVALID.
  * @returns {string|null} a message when contradictory, else null
  */
-export function handoffExitProblem(exit, summary) {
+export function handoffExitProblem(exit, summary, { allowDeviated = false } = {}) {
   const f = summary?.fail, d = summary?.deviated;
   if (typeof f !== 'number' || typeof d !== 'number') return 'result.json has no numeric summary.fail / summary.deviated';
   if (exit === 2) return 'os-handoff exited 2 (usage error): the run did not measure anything';
-  if (exit === 0 && (f > 0 || d > 0)) return `os-handoff exited 0 but its summary has ${f} FAIL and ${d} DEVIATED`;
+  if (exit === 0 && f > 0) return `os-handoff exited 0 but its summary has ${f} FAIL and ${d} DEVIATED`;
+  if (allowDeviated && exit === 3) return `os-handoff exited 3 although --allow-deviated was passed (it must exit 0 for DEVIATED only); summary has ${f} FAIL and ${d} DEVIATED`;
+  if (!allowDeviated && exit === 0 && d > 0) return `os-handoff exited 0 but its summary has ${f} FAIL and ${d} DEVIATED`;
   if (exit === 1 && f === 0) return 'os-handoff exited 1 (FAIL) but its summary has 0 FAIL';
   if (exit === 3 && (d === 0 || f > 0)) return `os-handoff exited 3 (DEVIATED only) but its summary has ${f} FAIL and ${d} DEVIATED`;
   return null;

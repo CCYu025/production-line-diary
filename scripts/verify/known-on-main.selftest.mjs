@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { baseUnavailableDecision, classifyFails, countKnown, handoffExitProblem, judgeBaseRerun, knownOnMainDecision, matchesKnown, phaseTimeoutPattern, ratioVerdict } from './known-on-main.mjs';
+import { baseUnavailableDecision, classifyFails, countKnown, handoffExitProblem, buildHandoffArgs, handoffAllowsDeviated, judgeBaseRerun, knownOnMainDecision, matchesKnown, phaseTimeoutPattern, ratioVerdict } from './known-on-main.mjs';
 import { PHASES, TRANSITIONS } from './os-phases.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -125,6 +125,15 @@ ok('handoffExitProblem: exit 2 / exit 3 with DEVIATED 0 / exit 0 with FAIL or DE
   assert.match(handoffExitProblem(1, S(0, 5)), /exited 1/);
   assert.match(handoffExitProblem(0, {}), /numeric summary/); assert.match(handoffExitProblem(0, undefined), /numeric summary/);
   for (const [e, s] of [[0, S(0, 0)], [1, S(3, 0)], [1, S(3, 9)], [3, S(0, 9)]]) assert.equal(handoffExitProblem(e, s), null, `${e} ${JSON.stringify(s)}`);
+});
+ok('handoffExitProblem with allowDeviated: exit 0 + FAIL 0 (any DEVIATED) ok; exit 3 = contradiction; exit 0 + FAIL>0, exit 1 FAIL 0, exit 2 still contradictions; without it exit 0 + DEVIATED stays a contradiction', () => {
+  const S = (fail, deviated) => ({ fail, deviated, total: 100 }), A = { allowDeviated: true };
+  for (const [e, s] of [[0, S(0, 0)], [0, S(0, 79)], [1, S(2, 5)]]) assert.equal(handoffExitProblem(e, s, A), null, `${e} ${JSON.stringify(s)}`);
+  assert.match(handoffExitProblem(3, S(0, 5), A), /exited 3/); assert.match(handoffExitProblem(3, S(0, 0), A), /exited 3/);
+  assert.match(handoffExitProblem(0, S(1, 5), A), /exited 0/); assert.match(handoffExitProblem(1, S(0, 5), A), /exited 1/); assert.match(handoffExitProblem(2, S(0, 0), A), /exited 2/);
+  assert.match(handoffExitProblem(0, S(0, 2)), /exited 0/);
+  assert.equal(handoffAllowsDeviated(buildHandoffArgs({ args: ['--headed', '--allow-deviated'] }, 'u', 'o', 4, ['--only', 'i2'])), true);
+  assert.equal(handoffAllowsDeviated(buildHandoffArgs({ args: ['--headed'] }, 'u', 'o', 1)), false);
 });
 // ---------- L2-i fix 1: base side cannot be started
 ok('baseUnavailableDecision: FAIL, says it is the base side and cannot be compared with main', () => {

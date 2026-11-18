@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildHandoffArgs, handoffAllowsDeviated } from './known-on-main.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'pld-vhst-'));
@@ -17,6 +18,7 @@ fs.writeFileSync(FAKE, [
   'const a = process.argv.slice(2); const arg = (k) => a[a.indexOf(k) + 1];',
   "const role = a.includes('--only') ? 'base' : 'branch';",
   "const spec = JSON.parse(fs.readFileSync(path.join(process.env.FX_DIR, role + '.json'), 'utf8'));",
+  "if (spec.real) spec.exit = spec.result.summary.fail ? 1 : spec.result.summary.deviated && !a.includes('--allow-deviated') ? 3 : 0; // same rule as os-handoff.mjs:416, driven by the args verify-holo really passes",
   'if (spec.hang) setInterval(() => {}, 1000);',
   "else { if (spec.result) { fs.mkdirSync(arg('--out'), { recursive: true }); fs.writeFileSync(path.join(arg('--out'), 'result.json'), JSON.stringify(spec.result)); } process.exit(spec.exit); }",
   '',
@@ -86,7 +88,17 @@ ok('(5) exit 2 (usage error) with a clean-looking result.json -> FAIL internal e
   assert.equal(e2.it.status, 'FAIL'); assert.equal(e2.exit, 1); assert.match(e2.it.reason, /internal error.*exited 2/);
   const e3 = run('d2', { branch: { exit: 3, result: CLEAN.result } }); assert.equal(e3.it.status, 'FAIL'); assert.match(e3.it.reason, /internal error.*exited 3/);
   const e0 = run('d3', { branch: { exit: 0, result: BRANCH_2_OF_18.result } }); assert.equal(e0.it.status, 'FAIL'); assert.match(e0.it.reason, /internal error.*exited 0/);
-  const good3 = run('d4', { branch: { exit: 3, result: mk(rowsOf({ i1: 30, dev: 70 })) } }); assert.notEqual(good3.it.status, 'FAIL', 'a consistent exit 3 is not an internal error');
+  const good0 = run('d4', { branch: { exit: 0, result: mk(rowsOf({ i1: 30, dev: 70 })) } }); assert.notEqual(good0.it.status, 'FAIL', 'under --allow-deviated a DEVIATED-only exit 0 is not an internal error');
+});
+
+ok('(5b) real args (holo-baseline.json via buildHandoffArgs) carry --allow-deviated; DEVIATED only -> os-handoff exits 0 -> PASS, not internal error; exit 3 under those args -> FAIL internal error', () => {
+  const BLJ = JSON.parse(fs.readFileSync(path.join(HERE, 'holo-baseline.json'), 'utf8'));
+  assert.ok(handoffAllowsDeviated(buildHandoffArgs(BLJ.osHandoff, 'u', 'o', 4)), 'premise: the real args allow DEVIATED');
+  const dev = mk(rowsOf({ i1: 30, dev: BLJ.osHandoff4x.baselineDeviated }));
+  const g = run('d5', { branch: { real: true, result: dev } });
+  assert.notEqual(g.it.status, 'FAIL', JSON.stringify(g.it)); assert.doesNotMatch(String(g.it.reason ?? ''), /internal error/);
+  const gp = run('d5b', { branch: { real: true, result: mk(rowsOf({ i1: BLJ.osHandoff4x.samples, dev: 0 })) } }); assert.equal(gp.it.status, 'PASS', JSON.stringify(gp.it));
+  const bad = run('d6', { branch: { exit: 3, result: dev } }); assert.equal(bad.it.status, 'FAIL'); assert.match(bad.it.reason, /internal error.*exited 3/);
 });
 
 ok('(7) every item that needs --base (c1-web, c1-os) with a base server that cannot start / build -> FAIL (exit 1, SELFTEST label), saying base (main) side could not be started; not INVALID', () => {
@@ -143,7 +155,8 @@ fs.writeFileSync(FAKE_IME, [
   '',
 ].join(String.fromCharCode(10)));
 const checks = (k) => Array.from({ length: k }, (_, i) => ({ name: 'c' + i, pass: true }));
-const IME_PASS = { exit: 0, result: { results: checks(50), failed: 0, invalid: null, envError: null } };
+const IME_CHECKS = JSON.parse(fs.readFileSync(path.join(HERE, 'holo-baseline.json'), 'utf8')).holoIme.checks; // the fake must meet the real baseline, not a hand-written number
+const IME_PASS = { exit: 0, result: { results: checks(IME_CHECKS), failed: 0, invalid: null, envError: null } };
 const imeEnv = (kind, k = 22) => ({ exit: 2, result: { results: checks(k), failed: 0, invalid: null, envError: { kind, step: 'proj freeze=0 page-ready', message: 'waitFor timeout: window.__holoLab && window.__holoLab().frames > 10' } } });
 const IME_FAIL = { exit: 1, result: { results: [...checks(10), { name: 'bad', pass: false }], failed: 1, invalid: null, envError: null } };
 function runIme(name, specs) {
