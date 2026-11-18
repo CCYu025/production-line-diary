@@ -1,25 +1,19 @@
 # 全像模式（HOLO）交接文件
 
 > 用途：任何新的 session（或新的人）接手全像模式開發時，**先讀這份**。
-> 維護規則：每次合併 PR、每完成一期、使用者說「handoff」（停機或離開）時都要更新。最後更新：2026-11-17。
+> 維護規則：每次合併 PR、每完成一期、使用者說「handoff」（停機或離開）時都要更新。最後更新：2026-11-18。
 
 ## 1. 一分鐘現況
 
 | 項目 | 狀態 |
 |---|---|
-| 目前階段 | H2 共用核心進行中，停在 **H2-0（`npm run verify:holo`）**：驗證工具修正已補完（4× 門檻、known-on-main 對照規則、文件），已 rebase 到 main `c8bc1b9`；待協調者交工驗證結果、L1、補 L2、開 PR（2026-11-17） |
-| main | `c8bc1b9`（PR #66：交接文件更新） |
-| 進行中分支 | `feat/holo-h2-0-verify`（已 rebase 到 `c8bc1b9`；最新 commit 見 `git log`），worktree `pld-wt/h2-0`。**遠端還停在 rebase 前的 `93a4e0f`**：推新 commit 需要 force push，被自動模式權限擋下，新 commit 只在本機。baseline worktree `pld-wt/h2-base`（main `3d8a1ce`，產品程式碼與 `c8bc1b9` 相同）。設計師的 `pld-wt/holo-h15-spec` 由設計師處理 |
+| 目前階段 | **H2-0（`npm run verify:holo`）已以 PR #67 合併（2026-11-18）**。下一步是 H2-1+2（見 §3），開工前先處理 §5 的「H2-1 開工前置項目」 |
+| main | PR #67 的合併 commit（squash；H2-0 verify:holo） |
+| 進行中分支 | 無。`feat/holo-h2-0-verify` 合併後由 GitHub 刪除；worktree `pld-wt/h2-0` 可以移除。baseline worktree `pld-wt/h2-base`（main `3d8a1ce`）留到 H2-1 開工時改指新 main。`.git/worktrees/` 底下有 `h2-0-l2b`、`h2-0-l2j`、`h2-0-l2k`、`h2-0-l2k-old`、`h2-0-l2m` 等刪不掉的空殼（Permission denied），照慣例留著 |
 | 伺服器 | 3114–3116 都已停止；沒有背景中的協調者或驗證者 |
-| L2 拆分結果（2026-11-16） | 上一輪 L2 範圍太大逾時，改拆三位：**L2-a**（靜態）：可疑 ③④⑤⑥ 屬實（紅線 2 可繞過、紅線 3 只掃新增檔、lockfile 等欄位漏、工作區不乾淨照樣 PASS）、`osHandoff4x` 暫定門檻與 main 實測矛盾、範圍與文件全部符合；**L2-b**：找到缺陷——holo-ime C3 的「ㄈ」不比對任何選項，拿掉 `isComposing` 也 PASS；探針後計數歸零符合規格；**真實失焦→INVALID、`--full` 小樣本、1× DEVIATED 上限→INVALID 三項沒有有效實測**；**L2-c**：c1-web 故意改壞（按鈕 `px-4`→`px-5`）FAIL、858 處差異；DeviceGate 1000×700 時工作站仍在 DOM 且 `hidden`＋`inert`＋`aria-hidden`、表單值保留，與 main 的 DOM 與截圖位元組完全相同 |
-| 裁定（設計師 2026-11-16） | 1 修 holo-ime C3：保留「ㄈ」、加會比對到選項的「F」，兩者都檢查值沒被換成選項——這是修正測不到缺陷的輸入，不是放寬；2 4× 門檻：同一 commit 共跑 3 次完整 4×、取最差訂 `conclusiveMin` 與明確 DEVIATED 上限，baseline 註明「4× 只能抓 FAIL，輸入閘主要證據來自 1×」與原始數字；3 個人路徑另開 docs PR（已以 PR #65 合併） |
-| 新紅線（2026-11-16） | 協調者與驗證者**不得執行 `git config`**（`--local`／`--global` 都不行）、不得改 `.git/config` 與 hooks，突變只改 worktree 內的追蹤檔案（暫時 commit 用 `git -c user.name=… -c user.email=… commit`）；**寫檔一律用絕對路徑**（PowerShell 的 .NET 檔案 API 相對路徑以行程啟動目錄為準，曾因此誤寫主 checkout） |
-| L2 發現處理狀態 | **已完成（已 commit）**：① holo-ime C3 加「比對到選項」情境（`F`）；自證：拿掉 `isComposing` 判斷 → `holo-ime` FAIL（4 項，皆為 matches-options 情境），乾淨分支 PASS，檢查數 30（`holoIme.checks` 已改 30）；② 紅線規則 2（引號包住的偏好 key，ts/tsx/js/mjs，排除註解與測試）、規則 3b（所有檔案新增行掃使用者家目錄路徑）、規則 4（lockfile 任何變動、`overrides`／`resolutions`／`workspaces`／`bundledDependencies`）都用 L2-a 的情境重驗：別名、括號、換行、.js、修改既有檔加路徑、lockfile、overrides、workspaces 原本漏的現在都 FAIL，註解與測試檔、乾淨分支 PASS；③ 工作區不乾淨時 `tests-untouched`／`redline-grep` 為 INVALID（exit 2）、JSON 有 `dirty`；④ baseline 小項（`measuredOn` 補 Chrome、螢幕、4× 日期；`hp1WarnFps20k` 45 警戒；`labBundle.holoCoreMaxBytes` 由 baseline 讀；刪死欄位）；⑤ README／CLAUDE／AGENTS 已同步；⑥ 已 rebase 到 `a172c5f`。**4× 門檻已補（2026-11-17）**：同一份 main 程式碼三次完整 4×：102／確定通過 23／DEVIATED 79／FAIL 0；102／37／64／FAIL 1（I2 階段逾時）；102／24／78／FAIL 0；取最差訂 `osHandoff4x.conclusiveMin` 20、`deviatedMax` 90（含原始數字與「4× 只能抓 FAIL，輸入閘主要證據來自 1×」註記，寫在 `holo-baseline.json`）。**known-on-main 規則（設計師 2026-11-17 裁定）**：`--full` 的 4× 若 FAIL 全是允許清單內的 I2 階段逾時，同一次執行對 `--base` 重測 I2 4×，main 也逾時 → INVALID（`knownOnMain: true`），否則 FAIL；其他 FAIL 不對照；1× 不套用（見 `scripts/verify/README.md`）。**未完成**：補 L2。|
-| 補充 L2-d 結果與裁定（2026-11-17） | L2-d 找出四點：① `holo-ime` 在沒改過的程式碼上約 7 次 2 次偶發 FAIL（C3 `設備XYF`、C2 `ㄏㄠˇ好`，都只在 freeze=0）；② 焦點判定；③ 突變 M2（只拿掉 keyCode 229）與 M4（只守 Enter 不守 ↑↓）沒被抓到；④ 紅線規則 2 的 `*` 開頭行可繞過、多行區塊註解內不以 `*` 開頭的行會誤報、小寫 Windows 路徑漏掃。設計師裁定並已修（見 commit）：焦點規格改為「已啟用焦點模擬、不受作業系統焦點影響，只有探針組字沒觸發才 INVALID」，並加 `--kill-probe` 突變開關；M2 補單元測試 `imeKeyCode229.test.tsx`（拿掉 229 判斷會變紅），README 寫明 E2E 的已知限制；M4 加斷言「選字中 ↓↑ 不改 `aria-activedescendant`、清單開著」；紅線抽成 `redline-rules.mjs`（真正追蹤區塊註解、Windows 路徑不分大小寫）加 `redline-rules.selftest.mjs`，已知範圍寫進 README。階段 2 實測結果（2026-11-17，HEAD 見 `git log`）：乾淨程式碼連跑 `--only holo-ime` 10/10 PASS（44 項，`holoIme.checks` 已改 44），另有一組 10/10 在改前版本；10 次都沒有 INVALID、沒有 FAIL，軌跡也沒有視窗失焦，所以「失焦」推論**沒有證據**，已撤銷「失焦期間的 FAIL 改判 INVALID」（只留軌跡當診斷證據，避免掩蓋真 FAIL）。偶發失敗在改成「等頁面可觀察狀態」後 20 次完整執行不再出現（C3 結束時 `aria-expanded` 40/40 為 true，舊版時真時假）；根本原因的結論只能到「舊腳本用固定 sleep 與下一步搶時序（組字在 commit 前已結束、清單已被收起）」，確切是哪一個事件仍未抓到，因為新腳本下不再重現。突變：M4（只守 Enter）→ FAIL 4 項（皆為 activedescendant 斷言）；拿掉整個保護 3/3 FAIL（各 8 項）；`--kill-probe` → INVALID（exit 2）；M2 由單元測試負責（拿掉 229 判斷 9 個測試全紅）。known-on-main 改比率規則（設計師 2026-11-17）：INVALID 要 base 至少逾時 1 次，且 `分支逾時 ≤ 3 × base逾時 × (分支樣本 ÷ base樣本) + 2`；value 帶 `branchTimeouts`／`branchSamples`／`baseTimeouts`／`baseSamples`／`limit`；base 重跑失敗為 FAIL，訊息寫「無法對照」。**待機偵測（2026-11-17，L1 第 5 輪 c1-web 卡住是 Windows Modern Standby 凍住 node 與 Chrome，事件 506／507 吻合）**：`verify-holo` 每 5 秒記牆鐘心跳，兩次間隔嚴格大於 60 秒就是暫停；執行期間重疊的項目一律判 INVALID「system suspended (gap Ns at HH:MM:SS), rerun required」，優先於逾時判定，`value.suspendedGaps` 與原判定／證據都保留，頂層 JSON 有 `suspended`／`suspendedGaps`，摘要行註明；沒重疊的 FAIL 不改。L1 遇到這種 INVALID 要回報「環境暫停，需重跑」。純函式在 `suspend.mjs`，自測 `suspend.selftest.mjs`；不做任何防睡眠（使用者自己決定）。待 L2 驗瀏覽器流程 |
-| L2-i 修正（2026-11-17） | L2-i 找出的問題已依設計師裁定修完，每項都有回歸測試並實測「拿掉修正會失敗」：舊 `result.json` 在每次啟動子程序前先刪、紅線掃描器正確處理 regex 字面值（`/\/*/` 不再吞掉後面整個檔案）、個人路徑規則只比對真正的家目錄、base 伺服器起不來或建置失敗一律 FAIL、逾時殺掉時已有 FAIL 就維持 FAIL、待機改 INVALID 只套用在標為與時間有關的項目（建置、測試、掃描類的 FAIL 不再被待機吃掉）、known-on-main 的 phase 名稱改由 `os-phases.mjs`（與產品 `Phase` 型別對照）產生、`os-handoff` 的 exit code 與 summary 矛盾判 FAIL。新增自測 `os-phases.selftest.mjs`、`verify-holo.selftest.mjs`（不開瀏覽器、不佔連接埠）。細節見 `scripts/verify/README.md` |
-| holo-ime 補強（2026-11-17） | 設計師裁定：① 補測不到的缺口——選字中 Enter／Esc 後 Combobox 的 `aria-expanded` 必須仍是 `true`，並加「滑鼠停在某選項上（有反白）再按 Enter」情境，只拿掉 Enter 或 Esc 其中一個防護也會 FAIL；② 環境類例外（頁面未就緒、CDP 中斷、目標關閉；清單是 `ime-env.mjs` 的 `ENV_ERROR_KINDS`）改判 INVALID，`verify-holo` 就地重試一次（連兩次同種 → FAIL；重試 PASS 仍是 INVALID；結果與摘要都記 `retried 1x`）；③ 失敗與例外時 `result.json` 多記診斷（`diag`／`diagFull`），只增加紀錄不改判定。細節見 `scripts/verify/README.md`。 |
-| 2026-11-17 handoff 狀態 | `6aef487` 完整 L1 19/19 PASS（exit 0，無待機）。補充 L2 兩份（L2-i 靜態、L2-h 瀏覽器）完成；比率規則、DEVIATED 邊界、待機偵測（真實暫停 70 秒）都通過。發現已依設計師裁定修在 `f943b12`、`c0dd613`、`ab98462`、`5e57eda`，**這四個 commit 還沒跑 L1 與複驗**。holo-ime 乾淨程式碼偶發失敗（L2-h 5 次中 2 次：選字在 Enter／ArrowDown 後自行結束、值變「ㄋㄧˇ你好」、freeze 時 slate 位移 45px；另一次 freeze=0 頁 frames 逾時）。根因第一輪：main 12/12、分支 12/12、分支＋CPU 滿載 6/6 全 PASS，失敗那次沒有失焦。第二輪（`5e57eda`，holo-ime 與 `os-handoff.mjs --headed --throttles 4` 同時跑）10/10 PASS，無重試、`diag` 全正常（節點沒被換、frames 有前進）；但背景負載不完整（第一輪背景腳本中途 CDP 逾時崩潰、第二輪被 handoff 停掉），信心中低。依設計師規則屬「沒重現」→ 照已知問題處理 |
-| 下一步 | ① ~~holo-ime 已知問題~~（設計師 2026-11-18 確認，已寫進 README 與本文件 §5）；② 完整 L1；③ 新的 Sonnet 複驗：Enter／Esc 突變 FAIL、環境例外與重試紀錄（拿掉 `retried` 紀錄自測要失敗）、base 起不來一律 FAIL（含 c1、entry-delta）、SELFTEST 三條保護（含 `VERIFY_HOLO_SELFTEST_BASE_FAIL`／`_IME` 是否只在 `VERIFY_HOLO_SELFTEST=1` 下生效、CI 下拒絕）；④ force push（需使用者授權）、開 PR（本文寫 `holo-baseline.json` 每處變動理由與 main 多出 1816 B 的前 5 名模組）、CI、送設計師審查 |
+| H2-0 驗證結果 | 完整 L1（`c131c88`）17/19：os-handoff 兩項被「exit 與結果矛盾」檢查誤判（帶 `--allow-deviated` 時只有 DEVIATED 就是 exit 0），已在 `3f608ac` 修正（`buildHandoffArgs` 統一產生參數）。os-handoff 兩項重跑：coord9 的 4× 出現 1 筆真實 FAIL，已記為已知問題（見 §5）；l1-r8 的 1× 與 4× 都 PASS。後續 commit（`146e24e` 自測缺口、`14827b7` E1：holo-ime 的 exit 0 必須與 result.json 一致）跑過自測、check、test 的 L1，並各有一位新的 L2 複驗，都沒有找到真實會發生的錯誤 PASS。L2 共 l2i、l2h、l2j、l2k、l2m 五輪；證據放在開發主管的 scratchpad（不進版控） |
+| 停止條件（設計師 2026-11-18） | L2 只找到「不會造成錯誤 PASS」的缺口時，一律記成下一期的前置項目，不再回頭修；只有會讓結果變成錯誤 PASS 的缺陷才在本期修 |
+| 新紅線（2026-11-16） | 協調者與驗證者**不得執行 `git config`**（`--local`／`--global` 都不行，2026-11-18 起連只讀取設定也不行）、不得改 `.git/config` 與 hooks，突變只改 worktree 內的追蹤檔案（暫時 commit 用 `git -c user.name=… -c user.email=… commit`）；**寫檔一律用絕對路徑**（PowerShell 的 .NET 檔案 API 相對路徑以行程啟動目錄為準，曾因此誤寫主 checkout） |
 | H2 簡報 | 定稿在開發主管的筆記資料夾 `h2-brief.md`（不在 repo）。重點：共 7 個 PR（H2-0、H2-1+2、H2-3、H2-4、H2-5、H2-6、H2-7）；Q1 紀錄相關 hook 放 `features/records/core/`、`useModeShell` 拆成 `app/core/`（標題、換頁焦點）與 `features/os/core/`（模式生命週期），網頁入口不得 import `features/os`（A5／HB1）；Q2 H2-6 搬家與 H2-7 ColorManagement 初始化放本期；Q3 `holoAggregate` 延到 H6；Q4 H2-1 與 H2-2 合成一個 PR。只有 H2-0、H2-4 送設計師審查；突變沒被抓到時不合併、先問設計師 |
 | H2-0 裁定 | 已於 2026-11-16 由設計師裁定並落實（(a) `--full` 補跑 4×、(b) DEVIATED ≤ 基準×1.5、(c) c1-os 1280＋1024 共 18 組、(d) 組合數和基準比、(e) 逾時 40 分鐘／軟體算圖 INVALID、(f) holo-ime 探針、(g) `bundle-baseline.json` 不動、新增 `entry-delta-vs-base` ≤ +100 B）。2026-11-17 補：4× 門檻已訂、I2 階段逾時採 known-on-main 對照（見「L2 發現處理狀態」）。|
 | 規格 | `docs/holo-mode-spec.md`（H1.5 抽象佈局定稿版）、`docs/holo-mode-inventory.md`（附錄 A，必須保留的功能清單） |
@@ -36,10 +30,11 @@
 | H1 | #62 | 2026-11-15 | 技術驗證四關卡通過：引擎、全像材質、終端板定位定案為投影（規格 §3.3）、縮圖快取、效能（20k 筆 60fps）、`holo-*` 驗證腳本、bundle 群組制。機台樣品已移除；留給 H3 的發現記在規格 §3.3 |
 | 文件 | #65 | 2026-11-16 | 個人路徑換成佔位符（`.env.example`、`docs/refactor-plan.md`、`test/migrateLogic.test.js`），設計師合併 |
 | 文件 | #66 | 2026-11-16 | 交接文件更新（H2-0 第二次 handoff） |
+| H2-0 | #67 | 2026-11-18 | 一鍵驗證指令 `npm run verify:holo`（19 項、機器可讀 JSON＋摘要行、exit 0／1／2）、`holo-baseline.json` 門檻、known-on-main 比率規則、待機偵測、SELFTEST 保護、holo-ime 補強與環境例外重試；產品程式碼沒有改 |
 
 ## 3. 下一步（依序）
 
-1. H2 共用核心抽出（規格 §12，簡報已定稿，見 §1）：先完成 H2-0 的 L1／L2／PR（見 §1「下一步」），再依序 H2-1+2 → H2-3 → H2-4 → H2-5 → H2-6 → H2-7。網頁與 OS 2D 行為零差異。
+1. H2 共用核心抽出（規格 §12，簡報已定稿，見 §1）：H2-0 已合併（#67）；接著依序 H2-1+2（開工前先處理 §5「H2-1 開工前置項目」） → H2-3 → H2-4 → H2-5 → H2-6 → H2-7。網頁與 OS 2D 行為零差異。
 2. 之後依規格 §12：H3 引擎＋佈局框架 → H4 流場＋詳情 → H5 編輯新增 → H6 晶格＋儀器環 → H7 深層＋設定 → H8 轉場音效 → H9 星座（選配）→ H10 收尾。
 3. L1 詞彙設定（跨領域）：H4 展示後才開，需先修改紅線 1、3。L2 資料模型另立專案。
 
