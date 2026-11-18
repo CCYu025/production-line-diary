@@ -11,8 +11,12 @@
 // What CDP cannot show: where the OS candidate window appears. That is part of the manual HF3 check (the user's Zhuyin session).
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { Browser, sleep } from './cdp.mjs';
+// Self-test hook (ime-env.selftest.mjs): swap the CDP module for a fake so the loop wiring (halt after the first exception) can be run without a browser.
+// Honoured only with VERIFY_HOLO_SELFTEST=1 and CI unset (same rule as verify-holo.mjs's hooks); otherwise the real cdp.mjs is always used.
+const CDP_MODULE = process.env.VERIFY_HOLO_SELFTEST === '1' && !process.env.CI && process.env.HOLO_IME_SELFTEST_CDP ? process.env.HOLO_IME_SELFTEST_CDP : './cdp.mjs';
+const { Browser, sleep } = await import(CDP_MODULE.startsWith('.') ? CDP_MODULE : pathToFileURL(CDP_MODULE).href);
 import { classifyEnvError, untilHalt } from './ime-env.mjs';
 
 const { values: A } = parseArgs({

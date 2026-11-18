@@ -1,6 +1,8 @@
 // Self-test of ime-env.mjs (pure functions): node scripts/verify/ime-env.selftest.mjs   (exit 0 = all pass)
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENV_ERROR_KINDS, HOLO_IME_ARGS, buildImeArgs, classifyEnvError, envKindOf, imeExitProblem, judgeRetry, summarizeAttempt, untilHalt } from './ime-env.mjs';
@@ -77,4 +79,75 @@ ok('imeExitProblem: exit 0 with failed>0 / results pass:false / invalid / envErr
   assert.match(imeExitProblem(0, null), /^holo-ime exited 0 but/);
   for (const e of [1, 2, 3]) assert.equal(imeExitProblem(e, { ...good, failed: 1 }), null);
 });
+// ---- H2-1 E1 residuals: type guards of imeExitProblem. Each assertion pins one mutation (named in the comment).
+ok('imeExitProblem types: pass must be exactly true; failed must be exactly the number 0; results must be an array; invalid / envError / envErrorSeen are judged by != null (0, "", false are values)', () => {
+  const P = (k) => Array.from({ length: k }, (_, i) => ({ name: 'c' + i, pass: true }));
+  const good = { results: P(5), failed: 0, invalid: null, envError: null, envErrorSeen: null };
+  assert.equal(imeExitProblem(0, good), null);
+  assert.equal(imeExitProblem(0, { ...good, envErrorSeen: undefined }), null, 'a missing envErrorSeen (older result files) is fine');
+  // `pass !== true` -> `!pass`: truthy non-true values must still count as "did not pass"
+  for (const v of [1, 'true', 'yes', {}]) assert.match(imeExitProblem(0, { ...good, results: [...P(3), { name: 'x', pass: v }] }), /did not pass/, `pass: ${JSON.stringify(v)}`);
+  assert.match(imeExitProblem(0, { ...good, results: [...P(3), null] }), /did not pass/, 'a null entry is not a pass');
+  // `failed !== 0` -> `> 0`: negative / NaN-like numbers are not 0
+  assert.match(imeExitProblem(0, { ...good, failed: -1 }), /failed=-1/);
+  assert.match(imeExitProblem(0, { ...good, failed: Number.NaN }), /failed=NaN|numeric failed/);
+  // `typeof failed` check removed: a string "0" must be rejected by the type check (its own message), not by the value check
+  for (const f of ['0', false, null, undefined, [0]]) assert.match(imeExitProblem(0, { ...good, failed: f }), /no results\[\] \/ numeric failed/, `failed: ${JSON.stringify(f)}`);
+  // `Array.isArray` removed: non-arrays must be reported (not throw, not slip through)
+  for (const r of [null, undefined, 'abc', { length: 1, 0: { pass: true } }, 7]) {
+    let msg; try { msg = imeExitProblem(0, { ...good, results: r }); } catch (e) { assert.fail(`results ${JSON.stringify(r)} threw ${e.message}`); }
+    assert.match(msg, /no results\[\] \/ numeric failed/, `results: ${JSON.stringify(r)}`);
+  }
+  // `!= null` -> truthiness: every non-null value, however falsy, is a contradiction
+  for (const v of [0, '', false, 'probe', {}, []]) {
+    assert.match(imeExitProblem(0, { ...good, invalid: v }), /^holo-ime exited 0 but .*invalid=/, `invalid: ${JSON.stringify(v)}`);
+    assert.match(imeExitProblem(0, { ...good, envError: v }), /^holo-ime exited 0 but .*envError/, `envError: ${JSON.stringify(v)}`);
+    assert.match(imeExitProblem(0, { ...good, envErrorSeen: v }), /^holo-ime exited 0 but .*envErrorSeen/, `envErrorSeen: ${JSON.stringify(v)}`);
+  }
+  assert.match(imeExitProblem(0, { ...good, envErrorSeen: { kind: 'target-closed', step: 's', message: 'm' } }), /envErrorSeen \(target-closed\)/);
+});
+
+// ---- H2-1 G5: the halt wiring of the REAL holo-ime.mjs, behaviour level. holo-ime runs as a child with a FAKE cdp module (hook: VERIFY_HOLO_SELFTEST=1 + HOLO_IME_SELFTEST_CDP):
+// every newPage() is counted and its goto() throws a CDP error (an environmental kind). With the freeze list 1,0 the loop must stop after the FIRST exception (1 page),
+// keep that first exception as envError and exit 2. A halt that is reset in `finally`, or never set in `catch`, lets the second freeze setting run (2 pages).
+const IME_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'pld-imest-'));
+const FAKE_CDP = path.join(IME_TMP, 'fake-cdp.mjs');
+fs.writeFileSync(FAKE_CDP, [
+  "import fs from 'node:fs';",
+  'const count = process.env.FX_COUNT;',
+  'export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));',
+  'export const Browser = { async launch() { return {',
+  "  async newPage() { fs.appendFileSync(count, 'page\\n'); return { async goto() { throw new Error('CDP timeout Page.navigate'); }, async eval() { return null; }, async close() {}, async send() {}, async waitFor() {} }; },",
+  '  async close() {},',
+  '}; } };',
+  '',
+].join('\n'));
+function runIme(name, args) {
+  const d = path.join(IME_TMP, name); fs.mkdirSync(d, { recursive: true });
+  const count = path.join(d, 'pages.log'); const out = path.join(d, 'out');
+  const env = { ...process.env, VERIFY_HOLO_SELFTEST: '1', HOLO_IME_SELFTEST_CDP: FAKE_CDP, FX_COUNT: count }; delete env.CI;
+  const r = spawnSync(process.execPath, [path.join(HERE, 'holo-ime.mjs'), '--url', 'http://localhost:0/', '--out', out, ...args], { cwd: d, encoding: 'utf8', env });
+  const pages = fs.existsSync(count) ? fs.readFileSync(count, 'utf8').split('\n').filter(Boolean).length : 0;
+  const rf = path.join(out, 'result.json');
+  return { code: r.status, pages, j: fs.existsSync(rf) ? JSON.parse(fs.readFileSync(rf, 'utf8')) : null, stdout: r.stdout, stderr: r.stderr };
+}
+ok('holo-ime.mjs (behaviour, fake cdp): the first exception halts the whole loop: freeze 1,0 -> exactly 1 page opened, envError and envErrorSeen are the FIRST exception, exit 2', () => {
+  const r = runIme('g5a', ['--methods', 'proj', '--freeze', '1,0']);
+  assert.equal(r.pages, 1, `the second freeze setting must not run after the first exception (pages opened: ${r.pages}); stderr: ${r.stderr.slice(0, 300)}`);
+  assert.equal(r.code, 2); assert.equal(r.j.envError.kind, 'cdp-connection-lost'); assert.match(r.j.envError.step, /proj freeze=1 /); assert.equal(r.j.envErrorSeen.kind, 'cdp-connection-lost');
+  assert.equal(r.j.failed, 0); assert.equal(r.j.diag.length, 1);
+});
+ok('holo-ime.mjs (behaviour, fake cdp): two methods x two freeze settings still stop after the very first exception (outer loop honours halt too)', () => {
+  const r = runIme('g5b', ['--methods', 'proj,css3d', '--freeze', '1,0']);
+  assert.equal(r.pages, 1, `pages opened: ${r.pages}`); assert.equal(r.code, 2);
+});
+ok('holo-ime.mjs (behaviour, fake cdp): control - the hook is inert without VERIFY_HOLO_SELFTEST=1 (the real cdp.mjs would be used, never the fake)', () => {
+  const d = path.join(IME_TMP, 'g5c'); fs.mkdirSync(d, { recursive: true });
+  const count = path.join(d, 'pages.log'); const env = { ...process.env, HOLO_IME_SELFTEST_CDP: FAKE_CDP, FX_COUNT: count }; delete env.VERIFY_HOLO_SELFTEST;
+  const r = spawnSync(process.execPath, [path.join(HERE, 'holo-ime.mjs'), '--help'], { cwd: d, encoding: 'utf8', env });
+  assert.equal(r.status, 0); assert.ok(!fs.existsSync(count), 'the fake cdp module must not be loaded without the self-test switch');
+  const src = fs.readFileSync(path.join(HERE, 'holo-ime.mjs'), 'utf8');
+  assert.match(src, /process\.env\.VERIFY_HOLO_SELFTEST === '1' && !process\.env\.CI && process\.env\.HOLO_IME_SELFTEST_CDP/);
+});
+fs.rmSync(IME_TMP, { recursive: true, force: true });
 console.log(`\n${n} passed`);
