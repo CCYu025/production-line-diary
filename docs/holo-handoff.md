@@ -79,6 +79,14 @@
 
 **已知問題（2026-11-17，設計師裁定記錄）**：4× 下 OS 轉場 I2 階段逾時（`timeout waiting for phase …-post (have …-pre>…)`；main 也會出現，不是分支造成）：可能是轉場在慢機器上太慢，或腳本逾時設定太緊。H3 開工前查清楚；若是產品問題，排進 H8（轉場）。`verify:holo --full` 對這一種 FAIL 有 known-on-main 對照規則（見 `scripts/verify/README.md`），其他 FAIL 不受影響。
 
+**已知問題（2026-11-18，設計師裁定記錄）：4× 下 I2 交接後第一次點擊沒有產生 `exiting-pre`。** 這一條和上面的 4× I2 階段逾時一起，列為 H3 開工前要查清的項目。
+- **出現在哪一輪**：`3f608ac` 的 `--only os-handoff,os-handoff-4x` 重跑（coord9）。目前重現率是 1/3 輪完整 4×（`6aef487`、`c131c88` 兩輪都是 FAIL 0）。
+- **症狀**：失敗的樣本是 I2 switch / first-click / trigger hash，planned 50 ms、achieved 108 ms，嘗試 3 次。訊息原文是 `first click after the handoff did not produce exiting-pre`：`os-handoff.mjs` 等了 1500 ms，一直沒等到 `exiting-pre`。
+- **當次數字**：4× 102 筆，FAIL 1，DEVIATED 68，conclusive 33。
+- **為什麼不是分支造成的**：分支沒有改產品程式碼，`os-handoff.mjs` 只把階段名稱改成匯入 `os-phases.mjs`，值相同。
+- **判定規則不變**：這一種**不加進** known-on-main 白名單，也不放寬任何判定規則，gate 照常判 FAIL；不為了讓它消失而重跑。
+- **證據**：scratchpad `holoverify/h2/h2-0/coord9/os-handoff-4x/result.json`（不進版控）。
+
 **已知問題（2026-11-18，設計師裁定記錄）：holo-ime 在乾淨程式碼上偶發 FAIL，根因未明。下一個動到輸入、slate 或 freeze 的 H2 PR，合併前必須先處理這個問題。**
 - 重現率：L2-h 2/5 次失敗（當時同機長時間跑其他驗證）。根因第一輪 0/24：main 與分支各 12 次，另有分支加 CPU 滿載 6 次，也全部通過。第二輪 0/10：與另一個瀏覽器驗證 `os-handoff --headed --throttles 4` 同時跑，但背景負載不完整，信心中低。
 - 症狀 1：選字在 Enter、Process-Enter 或 ArrowDown 之後就自己結束（`composing=false`），值變成「ㄋㄧˇ你好」；同時 freeze=1 時 slate 位移 45px（門檻是小於 0.5px）。失敗那次期間沒有 focusout、沒有 window blur、visibility 沒變，所以不是失焦。
