@@ -19,7 +19,7 @@
 | L2-i 修正（2026-11-17） | L2-i 找出的問題已依設計師裁定修完，每項都有回歸測試並實測「拿掉修正會失敗」：舊 `result.json` 在每次啟動子程序前先刪、紅線掃描器正確處理 regex 字面值（`/\/*/` 不再吞掉後面整個檔案）、個人路徑規則只比對真正的家目錄、base 伺服器起不來或建置失敗一律 FAIL、逾時殺掉時已有 FAIL 就維持 FAIL、待機改 INVALID 只套用在標為與時間有關的項目（建置、測試、掃描類的 FAIL 不再被待機吃掉）、known-on-main 的 phase 名稱改由 `os-phases.mjs`（與產品 `Phase` 型別對照）產生、`os-handoff` 的 exit code 與 summary 矛盾判 FAIL。新增自測 `os-phases.selftest.mjs`、`verify-holo.selftest.mjs`（不開瀏覽器、不佔連接埠）。細節見 `scripts/verify/README.md` |
 | holo-ime 補強（2026-11-17） | 設計師裁定：① 補測不到的缺口——選字中 Enter／Esc 後 Combobox 的 `aria-expanded` 必須仍是 `true`，並加「滑鼠停在某選項上（有反白）再按 Enter」情境，只拿掉 Enter 或 Esc 其中一個防護也會 FAIL；② 環境類例外（頁面未就緒、CDP 中斷、目標關閉；清單是 `ime-env.mjs` 的 `ENV_ERROR_KINDS`）改判 INVALID，`verify-holo` 就地重試一次（連兩次同種 → FAIL；重試 PASS 仍是 INVALID；結果與摘要都記 `retried 1x`）；③ 失敗與例外時 `result.json` 多記診斷（`diag`／`diagFull`），只增加紀錄不改判定。細節見 `scripts/verify/README.md`。 |
 | 2026-11-17 handoff 狀態 | `6aef487` 完整 L1 19/19 PASS（exit 0，無待機）。補充 L2 兩份（L2-i 靜態、L2-h 瀏覽器）完成；比率規則、DEVIATED 邊界、待機偵測（真實暫停 70 秒）都通過。發現已依設計師裁定修在 `f943b12`、`c0dd613`、`ab98462`、`5e57eda`，**這四個 commit 還沒跑 L1 與複驗**。holo-ime 乾淨程式碼偶發失敗（L2-h 5 次中 2 次：選字在 Enter／ArrowDown 後自行結束、值變「ㄋㄧˇ你好」、freeze 時 slate 位移 45px；另一次 freeze=0 頁 frames 逾時）。根因第一輪：main 12/12、分支 12/12、分支＋CPU 滿載 6/6 全 PASS，失敗那次沒有失焦。第二輪（`5e57eda`，holo-ime 與 `os-handoff.mjs --headed --throttles 4` 同時跑）10/10 PASS，無重試、`diag` 全正常（節點沒被換、frames 有前進）；但背景負載不完整（第一輪背景腳本中途 CDP 逾時崩潰、第二輪被 handoff 停掉），信心中低。依設計師規則屬「沒重現」→ 照已知問題處理 |
-| 下一步 | ① 把 holo-ime 偶發失敗記為已知問題（README 與本文件 §5：L2-h 2/5 → 根因第一輪 0/30、第二輪 0/10、兩種症狀、`diag`／`diagFull` 欄位），不自動重跑，並成為下一個動到輸入／slate／freeze 的 H2 PR 的阻擋項（先請設計師確認第二輪結果適用此規則）；② 完整 L1；③ 新的 Sonnet 複驗：Enter／Esc 突變 FAIL、環境例外與重試紀錄（拿掉 `retried` 紀錄自測要失敗）、base 起不來一律 FAIL（含 c1、entry-delta）、SELFTEST 三條保護（含 `VERIFY_HOLO_SELFTEST_BASE_FAIL`／`_IME` 是否只在 `VERIFY_HOLO_SELFTEST=1` 下生效、CI 下拒絕）；④ force push（需使用者授權）、開 PR（本文寫 `holo-baseline.json` 每處變動理由與 main 多出 1816 B 的前 5 名模組）、CI、送設計師審查 |
+| 下一步 | ① ~~holo-ime 已知問題~~（設計師 2026-11-18 確認，已寫進 README 與本文件 §5）；② 完整 L1；③ 新的 Sonnet 複驗：Enter／Esc 突變 FAIL、環境例外與重試紀錄（拿掉 `retried` 紀錄自測要失敗）、base 起不來一律 FAIL（含 c1、entry-delta）、SELFTEST 三條保護（含 `VERIFY_HOLO_SELFTEST_BASE_FAIL`／`_IME` 是否只在 `VERIFY_HOLO_SELFTEST=1` 下生效、CI 下拒絕）；④ force push（需使用者授權）、開 PR（本文寫 `holo-baseline.json` 每處變動理由與 main 多出 1816 B 的前 5 名模組）、CI、送設計師審查 |
 | H2 簡報 | 定稿在開發主管的筆記資料夾 `h2-brief.md`（不在 repo）。重點：共 7 個 PR（H2-0、H2-1+2、H2-3、H2-4、H2-5、H2-6、H2-7）；Q1 紀錄相關 hook 放 `features/records/core/`、`useModeShell` 拆成 `app/core/`（標題、換頁焦點）與 `features/os/core/`（模式生命週期），網頁入口不得 import `features/os`（A5／HB1）；Q2 H2-6 搬家與 H2-7 ColorManagement 初始化放本期；Q3 `holoAggregate` 延到 H6；Q4 H2-1 與 H2-2 合成一個 PR。只有 H2-0、H2-4 送設計師審查；突變沒被抓到時不合併、先問設計師 |
 | H2-0 裁定 | 已於 2026-11-16 由設計師裁定並落實（(a) `--full` 補跑 4×、(b) DEVIATED ≤ 基準×1.5、(c) c1-os 1280＋1024 共 18 組、(d) 組合數和基準比、(e) 逾時 40 分鐘／軟體算圖 INVALID、(f) holo-ime 探針、(g) `bundle-baseline.json` 不動、新增 `entry-delta-vs-base` ≤ +100 B）。2026-11-17 補：4× 門檻已訂、I2 階段逾時採 known-on-main 對照（見「L2 發現處理狀態」）。|
 | 規格 | `docs/holo-mode-spec.md`（H1.5 抽象佈局定稿版）、`docs/holo-mode-inventory.md`（附錄 A，必須保留的功能清單） |
@@ -78,6 +78,13 @@
 | Q4 | 變形時的淡尾跡 | 不做 |
 
 **已知問題（2026-11-17，設計師裁定記錄）**：4× 下 OS 轉場 I2 階段逾時（`timeout waiting for phase …-post (have …-pre>…)`；main 也會出現，不是分支造成）：可能是轉場在慢機器上太慢，或腳本逾時設定太緊。H3 開工前查清楚；若是產品問題，排進 H8（轉場）。`verify:holo --full` 對這一種 FAIL 有 known-on-main 對照規則（見 `scripts/verify/README.md`），其他 FAIL 不受影響。
+
+**已知問題（2026-11-18，設計師裁定記錄）：holo-ime 在乾淨程式碼上偶發 FAIL，根因未明。下一個動到輸入、slate 或 freeze 的 H2 PR，合併前必須先處理這個問題。**
+- 重現率：L2-h 2/5 次失敗（當時同機長時間跑其他驗證）。根因第一輪 0/24：main 與分支各 12 次，另有分支加 CPU 滿載 6 次，也全部通過。第二輪 0/10：與另一個瀏覽器驗證 `os-handoff --headed --throttles 4` 同時跑，但背景負載不完整，信心中低。
+- 症狀 1：選字在 Enter、Process-Enter 或 ArrowDown 之後就自己結束（`composing=false`），值變成「ㄋㄧˇ你好」；同時 freeze=1 時 slate 位移 45px（門檻是小於 0.5px）。失敗那次期間沒有 focusout、沒有 window blur、visibility 沒變，所以不是失焦。
+- 症狀 2：freeze=0 那頁 `__holoLab().frames>10` 等待逾時。目前這歸為環境例外（page-not-ready），會就地重試一次；連兩次同種就判 FAIL。
+- 診斷欄位：`result.json` 每次都有 `diag`，內容包括 slate 節點與三個欄位是否被換、`isConnected`、`__holoLab` 是否被換、`visibilityState`、`hasFocus`，以及選字開始與中段的 frames、frames 是否前進。失敗或例外時才另有 `diagFull`（最後 80 筆事件、longtask）。若診斷指向產品（輸入框被重掛、slate 或 `__holoLab` 被換），要先修好，並請使用者用真的注音輸入法實測。
+- 不自動重跑 holo-ime 來掩蓋。唯一的重試是環境例外的就地一次，而且一定記成 `retried 1x`；重試後 PASS 仍判 INVALID。
 
 ## 6. 安全規則（每個 session、每個代理都要遵守）
 
