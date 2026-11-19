@@ -6,15 +6,13 @@ import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMeta, useRecords } from "@/lib/queries";
-import type { DiaryRecord } from "@/lib/types";
 import { useRecordFilterParams } from "@/lib/urlQuery";
+import { topProblemOf } from "./core/recurring";
 import { useOpenRecordParam } from "./core/useOpenRecordParam";
 import { chronological } from "./filterUtils";
 import { FilterBar } from "./FilterBar";
 import { RecordDetailSheet } from "./RecordDetailSheet";
 import { RecordList } from "./RecordList";
-
-const NO_RECORDS: readonly DiaryRecord[] = [];
 
 function ListSkeleton() {
   return (
@@ -47,6 +45,7 @@ export function RecordsPage() {
   const rows = React.useMemo(() => sortByDate(filterRecords(active, filter), sortDesc), [active, filter, sortDesc]);
   // 詳情的上一筆／下一筆：照「全部有效紀錄」的時間順序走，不跟列表的篩選或排序方向（刻意維持的既有行為）
   const sequence = React.useMemo(() => chronological(active), [active]);
+  const topProblem = React.useMemo(() => (records.data ? topProblemOf(records.data) : null), [records.data]);
   const { openRecord, openDetail, closeDetail, switchDetail, getReturnFocus } = useOpenRecordParam(active, !!records.data);
 
   const toggleSort = () =>
@@ -127,7 +126,7 @@ export function RecordsPage() {
       <RecordDetailSheet
         record={openRecord}
         sequence={sequence}
-        records={records.data ?? NO_RECORDS}
+        topProblem={topProblem}
         onNavigate={switchDetail}
         onClose={closeDetail}
         getReturnFocus={getReturnFocus}

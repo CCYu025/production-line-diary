@@ -9,7 +9,7 @@ import { photoUrl } from "@/lib/api";
 import { notify, toastUndoable } from "@/lib/feedback";
 import type { DiaryRecord, Status } from "@/lib/types";
 import { STATUS_ORDER } from "@shared/aggregate";
-import { recurringCount, topProblemOf } from "./core/recurring";
+import { recurringCount, type TopProblem } from "./core/recurring";
 import { usePatchRecord, useSoftDeleteWithUndo } from "./useRecordMutations";
 
 interface RecordDetailSheetProps {
@@ -17,8 +17,8 @@ interface RecordDetailSheetProps {
   record: DiaryRecord | null;
   /** 全部「有效」紀錄的時間順序（上一筆／下一筆走這個，不跟列表的篩選或排序） */
   sequence: readonly DiaryRecord[];
-  /** 全部紀錄（含軟刪除）；這筆的問題是出現最多次的那個且次數 ≥ 3 才顯示「重複發生 ×N」 */
-  records: readonly DiaryRecord[];
+  /** 全部紀錄中出現最多次的問題（`topProblemOf`）；這筆就是它且次數 ≥ 3 才顯示「重複發生 ×N」 */
+  topProblem: TopProblem | null;
   /** 切到另一筆（用 replace，所以瀏覽器「上一頁」一次就能關掉面板） */
   onNavigate: (id: number) => void;
   onClose: () => void;
@@ -53,15 +53,14 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 /** 「處理」「根本原因」可能有多行／條列（資料本身存著換行字元），顯示全文一律 pre-wrap。 */
 const multiline = "whitespace-pre-wrap break-words text-sm leading-relaxed";
 
-export function RecordDetailSheet({ record, sequence, records, onNavigate, onClose, getReturnFocus }: RecordDetailSheetProps) {
+export function RecordDetailSheet({ record, sequence, topProblem, onNavigate, onClose, getReturnFocus }: RecordDetailSheetProps) {
   const open = record !== null;
   // 面板關閉時內容還在做離場動畫：留住最後一筆，避免閃成空白
   const lastRecord = React.useRef<DiaryRecord | null>(null);
   if (record) lastRecord.current = record;
   const r = record ?? lastRecord.current;
 
-  const top = React.useMemo(() => topProblemOf(records), [records]);
-  const repeatCount = r ? recurringCount(top, r) : 0;
+  const repeatCount = r ? recurringCount(topProblem, r) : 0;
 
   const idx = r ? sequence.findIndex((x) => x.id === r.id) : -1;
   const prev = idx > 0 ? sequence[idx - 1] : undefined;
