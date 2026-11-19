@@ -1,15 +1,15 @@
 # 全像模式（HOLO）交接文件
 
 > 用途：任何新的 session（或新的人）接手全像模式開發時，**先讀這份**。
-> 維護規則：每次合併 PR、每完成一期、使用者說「handoff」（停機或離開）時都要更新。最後更新：2026-11-18。
+> 維護規則：每次合併 PR、每完成一期、使用者說「handoff」（停機或離開）時都要更新。最後更新：2026-11-19。
 
 ## 1. 一分鐘現況
 
 | 項目 | 狀態 |
 |---|---|
-| 目前階段 | **H2-0（`npm run verify:holo`）已以 PR #67 合併（2026-11-18）**。下一步是 H2-1+2（見 §3），開工前先處理 §5 的「H2-1 開工前置項目」 |
-| main | PR #67 的合併 commit（squash；H2-0 verify:holo） |
-| 進行中分支 | 無。`feat/holo-h2-0-verify` 合併後由 GitHub 刪除；worktree `pld-wt/h2-0` 可以移除。baseline worktree `pld-wt/h2-base`（main `3d8a1ce`）留到 H2-1 開工時改指新 main。`.git/worktrees/` 底下有 `h2-0-l2b`、`h2-0-l2j`、`h2-0-l2k`、`h2-0-l2k-old`、`h2-0-l2m` 等刪不掉的空殼（Permission denied），照慣例留著 |
+| 目前階段 | **H2-0（`npm run verify:holo`）已以 PR #67 合併（2026-11-18）**。H2-1 開工前置項目與兩項驗證加速已以 PR #68 合併（2026-11-19）。下一步是 H2-1+2 實作（見 §3），開工前先看 §5 的「H2-1+2 前置項目」 |
+| main | PR #68 的合併 commit（squash；H2-1 前置項目）。前一版 `bfd5c12` 是 PR #67（H2-0 verify:holo） |
+| 進行中分支 | 無。`feat/holo-h2-1-prereq` 合併後由 GitHub 刪除；worktree `pld-wt/h2-1` 可以移除。baseline worktree `pld-wt/h2-base`（main `bfd5c12`）留到 H2-1+2 開工時改指新 main。`.git/worktrees/` 底下的空殼（Permission denied）照慣例留著 |
 | 伺服器 | 3114–3116 都已停止；沒有背景中的協調者或驗證者 |
 | H2-0 驗證結果 | 完整 L1（`c131c88`）17/19：os-handoff 兩項被「exit 與結果矛盾」檢查誤判（帶 `--allow-deviated` 時只有 DEVIATED 就是 exit 0），已在 `3f608ac` 修正（`buildHandoffArgs` 統一產生參數）。os-handoff 兩項重跑：coord9 的 4× 出現 1 筆真實 FAIL，已記為已知問題（見 §5）；l1-r8 的 1× 與 4× 都 PASS。後續 commit（`146e24e` 自測缺口、`14827b7` E1：holo-ime 的 exit 0 必須與 result.json 一致）跑過自測、check、test 的 L1，並各有一位新的 L2 複驗，都沒有找到真實會發生的錯誤 PASS。L2 共 l2i、l2h、l2j、l2k、l2m 五輪；證據放在開發主管的 scratchpad（不進版控） |
 | 停止條件（設計師 2026-11-18） | L2 只找到「不會造成錯誤 PASS」的缺口時，一律記成下一期的前置項目，不再回頭修；只有會讓結果變成錯誤 PASS 的缺陷才在本期修 |
@@ -31,10 +31,11 @@
 | 文件 | #65 | 2026-11-16 | 個人路徑換成佔位符（`.env.example`、`docs/refactor-plan.md`、`test/migrateLogic.test.js`），設計師合併 |
 | 文件 | #66 | 2026-11-16 | 交接文件更新（H2-0 第二次 handoff） |
 | H2-0 | #67 | 2026-11-18 | 一鍵驗證指令 `npm run verify:holo`（19 項、機器可讀 JSON＋摘要行、exit 0／1／2）、`holo-baseline.json` 門檻、known-on-main 比率規則、待機偵測、SELFTEST 保護、holo-ime 補強與環境例外重試；產品程式碼沒有改 |
+| H2-1 前置 | #68 | 2026-11-19 | `verify:holo` 補 H2-0 L2 缺口（G1–G6、`--base` 路徑、E1）、main 的建置與 entry 量測依 commit 快取（`--no-cache`）、完整版先跑 A／B 組的兩階段 fail-fast（`--no-fail-fast`）；只改驗證工具 |
 
 ## 3. 下一步（依序）
 
-1. H2 共用核心抽出（規格 §12，簡報已定稿，見 §1）：H2-0 已合併（#67）；接著依序 H2-1+2（開工前先處理 §5「H2-1 開工前置項目」） → H2-3 → H2-4 → H2-5 → H2-6 → H2-7。網頁與 OS 2D 行為零差異。
+1. H2 共用核心抽出（規格 §12，簡報已定稿，見 §1）：H2-0 已合併（#67）、H2-1 前置項目已合併（#68）；接著依序 H2-1+2（開工前先看 §5「H2-1+2 前置項目」） → H2-3 → H2-4 → H2-5 → H2-6 → H2-7。網頁與 OS 2D 行為零差異。
 2. 之後依規格 §12：H3 引擎＋佈局框架 → H4 流場＋詳情 → H5 編輯新增 → H6 晶格＋儀器環 → H7 深層＋設定 → H8 轉場音效 → H9 星座（選配）→ H10 收尾。
 3. L1 詞彙設定（跨領域）：H4 展示後才開，需先修改紅線 1、3。L2 資料模型另立專案。
 
@@ -89,17 +90,13 @@
 - 診斷欄位：`result.json` 每次都有 `diag`，內容包括 slate 節點與三個欄位是否被換、`isConnected`、`__holoLab` 是否被換、`visibilityState`、`hasFocus`，以及選字開始與中段的 frames、frames 是否前進。失敗或例外時才另有 `diagFull`（最後 80 筆事件、longtask）。若診斷指向產品（輸入框被重掛、slate 或 `__holoLab` 被換），要先修好，並請使用者用真的注音輸入法實測。
 - 不自動重跑 holo-ime 來掩蓋。唯一的重試是環境例外的就地一次，而且一定記成 `retried 1x`；重試後 PASS 仍判 INVALID。
 
-**H2-1 開工前置項目（H2-0 L2 留下，2026-11-18）。設計師裁定：不會造成錯誤 PASS 的缺口不在 H2-0 修，H2-1 開工前處理。**
-- G1：沒有測試證明 `--dump-hooks` 不寫 `verify-holo.json`。重現：把 `--dump-hooks` 的寫檔分支改成會寫出 `verify-holo.json`，所有自測仍通過。
-- G2：h-6 沒涵蓋「exit 3（0／1／2 以外的碼）加一份完整 PASS 的 result.json」。重現：把 `holoIme()` 的 `r.code !== 0` 放寬成 `r.code > 3`，自測仍通過。
-- G3：h-3 只測 CI 拒絕與正常路徑。重現：`--help`、`--out` 含真實資料夾名稱、未知 id 這三條路徑若洩漏 `pld-vh` 暫存資料夾，自測抓不到。
-- G5：holo-ime 的 halt 接線只有原始碼 regex 檢查，沒有行為層級測試。重現：在 `finally` 裡把 `halt` 重設成 `false`，或移除 catch 內的 `halt = true`，自測仍通過。
-- G6：`--out` 路徑含真實資料夾名稱時，資料夾在拒絕之前就已建立（`mkdirSync(LOGS)` 在拒絕檢查之前）。這是既有行為。重現：用含真實資料夾名稱的 `--out` 執行，拒絕之後該資料夾仍存在。
-- 前一輪 L2 留下的：錯誤訊息會帶出 `--base` 的絕對路徑（只進 log 與 JSON）。重現：給一個不存在的 `--base`，在 log 與 `verify-holo.json` 裡可看到完整絕對路徑。
-- **E1 檢查的殘餘問題**（14827b7 的 L2 找到；真實 holo-ime 都不會走到，因為它只有在 `failed` 為 0、`invalid` 與 `envError` 都是 null 時才會 exit 0）：
-  - **型別判斷太寬**：`imeExitProblem` 用 truthy 判斷 `invalid`／`envError`，所以 `invalid` 為 `0`、`""`、`false`，或 `envError` 為 `0` 時，會判成 PASS。建議改成 `!= null`。
-  - **漏查欄位**：沒有檢查 `envErrorSeen`。
-  - **自測沒把關型別**：下列突變自測都抓不到：`pass !== true` 改成 `!pass`、`failed !== 0` 改成 `> 0`、拿掉 `typeof failed`、拿掉 `Array.isArray`。
+**H2-1+2 前置項目（PR #68 的 L2 留下，2026-11-19）。H2-0 L2 的缺口（G1–G6、`--base` 路徑、E1）已在 #68 處理。以下都不會造成錯誤 PASS（相對於 #68 之前「`web/dist` 存在就直接信任」的行為沒有放寬），依設計師停止條件留到 H2-1+2 開工前處理：**
+- F1 快取鍵外的建置輸入：鍵不含 gitignored 的建置輸入（例如 `web/.env.local`）與 `node_modules` 內容；首次建置後這些改變、`web/dist` 沒動時會沿用舊 base 數字（靜態分析，未實跑）。
+- F2 `--out` 底下的副產物仍含絕對路徑：`entry-delta-base.json` 的 `dist` 欄位（os-bundle 原始輸出）；`scrubBase` 不處理 JSON 跳脫過的雙反斜線寫法。
+- F3 快取條目的防偽只靠目錄權限：同一使用者可寫 `os.tmpdir()/pld-vh-cache`，知道鍵摘要與 dist 雜湊就能偽造條目。建議條目加 HMAC，或至少在 README 註明。
+- F4 `--only ""`（空字串）等同沒帶，會跑全部項目（含啟動伺服器），易誤觸；應改成用法錯誤。
+- F5 自測偏弱：`bundle-graph.mjs`、`holo-baseline.json` 的雜湊在鍵中被固定成常數時自測抓不到（只檢查鍵名清單）；holo-ime 的 CDP 掛勾在 CI／未開 SELFTEST 時不生效只靠原始碼 regex；`--dump-hooks` 沒列出 `HOLO_IME_SELFTEST_CDP`；`scrubBase` 的混合斜線寫法沒有自測。
+- **觀察（未定性）**：#68 協調者第一次 `--quick` 時 `ModeShell.test.tsx`「OS 模式在工作站：palette exit → …」失敗一次（`expected '/os' to be '/records'`），同一份程式碼之後全過（含 L1 兩輪）。分支沒有改 `web/`。再出現就要查，不靠重跑掩蓋。
 
 ## 6. 安全規則（每個 session、每個代理都要遵守）
 

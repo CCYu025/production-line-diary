@@ -66,7 +66,11 @@ export function imeExitProblem(exit, j) {
   const bad = j.results.filter((x) => x?.pass !== true).length;
   if (j.failed !== 0) return `holo-ime exited 0 but result.json has failed=${j.failed}`;
   if (bad > 0) return `holo-ime exited 0 but ${bad} entr${bad === 1 ? 'y' : 'ies'} in results[] did not pass`;
-  if (j.invalid) return `holo-ime exited 0 but result.json has invalid=${JSON.stringify(j.invalid)}`;
-  if (j.envError) return `holo-ime exited 0 but result.json has an envError (${j.envError.kind ?? '?'})`;
+  // `!= null`, not truthiness: 0, "", false are VALUES (holo-ime writes null when there is nothing), so any of them next to exit 0 is a contradiction too
+  if (j.invalid != null) return `holo-ime exited 0 but result.json has invalid=${JSON.stringify(j.invalid)}`;
+  if (j.envError != null) return `holo-ime exited 0 but result.json has an envError (${j.envError?.kind ?? '?'})`;
+  // envErrorSeen (holo-ime.mjs): set in the same catch as halt, only when the exception had an environmental kind; that catch then either records envError (exit 2) or counts a failed check (exit 1).
+  // So at exit 0 it must be null; anything else means holo-ime saw an exception and still exited 0.
+  if (j.envErrorSeen != null) return `holo-ime exited 0 but result.json has an envErrorSeen (${j.envErrorSeen?.kind ?? '?'})`;
   return null;
 }

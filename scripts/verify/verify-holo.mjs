@@ -32,6 +32,7 @@ import { baseUnavailableDecision, classifyFails, buildHandoffArgs, handoffAllows
 import { buildImeArgs, envKindOf, imeExitProblem, judgeRetry, summarizeAttempt } from './ime-env.mjs';
 import { HEARTBEAT_MS, applySuspend, applyTimeout, classifySuspend, clock, findGaps } from './suspend.mjs';
 import { personalHit, profilePathHit, themeKeyLines } from './redline-rules.mjs';
+import { MEASURE_ID, buildKey, cacheDirProblem, hashDir, hashFile, readEntry, writeEntry } from './base-cache.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
@@ -39,6 +40,7 @@ const { values: A } = parseArgs({
   options: {
     base: { type: 'string' }, quick: { type: 'boolean', default: false }, full: { type: 'boolean', default: false }, only: { type: 'string' }, out: { type: 'string', default: 'verify-out/holo' },
     'allow-software': { type: 'boolean', default: false }, 'diff-base': { type: 'string', default: 'main' }, 'dump-hooks': { type: 'boolean', default: false }, help: { type: 'boolean', default: false },
+    'no-cache': { type: 'boolean', default: false }, 'no-fail-fast': { type: 'boolean', default: false },
   },
 });
 // [id, group, timeSensitive]. timeSensitive = the result depends on the clock (browser, input timing, frame rate): only these are reclassified INVALID when the machine was suspended
@@ -51,9 +53,12 @@ const ITEM_DEFS = [
   ['holo-ime', 'D', T], ['holo-still', 'D', T], ['holo-perf', 'D', T], ['holo-perf-20k', 'D', T],
 ];
 if (A.help) {
-  console.log(`npm run verify:holo -- [--base <main worktree>] [--quick] [--full] [--only a,b] [--out <dir>] [--allow-software] [--diff-base main]
+  console.log(`npm run verify:holo -- [--base <main worktree>] [--quick] [--full] [--only a,b] [--out <dir>] [--allow-software] [--diff-base main] [--no-cache] [--no-fail-fast]
   --base            main worktree for the c1 zero-diff items (3115) and entry-delta-vs-base. Without it those three are SKIP.
   --quick           only groups A and B (about 3 minutes, for the coordinator while developing). Delivery and L1 run the full version.
+                    The full version runs A and B first (the quick stage); if any item there is FAIL or INVALID, C and D are SKIP ("not run: quick stage failed (ids)").
+  --no-fail-fast    run C and D even when the quick stage failed (L2 wants the complete list)
+  --no-cache        do not read or write the --base cache (default: os.tmpdir()/pld-vh-cache, or the absolute VERIFY_HOLO_CACHE_DIR); the base side is rebuilt and re-measured
   --full            also run os-handoff-4x (os-handoff at CPU 4x, > 25 min). Required for: H2-5 every L2 round, H3+ final L2 round of each phase, any PR touching the input gate / transitions / useBlocker.
   --only a,b        run only these ids (${ITEM_DEFS.map((d) => d[0]).join(', ')}); the others are SKIP
   --out <dir>       default verify-out/holo
@@ -84,17 +89,42 @@ const TIMEOUT_MS = ST && process.env.VERIFY_HOLO_SELFTEST_TIMEOUT_MS ? Number(pr
 const BASE_FAIL = ST && process.env.VERIFY_HOLO_SELFTEST_BASE_FAIL ? process.env.VERIFY_HOLO_SELFTEST_BASE_FAIL : null; // the base (main) side cannot be started / built
 const FAKE_PASS = ST && process.env.VERIFY_HOLO_SELFTEST_FAKEPASS === '1'; // every item is a fake PASS: proves a stubbed all-PASS run still never exits 0
 const BASELINE_FILE = ST && process.env.VERIFY_HOLO_SELFTEST_BASELINE ? process.env.VERIFY_HOLO_SELFTEST_BASELINE : path.join(HERE, 'holo-baseline.json');
+const BUNDLE_SCRIPT = ST && process.env.VERIFY_HOLO_SELFTEST_BUNDLE ? process.env.VERIFY_HOLO_SELFTEST_BUNDLE : path.join(HERE, 'os-bundle.mjs'); // the script that measures the entry size of BOTH sides (entry-delta-vs-base)
+/** { "<item id>": "PASS|FAIL|INVALID|SKIP" }: that item is a fake with this status, every other item is a fake PASS (needs the hook, like FAKEPASS). null = off. Proves the stage logic without running anything. */
+let FAKE_STATUS = null;
+if (ST && process.env.VERIFY_HOLO_SELFTEST_FAKESTATUS) {
+  try { FAKE_STATUS = JSON.parse(process.env.VERIFY_HOLO_SELFTEST_FAKESTATUS); } catch { console.error('verify-holo: VERIFY_HOLO_SELFTEST_FAKESTATUS is not JSON; ignored'); }
+}
 if (A['dump-hooks']) {
-  console.log(JSON.stringify({ st: ST, handoffScript: path.basename(HANDOFF_SCRIPT), imeScript: path.basename(IME_SCRIPT), imeStub: IME_STUB, timeoutMs: TIMEOUT_MS, baseFail: BASE_FAIL, fakePass: FAKE_PASS, baselineFile: path.basename(BASELINE_FILE) }));
+  // prints and exits: writes nothing (no verify-holo.json, no --out folder, no scratch folder). verify-holo.selftest.mjs (g1) proves it.
+  console.log(JSON.stringify({ st: ST, handoffScript: path.basename(HANDOFF_SCRIPT), imeScript: path.basename(IME_SCRIPT), imeStub: IME_STUB, timeoutMs: TIMEOUT_MS, baseFail: BASE_FAIL, fakePass: FAKE_PASS, baselineFile: path.basename(BASELINE_FILE),
+    bundleScript: path.basename(BUNDLE_SCRIPT), fakeStatus: FAKE_STATUS }));
   process.exit(0);
 }
 
+const REAL = '工作' + '日誌'; // real-data folder name, assembled so this file never contains the literal
 const OUT = path.resolve(A.out);
 const LOGS = path.join(OUT, 'logs');
-fs.mkdirSync(LOGS, { recursive: true });
-const REAL = '工作' + '日誌'; // real-data folder name, assembled so this file never contains the literal
+// every refusal comes BEFORE the first thing this script creates (the --out folder, the scratch folder): a refused run leaves nothing behind (self-test g6, h-3)
 if (OUT.includes(REAL) || REPO.includes(REAL)) { console.error('verify-holo: refusing a path that contains the real-data folder name'); process.exit(2); }
+/** the --base cache: os.tmpdir()/pld-vh-cache, or VERIFY_HOLO_CACHE_DIR (absolute only); never the real-data folder, never inside this repo or the --base worktree */
+const CACHE_DIR = process.env.VERIFY_HOLO_CACHE_DIR ?? path.join(os.tmpdir(), 'pld-vh-cache');
+{
+  const why = cacheDirProblem(CACHE_DIR, { real: REAL, forbiddenRoots: [REPO, A.base ? path.resolve(A.base) : null] });
+  if (why) { console.error(`verify-holo: refusing the cache directory (${why}); VERIFY_HOLO_CACHE_DIR must be an absolute path outside this repo and the --base worktree`); process.exit(2); }
+}
+fs.mkdirSync(LOGS, { recursive: true });
 const rel = (p) => path.relative(OUT, p).split(path.sep).join('/');
+/** how a --base path is shown in logs / messages / json: never the absolute path (it can contain a user name), only the last folder */
+const shortBase = () => `…/${path.basename(path.resolve(A.base))}`;
+/** log text: every spelling of the absolute --base path (as given, resolved, with / or \) becomes shortBase(); the logs are the evidence people paste into reports */
+const scrubBase = (t) => {
+  if (!A.base) return t;
+  const abs = path.resolve(A.base);
+  let out = String(t);
+  for (const v of new Set([abs, abs.split(path.sep).join('/'), abs.split('/').join('\\'), A.base, A.base.split('\\').join('/')])) if (v.length > 3) out = out.split(v).join(shortBase());
+  return out;
+};
 const BL = JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8'));
 // The B group reads `git diff <diff-base>...HEAD` (commits only), while every other item judges the working tree. A dirty tree makes them judge different programs, so B is INVALID then.
 const DIRTY = (spawnSync('git', ['status', '--porcelain'], { cwd: REPO, encoding: 'utf8' }).stdout ?? '').split('\n').filter(Boolean);
@@ -150,7 +180,7 @@ function writeJson(extra = {}) {
   const gaps = findGaps(heartbeats).map((g) => ({ start: clock(g.startMs), startedAt: new Date(g.startMs).toISOString(), seconds: g.seconds }));
   const json = {
     schema: 1, startedAt, finishedAt: extra.finishedAt ?? null, head, base: A.base ? { head: baseHead } : null, diffBase: A['diff-base'],
-    dirty: DIRTY.length > 0, args: { quick: A.quick, full: A.full, only: A.only ?? null, allowSoftware: A['allow-software'], hasBase: !!A.base }, renderer,
+    dirty: DIRTY.length > 0, args: { quick: A.quick, full: A.full, only: A.only ?? null, allowSoftware: A['allow-software'], hasBase: !!A.base, noCache: A['no-cache'], noFailFast: A['no-fail-fast'] }, renderer, failFast,
     ...(ST ? { selftest: true } : {}), suspended: gaps.length > 0, suspendedGaps: gaps, baselineFile: 'scripts/verify/holo-baseline.json', baseline: BL, summary: summarize(), items, ...extra,
   };
   fs.writeFileSync(path.join(OUT, 'verify-holo.json'), JSON.stringify(json, null, 2));
@@ -160,6 +190,8 @@ function summarize() {
   const na = by('N/A'); // not applicable in this invocation (os-handoff-4x without --full): not counted, not an incomplete run
   return { total: items.length - na.length, pass: by('PASS').length, fail: by('FAIL'), skip: by('SKIP'), invalid: by('INVALID'), notApplicable: na };
 }
+/** B2: the full version runs the quick stage (groups A and B) first; {enabled, triggered, by:[ids of A/B items that were FAIL or INVALID]}. enabled=false for --quick / --no-fail-fast. */
+const failFast = { enabled: !A.quick && !A['no-fail-fast'], triggered: false, by: [] };
 let finished = false;
 function finish(why = null) {
   if (finished) return; finished = true;
@@ -173,6 +205,7 @@ function finish(why = null) {
   if (s.skip.length) parts.push(`${s.skip.length} skip (${s.skip.join(', ')})`);
   if (s.invalid.length) parts.push(`${s.invalid.length} invalid (${s.invalid.join(', ')})`);
   if (s.notApplicable.length) parts.push(`${s.notApplicable.length} n/a (${s.notApplicable.join(', ')})`);
+  if (failFast.triggered) parts.push(`FAIL-FAST: C and D not run because the quick stage failed (${failFast.by.join(', ')}); --no-fail-fast runs them anyway`);
   const sg = findGaps(heartbeats);
   if (sg.length) parts.push(`SUSPENDED ${sg.length}x (${sg.map((g) => `${g.seconds}s at ${clock(g.startMs)}`).join(', ')}): rerun required`);
   const label = ST ? 'SELFTEST' : s.fail.length ? 'FAIL' : code === 0 ? 'PASS' : 'INCOMPLETE';
@@ -189,7 +222,7 @@ class BaseSide extends Error {}
 function makeCtx(id) {
   const file = path.join(LOGS, `${id}.log`);
   fs.writeFileSync(file, '');
-  const append = (t) => fs.appendFileSync(file, t);
+  const append = (t) => fs.appendFileSync(file, scrubBase(t));
   const ctx = { id, file, append, timedOut: false };
   /** run a command, append its output to this item's log, return { code, text } */
   const run = (label, file2, args, { cwd = REPO, env = {}, shell = false, timeoutMs = TIMEOUT_MS } = {}) => new Promise((resolve) => {
@@ -226,7 +259,7 @@ async function startServer(L, key, root, port, env = {}) {
     if (await answers(port)) throw invalid(`port ${port} already answers; refusing to reuse a server this run did not start`);
     const distDir = env.WEB_DIST_DIR ?? path.join(root, 'web', 'dist');
     if (!fs.existsSync(path.join(distDir, 'index.html'))) throw invalid(`no build output at ${distDir}`);
-    L.append(`\n[start server ${key}: serve.mjs --root ${root} --port ${port}]\n`);
+    L.append(`\n[start server ${key}: serve.mjs --root ${key === 'base' ? shortBase() : root} --port ${port}]\n`);
     const child = spawn(process.execPath, [path.join(HERE, 'serve.mjs'), '--root', root, '--port', String(port), '--scratch', SCRATCH], {
       env: { ...BASE_ENV, ...env }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -247,13 +280,10 @@ async function startServer(L, key, root, port, env = {}) {
 }
 const mainServer = (L) => (ST ? Promise.resolve('http://localhost:0/') : startServer(L, 'branch', REPO, 3114));
 const baseServer = async (L) => {
-  if (ST) { if (BASE_FAIL) throw invalid(BASE_FAIL); return 'http://localhost:0/'; }
   const root = path.resolve(A.base);
-  if (!fs.existsSync(path.join(root, 'backend', 'server.js'))) throw invalid(`--base ${root} has no backend/server.js`);
-  if (!fs.existsSync(path.join(root, 'web', 'dist', 'index.html'))) {
-    L.append(`\n[base worktree has no web/dist: building it there (no source change)]\n`);
-    if ((await L.npm('run build', {}, root)).code !== 0) throw invalid('could not build the --base worktree');
-  }
+  if (!fs.existsSync(path.join(root, 'backend', 'server.js'))) throw invalid(`--base ${shortBase()} has no backend/server.js`); // checked before the self-test stub too (self-test g7): the message shows the last folder only
+  if (ST) { if (BASE_FAIL) throw invalid(BASE_FAIL); return 'http://localhost:0/'; }
+  if (!(await ensureBaseBuild(L)).ok) throw invalid('could not build the --base worktree');
   return startServer(L, 'base', root, 3115);
 };
 const labServer = async (L) => {
@@ -342,29 +372,77 @@ async function ciBundle(L) {
 }
 /** builds the --base worktree in place; BASE_FAIL (self-test hook, null otherwise) simulates a failed build */
 const buildBase = async (L, root) => (BASE_FAIL ? false : (await L.npm('run build', {}, root)).code === 0);
+
+// ---- B1: the --base side by commit (base-cache.mjs). Only the base side; the branch side is never cached.
+const CACHE_ON = !A['no-cache'];
+/** the cache key of the --base worktree right now. mode 'on' = key available; 'off' = no key (reason says why: --no-cache, not a git worktree, dirty): nothing is read, nothing is written. */
+function baseCacheInfo(root) {
+  if (!CACHE_ON) return { mode: 'off', reason: '--no-cache' };
+  const headFull = gitOut(['rev-parse', 'HEAD'], root);
+  const status = gitOut(['status', '--porcelain'], root);
+  if (!headFull || status === null) return { mode: 'off', reason: 'base worktree is not a readable git worktree' };
+  if (status !== '') return { mode: 'off', reason: `base worktree is not clean (${status.split('\n').length} entries): a dirty worktree is never cached` };
+  const key = buildKey({
+    baseHead: headFull, clean: true, lockHash: hashFile(path.join(root, 'package-lock.json')), node: process.version,
+    scripts: { 'os-bundle.mjs': hashFile(path.join(HERE, 'os-bundle.mjs')), 'bundle-graph.mjs': hashFile(path.join(HERE, 'bundle-graph.mjs')), 'holo-baseline.json': hashFile(BASELINE_FILE) }, params: MEASURE_ID,
+  });
+  return { mode: 'on', key };
+}
+/** json-friendly record of what the cache did for the base side (verify-holo.json, item value.baseCache) */
+const cacheSummary = (b, extra = {}) => ({ mode: b.info.mode, ...(b.info.mode === 'off' ? { reason: b.info.reason } : { keyDigest: b.info.key.digest.slice(0, 16), key: { ...b.info.key.summary, baseHead: b.info.key.summary.baseHead.slice(0, 12), lockHash: b.info.key.summary.lockHash.slice(0, 12), scripts: Object.fromEntries(Object.entries(b.info.key.summary.scripts).map(([k, h]) => [k, h.slice(0, 12)])) } }), ...extra });
+/** makes sure the --base worktree has a web/dist that is the build of its current commit (memoized; both the c1 server and entry-delta-vs-base call it).
+ *  cache on: a stored dist hash must equal the hash of the dist that is there now, else it is rebuilt; no key (dirty / --no-cache): always rebuilt, nothing stored. */
+const ensureBaseBuild = (L) => once('basebuild', async () => {
+  const root = path.resolve(A.base);
+  const dist = path.join(root, 'web', 'dist');
+  const info = baseCacheInfo(root);
+  const out = { ok: false, info, entry: null, distHash: null, buildCached: false };
+  if (info.mode === 'on') {
+    const entry = readEntry(CACHE_DIR, info.key);
+    const now = fs.existsSync(path.join(dist, 'index.html')) ? hashDir(dist) : null;
+    if (entry && now && entry.distHash === now) {
+      L.append(`\n[base build: CACHED (key ${info.key.digest.slice(0, 16)}, built ${entry.builtAt}); web/dist hash matches]\n`);
+      return { ...out, ok: true, entry, distHash: now, buildCached: true };
+    }
+    L.append(`\n[base build: ${entry ? 'cache entry found but web/dist differs from it' : 'no usable cache entry'}: building the --base worktree in place (no source change)]\n`);
+  } else L.append(`\n[base build: cache off (${info.reason}): building the --base worktree in place (no source change)]\n`);
+  if (!(await buildBase(L, root))) return out;
+  if (!fs.existsSync(path.join(dist, 'index.html'))) { L.append('[base build produced no web/dist/index.html]\n'); return out; }
+  if (info.mode !== 'on') return { ...out, ok: true };
+  const distHash = hashDir(dist);
+  const entry = { distHash, builtAt: new Date().toISOString(), entryGzip: null, measuredAt: null };
+  if (!writeEntry(CACHE_DIR, info.key, entry)) L.append('[base cache: could not write the entry (continuing without it)]\n');
+  return { ...out, ok: true, entry, distHash };
+});
 async function entryDeltaVsBase(L) {
   const th = { entryDeltaVsBaseMaxBytes: BL.entry.deltaVsBaseMaxBytes };
   if (!A.base) return { status: 'SKIP', value: null, threshold: th, reason: 'no --base given' };
   if (!(await defaultBuild(L))) throw invalid('default build failed');
   const root = path.resolve(A.base);
-  if (!fs.existsSync(path.join(root, 'web', 'dist', 'index.html'))) {
-    L.append(`
-[base worktree has no web/dist: building it there (no source change)]
-`);
-    if (!(await buildBase(L, root))) return baseSideFail(invalid('could not build the --base worktree'), th);
-  }
+  if (!fs.existsSync(root)) return baseSideFail(invalid(`--base ${shortBase()} does not exist`), th);
+  const b = await ensureBaseBuild(L);
+  if (!b.ok) return baseSideFail(invalid('could not build the --base worktree'), th);
   // same measuring code for both sides (this worktree's os-bundle.mjs: gzip -9 of the entry static-graph JS)
   const measure = async (label, dist) => {
     const json = path.join(OUT, `entry-delta-${label}.json`);
     clearOut(json);
-    await L.node(path.join(HERE, 'os-bundle.mjs'), ['--dist', dist, '--json', json]); // its own exit code (bundle-baseline) is not this item's concern
+    await L.node(BUNDLE_SCRIPT, ['--dist', dist, '--json', json]); // its own exit code (bundle-baseline) is not this item's concern
     const j = readJsonSafe(json);
     if (!j || typeof j.entryGzip !== 'number') throw (label === 'base' ? new BaseSide(`os-bundle wrote no entryGzip for base`) : invalid(`os-bundle wrote no entryGzip for ${label}`));
     return j.entryGzip;
   };
-  const branch = await measure('branch', path.join(REPO, 'web', 'dist'));
-  let base; try { base = await measure('base', path.join(root, 'web', 'dist')); } catch (e) { if (e instanceof BaseSide) return baseSideFail(e, th); throw e; }
-  const v = { branchEntryGzip: branch, baseEntryGzip: base, deltaBytes: branch - base };
+  const branch = await measure('branch', path.join(REPO, 'web', 'dist')); // never cached
+  let base, cached = false, measuredAt = null;
+  const e = b.entry;
+  if (b.info.mode === 'on' && e && e.entryGzip !== null && e.distHash === b.distHash) { // readEntry() already validated the shape; the dist hash was compared in ensureBaseBuild
+    base = e.entryGzip; cached = true; measuredAt = e.measuredAt;
+    L.append(`\n[base entry size: CACHED ${base} B (measured ${measuredAt}, key ${b.info.key.digest.slice(0, 16)})]\n`);
+  } else {
+    try { base = await measure('base', path.join(root, 'web', 'dist')); } catch (err) { if (err instanceof BaseSide) return baseSideFail(err, th); throw err; }
+    measuredAt = new Date().toISOString();
+    if (b.info.mode === 'on' && b.entry && !writeEntry(CACHE_DIR, b.info.key, { ...b.entry, entryGzip: base, measuredAt })) L.append('[base cache: could not write the entry (continuing without it)]\n');
+  }
+  const v = { branchEntryGzip: branch, baseEntryGzip: base, deltaBytes: branch - base, cached, measuredAt, baseCache: cacheSummary(b, { entryCached: cached, buildCached: b.buildCached }) };
   return v.deltaBytes > th.entryDeltaVsBaseMaxBytes ? fail(v, th, `web entry gzip +${v.deltaBytes} B vs base > +${th.entryDeltaVsBaseMaxBytes} B (stop and ask the designer if H2 would push the total past 2048 B over bundle-baseline.json)`) : pass(v, th);
 }
 
@@ -649,13 +727,23 @@ async function main() {
     if (interrupted) break;
     if (only && !only.has(it.id)) { it.reason = 'not selected (--only)'; continue; }
     if (A.quick && (it.group === 'C' || it.group === 'D')) { it.reason = 'skipped by --quick (groups A and B only)'; continue; }
+    // B2 fail-fast: the quick stage (groups A and B, which run first) must have no FAIL and no INVALID before C and D start. Only items that really ran count (a SKIP / N/A is not a failure of this stage).
+    // os-handoff-4x without --full is N/A (it does not run anything), so it is left to say so even then. Never makes anything pass: a skipped item is SKIP, which is exit 2 at best (overallExit).
+    if (failFast.enabled && (it.group === 'C' || it.group === 'D') && !(it.id === 'os-handoff-4x' && !A.full)) {
+      if (!failFast.triggered) {
+        const by = items.filter((i) => (i.group === 'A' || i.group === 'B') && (i.status === 'FAIL' || i.status === 'INVALID')).map((i) => i.id);
+        if (by.length) { failFast.triggered = true; failFast.by = by; console.log(`FAIL-FAST: quick stage failed (${by.join(', ')}): C and D are not run (use --no-fail-fast to run them anyway)`); writeJson(); }
+      }
+      if (failFast.triggered) { it.reason = `not run: quick stage failed (${failFast.by.join(', ')})`; continue; }
+    }
     const L = makeCtx(it.id);
     const t0 = Date.now();
     beat();
     it.log = rel(L.file);
     it.reason = null;
     let res;
-    try { res = FAKE_PASS ? { status: 'PASS', value: { fake: true }, threshold: null } : await RUNNERS[it.id](L); res = it.group === 'D' ? await softwareGuard(res) : res; res = applyTimeout(res, L.timedOut); }
+    const fakeStatus = FAKE_STATUS ? (FAKE_STATUS[it.id] ?? (it.id === 'os-handoff-4x' && !A.full ? 'N/A' : 'PASS')) : 'PASS'; // same N/A as the real runner (os-handoff-4x needs --full)
+    try { res = FAKE_PASS || FAKE_STATUS ? { status: fakeStatus, value: { fake: true }, threshold: null, ...(fakeStatus === 'PASS' ? {} : { reason: `fake ${fakeStatus} (self-test hook)` }) } : await RUNNERS[it.id](L); res = it.group === 'D' ? await softwareGuard(res) : res; res = applyTimeout(res, L.timedOut); }
     catch (e) { res = applyTimeout({ status: 'INVALID', value: null, threshold: null, reason: (e instanceof Invalid ? '' : 'harness error: ') + (e.message ?? String(e)) }, L.timedOut); L.append(`\n[${res.reason}]\n${e.stack ?? ''}\n`); }
     beat();
     res = applySuspend(res, classifySuspend(heartbeats, t0, Date.now()), it.timeSensitive); // time-sensitive items only: a suspend inside the run beats every other verdict, FAIL evidence stays in value

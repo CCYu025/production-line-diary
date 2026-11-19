@@ -57,7 +57,8 @@ function run(name, specs, { env = {}, out = null, item = 'os-handoff-4x', base =
   const it = json.items.find((i) => i.id === item);
   return { exit: r.status, it, out: o, json, last: lastLine(r.stdout), stderr: r.stderr };
 }
-const ok = (name, fn) => { fn(); n++; console.log(`PASS ${name}`); };
+const FILTER = process.env.SELFTEST_FILTER ? new RegExp(process.env.SELFTEST_FILTER) : null; // dev aid for mutation runs: only the cases whose name matches; unset = all (CI, delivery)
+const ok = (name, fn) => { if (FILTER && !FILTER.test(name)) return; fn(); n++; console.log(`PASS ${name}`); };
 
 ok('(a) stale result.json: a second run into the same --out whose os-handoff crashes (exit 1, no file) does not read the first run\'s clean result', () => {
   const o = path.join(TMP, 'a1-out');
@@ -215,8 +216,8 @@ const runRaw = (name, args, env = {}) => {
 };
 const dumpHooks = (name, env) => JSON.parse(runRaw(name, ['--dump-hooks'], env).stdout);
 const HOOK_VARS = { VERIFY_HOLO_SELFTEST_HANDOFF: '/x/fake-handoff.mjs', VERIFY_HOLO_SELFTEST_IME: '/x/fake-ime.mjs', VERIFY_HOLO_SELFTEST_TIMEOUT_MS: '1234', VERIFY_HOLO_SELFTEST_BASE_FAIL: 'boom',
-  VERIFY_HOLO_SELFTEST_FAKEPASS: '1', VERIFY_HOLO_SELFTEST_BASELINE: '/x/other-baseline.json' };
-const INERT = { st: false, handoffScript: 'os-handoff.mjs', imeScript: 'holo-ime.mjs', imeStub: false, timeoutMs: 40 * 60 * 1000, baseFail: null, fakePass: false, baselineFile: 'holo-baseline.json' };
+  VERIFY_HOLO_SELFTEST_FAKEPASS: '1', VERIFY_HOLO_SELFTEST_BASELINE: '/x/other-baseline.json', VERIFY_HOLO_SELFTEST_BUNDLE: '/x/fake-bundle.mjs', VERIFY_HOLO_SELFTEST_FAKESTATUS: '{"ci-check":"FAIL"}' };
+const INERT = { st: false, handoffScript: 'os-handoff.mjs', imeScript: 'holo-ime.mjs', imeStub: false, timeoutMs: 40 * 60 * 1000, baseFail: null, fakePass: false, baselineFile: 'holo-baseline.json', bundleScript: 'os-bundle.mjs', fakeStatus: null };
 
 ok('(h-1) every sub-hook (handoff script, holo-ime script, holo-ime url stub, timeout, base-fail, fake-pass, baseline file) is inert without VERIFY_HOLO_SELFTEST=1 (unset, "0", "true"), even with all their variables set; with "1" each one takes effect (control)', () => {
   for (const [i, v] of [undefined, '0', 'true'].entries()) {
@@ -224,7 +225,7 @@ ok('(h-1) every sub-hook (handoff script, holo-ime script, holo-ime url stub, ti
     for (const k of Object.keys(INERT)) assert.deepEqual(d[k], INERT[k], `with VERIFY_HOLO_SELFTEST=${JSON.stringify(v)} the hook "${k}" must be inert (got ${JSON.stringify(d[k])})`);
   }
   const on = dumpHooks('hk-on', HOOK_VARS);
-  assert.deepEqual(on, { st: true, handoffScript: 'fake-handoff.mjs', imeScript: 'fake-ime.mjs', imeStub: true, timeoutMs: 1234, baseFail: 'boom', fakePass: true, baselineFile: 'other-baseline.json' });
+  assert.deepEqual(on, { st: true, handoffScript: 'fake-handoff.mjs', imeScript: 'fake-ime.mjs', imeStub: true, timeoutMs: 1234, baseFail: 'boom', fakePass: true, baselineFile: 'other-baseline.json', bundleScript: 'fake-bundle.mjs', fakeStatus: { 'ci-check': 'FAIL' } });
 });
 ok('(h-2) VERIFY_HOLO_SELFTEST=1 with every item a fake PASS (all items PASS) still never exits 0: exit 2, label SELFTEST (not PASS), json exitCode 2 and selftest:true', () => {
   const o = path.join(TMP, 'fp-out');
@@ -235,7 +236,7 @@ ok('(h-2) VERIFY_HOLO_SELFTEST=1 with every item a fake PASS (all items PASS) st
   assert.equal(r.exit, 2); assert.equal(json.exitCode, 2); assert.equal(json.selftest, true);
 });
 ok('(h-3) the CI refusal leaves nothing behind: no pld-vh-* scratch folder in os.tmpdir() (own TEMP per child), while a normal run cleans its folder up too', () => {
-  const countIn = (dir) => fs.readdirSync(dir).filter((x) => x.startsWith('pld-vh-')).length;
+  const countIn = (dir) => fs.readdirSync(dir).filter((x) => x.startsWith('pld-vh-') && x !== 'pld-vh-cache').length;
   const tmpOf = (n) => { const t = path.join(TMP, n); fs.mkdirSync(t, { recursive: true }); return { TEMP: t, TMP: t, TMPDIR: t, dir: t }; };
   const a = tmpOf('tmp-ci'); const r = runRaw('ci-leak', ['--only', 'redline-grep', '--out', path.join(TMP, 'ci-leak-out')], { CI: 'true', TEMP: a.TEMP, TMP: a.TMP, TMPDIR: a.TMPDIR });
   assert.equal(r.exit, 1); assert.match(r.last, /refused because CI is set/);
@@ -271,6 +272,12 @@ ok('(h-6) holo-ime verdict branches: fewer checks than the baseline -> FAIL; an 
   assert.equal(few.it.status, 'FAIL'); assert.match(few.it.reason, new RegExp(`checks ${IME_CHECKS - 1} < baseline ${IME_CHECKS}`)); assert.equal(few.attempts, 1);
   const odd = runIme('imeh2', [{ exit: 9, result: IME_PASS.result }]);
   assert.equal(odd.it.status, 'INVALID'); assert.match(odd.it.reason, /holo-ime exit 9/);
+  // H2-1 G2: an exit code outside 0/1/2 next to a COMPLETE PASS result.json is never a PASS (mutation: `r.code !== 0` loosened to `r.code > 3` lets exit 3 through)
+  for (const code of [3, 4, 127]) {
+    const r = runIme('imeh2-' + code, [{ exit: code, result: IME_PASS.result }]);
+    assert.notEqual(r.it.status, 'PASS', `holo-ime exit ${code} with a full PASS result.json must not be PASS: ${JSON.stringify(r.it)}`);
+    assert.equal(r.it.status, 'INVALID', `exit ${code}`); assert.match(r.it.reason, new RegExp(`holo-ime exit ${code}`)); assert.notEqual(r.exit, 0, 'and the overall exit is never 0');
+  }
   const none = runIme('imeh3', [{ exit: 0 }]);
   assert.equal(none.it.status, 'INVALID'); assert.match(none.it.reason, /holo-ime exit 0/); assert.equal(none.it.value, null);
 });
@@ -288,5 +295,210 @@ ok('(h-8) the real holo-ime command line (both attempts) is exactly the README o
   for (const k of [0, 1]) assert.deepEqual(JSON.parse(fs.readFileSync(path.join(TMP, 'imeh5', `ime-args-${k}.json`), 'utf8')), ['--url', 'http://localhost:0/', '--methods', 'proj', '--freeze', '1,0', '--out', dir]);
   assert.equal(r.attempts, 2);
 });
+
+// ================================================================== H2-1 (prerequisites): gaps G1 G3 G6 G7 (--base path), B2 fail-fast, B1 base cache. Every case here has a mutation that makes it fail (PR body / handoff list them).
+const REAL = '工作' + '日誌'; // assembled: this file must not contain the real-data folder name
+const ownTmp = (n) => { const t = path.join(TMP, n); fs.mkdirSync(t, { recursive: true }); return { TEMP: t, TMP: t, TMPDIR: t, dir: t }; }; // a private os.tmpdir() for one child
+const vhLeft = (dir) => fs.readdirSync(dir).filter((x) => x.startsWith('pld-vh-') && x !== 'pld-vh-cache'); // scratch folders a run left behind (the cache folder is the B1 cache, created only when written)
+const walkFiles = (d) => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walkFiles(path.join(d, e.name)) : [path.join(d, e.name)])) : []);
+
+ok('(g1) --dump-hooks only prints: no verify-holo.json, no --out folder (default or given), no verify-out, no scratch folder', () => {
+  const customOut = path.join(TMP, 'g1-custom-out');
+  for (const [i, args] of [['--dump-hooks'], ['--dump-hooks', '--out', path.join(customOut, 'deep')]].entries()) {
+    const t = ownTmp(`g1t${i}`);
+    const r = runRaw(`g1c${i}`, args, { TEMP: t.TEMP, TMP: t.TMP, TMPDIR: t.TMPDIR });
+    assert.equal(r.exit, 0); assert.doesNotThrow(() => JSON.parse(r.stdout), 'it prints the hook table as JSON');
+    assert.deepEqual(fs.readdirSync(r.dir), [], `the working directory must stay empty (verify-out/holo, verify-holo.json): ${fs.readdirSync(r.dir).join(',')}`);
+    assert.deepEqual(fs.readdirSync(t.dir), [], 'the temp directory must stay empty');
+  }
+  assert.equal(fs.existsSync(customOut), false, 'the --out folder must not be created');
+});
+ok('(g3) the early exits leave no pld-vh-* scratch folder behind: --help, --out with the real-data folder name (refused), --only with an unknown id', () => {
+  const cases = { help: [['--help'], 0], realName: [['--out', path.join(TMP, 'g3-real-' + REAL, 'out')], 2], unknownId: [['--only', 'no-such-item'], 2] };
+  for (const [k, [args, want]] of Object.entries(cases)) {
+    const t = ownTmp(`g3t-${k}`);
+    const r = runRaw(`g3-${k}`, args, { TEMP: t.TEMP, TMP: t.TMP, TMPDIR: t.TMPDIR });
+    assert.equal(r.exit, want, `${k}: exit ${r.exit}; stderr ${r.stderr.slice(0, 200)}`);
+    assert.deepEqual(vhLeft(t.dir), [], `${k} left a scratch folder: ${fs.readdirSync(t.dir).join(',')}`);
+  }
+});
+ok('(g6) --out containing the real-data folder name: refused (exit 2) before anything is created; the folder (and its parents made for it) does not exist afterwards; a clean --out is created (control)', () => {
+  const parent = path.join(TMP, 'g6-' + REAL); const out = path.join(parent, 'out');
+  const r = runRaw('g6', ['--only', 'redline-grep', '--out', out]);
+  assert.equal(r.exit, 2); assert.match(r.stderr, /refusing a path that contains the real-data folder name/);
+  assert.equal(fs.existsSync(path.join(out, 'logs')), false, 'logs folder must not exist'); assert.equal(fs.existsSync(out), false, '--out folder must not exist'); assert.equal(fs.existsSync(parent), false, 'its parent must not exist');
+  const okOut = path.join(TMP, 'g6-control', 'out'); runRaw('g6c', ['--only', 'redline-grep', '--out', okOut]);
+  assert.ok(fs.existsSync(path.join(okOut, 'verify-holo.json')), 'control: a clean --out is created and written');
+});
+ok('(g7) --base that does not exist (path contains "someone"): stdout, stderr, verify-holo.json and every log show only the last folder (…/name), never the absolute path', () => {
+  for (const item of ['c1-web', 'c1-os', 'entry-delta-vs-base']) {
+    const base = path.join(TMP, 'someone', 'no-such-base-' + item); const o = path.join(TMP, 'g7-out-' + item);
+    const r = runRaw('g7-' + item, ['--only', item, '--base', base, '--out', o]);
+    const files = walkFiles(o); assert.ok(files.some((f) => f.endsWith('verify-holo.json')) && files.some((f) => f.endsWith(`${item}.log`)), 'premise: json and the item log exist');
+    const blobs = { stdout: r.stdout, stderr: r.stderr, ...Object.fromEntries(files.map((f) => [path.relative(o, f), fs.readFileSync(f, 'utf8')])) };
+    const it = JSON.parse(blobs['verify-holo.json']).items.find((i) => i.id === item);
+    assert.equal(it.status, 'FAIL', `${item}: ${JSON.stringify(it)}`); assert.equal(it.value.baseUnavailable, true); assert.match(it.reason, new RegExp(`…/no-such-base-${item}`));
+    for (const [name, text] of Object.entries(blobs)) for (const bad of [base, base.split(path.sep).join('/'), base.split('/').join('\\'), 'someone']) assert.ok(!text.includes(bad), `${item}: ${name} contains ${JSON.stringify(bad)}`);
+  }
+});
+// ---- B2: fail-fast (quick stage first). FAKESTATUS makes each item a fake with the given status and every other item a fake PASS, so only the stage logic is under test.
+const CD = ['lab-bundle', 'c1-web', 'c1-os', 'os-e2e', 'os-handoff', 'holo-ime', 'holo-still', 'holo-perf', 'holo-perf-20k'];
+const AB = ['ci-check', 'ci-test', 'ci-typecheck', 'ci-test-web', 'ci-build', 'ci-bundle', 'entry-delta-vs-base', 'tests-untouched', 'redline-grep'];
+function runFF(name, status, args = []) {
+  const o = path.join(TMP, name + '-out');
+  const r = runRaw(name, [...args, '--out', o], { VERIFY_HOLO_SELFTEST_FAKESTATUS: JSON.stringify(status) });
+  const json = JSON.parse(fs.readFileSync(path.join(o, 'verify-holo.json'), 'utf8'));
+  return { r, json, by: Object.fromEntries(json.items.map((i) => [i.id, i])) };
+}
+const skippedBecause = (x, ids) => CD.every((id) => x.by[id].status === 'SKIP' && x.by[id].reason === `not run: quick stage failed (${ids.join(', ')})`);
+ok('(b2-1) a FAIL in A: C and D are SKIP "not run: quick stage failed (<id>)", exit 1, json.failFast {enabled, triggered, by}, summary line says FAIL-FAST; os-handoff-4x stays N/A without --full', () => {
+  const x = runFF('b2a', { 'ci-check': 'FAIL' });
+  assert.ok(skippedBecause(x, ['ci-check']), JSON.stringify(CD.map((id) => [id, x.by[id].status, x.by[id].reason])));
+  assert.equal(x.by['os-handoff-4x'].status, 'N/A'); assert.equal(x.by['ci-check'].status, 'FAIL'); assert.ok(AB.filter((id) => id !== 'ci-check').every((id) => x.by[id].status === 'PASS'), 'the rest of A and B ran');
+  assert.equal(x.r.exit, 1); assert.equal(x.json.exitCode, 1); assert.deepEqual(x.json.failFast, { enabled: true, triggered: true, by: ['ci-check'] });
+  assert.match(x.r.last, /FAIL-FAST: C and D not run because the quick stage failed \(ci-check\)/); assert.match(x.r.last, /1 fail \(ci-check\)/); assert.match(x.r.last, /9 skip/); assert.ok(x.json.summary.skip.includes('c1-web'));
+});
+ok('(b2-2) everything PASS in A and B: C and D run as usual (fake PASS), failFast.triggered false, no FAIL-FAST in the summary', () => {
+  const x = runFF('b2b', {});
+  assert.ok(CD.every((id) => x.by[id].status === 'PASS'), JSON.stringify(CD.map((id) => [id, x.by[id].status]))); assert.deepEqual(x.json.failFast, { enabled: true, triggered: false, by: [] }); assert.doesNotMatch(x.r.last, /FAIL-FAST/);
+});
+ok('(b2-3) --no-fail-fast: C and D run even though A has a FAIL; exit still 1; failFast.enabled false; args.noFailFast true', () => {
+  const x = runFF('b2c', { 'ci-check': 'FAIL' }, ['--no-fail-fast']);
+  assert.ok(CD.every((id) => x.by[id].status === 'PASS'), JSON.stringify(CD.map((id) => [id, x.by[id].status]))); assert.equal(x.r.exit, 1); assert.deepEqual(x.json.failFast, { enabled: false, triggered: false, by: [] }); assert.equal(x.json.args.noFailFast, true);
+});
+ok('(b2-4) an INVALID counts too (group B), and several ids are all listed: C and D SKIP, exit 2 (no FAIL); with a FAIL and an INVALID the reason lists both in run order', () => {
+  const inv = runFF('b2d', { 'redline-grep': 'INVALID' });
+  assert.ok(skippedBecause(inv, ['redline-grep']), JSON.stringify(CD.map((id) => [id, inv.by[id].status, inv.by[id].reason]))); assert.equal(inv.r.exit, 2); assert.equal(inv.json.failFast.triggered, true); assert.match(inv.r.last, /1 invalid \(redline-grep\)/);
+  const both = runFF('b2d2', { 'ci-test': 'FAIL', 'tests-untouched': 'INVALID' });
+  assert.ok(skippedBecause(both, ['ci-test', 'tests-untouched']), JSON.stringify(both.by['c1-web'])); assert.equal(both.r.exit, 1); assert.deepEqual(both.json.failFast.by, ['ci-test', 'tests-untouched']);
+});
+ok('(b2-5) only the quick stage gates: a FAIL in C does not skip D; a SKIP in A (no --base) does not trigger; --only without any A/B item run does not trigger', () => {
+  const c = runFF('b2e', { 'c1-web': 'FAIL' });
+  assert.equal(c.by['c1-web'].status, 'FAIL'); assert.ok(['holo-ime', 'holo-still', 'holo-perf', 'holo-perf-20k', 'c1-os'].every((id) => c.by[id].status === 'PASS')); assert.equal(c.json.failFast.triggered, false); assert.equal(c.r.exit, 1);
+  const s = runFF('b2g', { 'entry-delta-vs-base': 'SKIP' });
+  assert.ok(CD.every((id) => s.by[id].status === 'PASS')); assert.equal(s.json.failFast.triggered, false);
+  const only = runFF('b2i', { 'ci-check': 'FAIL' }, ['--only', 'c1-web']);
+  assert.equal(only.by['c1-web'].status, 'PASS'); assert.equal(only.by['ci-check'].status, 'SKIP'); assert.equal(only.json.failFast.triggered, false);
+  const both = runFF('b2i2', { 'ci-check': 'FAIL' }, ['--only', 'ci-check,c1-web']);
+  assert.equal(both.by['ci-check'].status, 'FAIL'); assert.equal(both.by['c1-web'].status, 'SKIP'); assert.equal(both.by['c1-web'].reason, 'not run: quick stage failed (ci-check)');
+});
+ok('(b2-6) --quick is unchanged (C and D "skipped by --quick", failFast.enabled false); with --full a triggered fail-fast also skips os-handoff-4x', () => {
+  const q = runFF('b2f', { 'ci-check': 'FAIL' }, ['--quick']);
+  assert.ok(CD.every((id) => q.by[id].status === 'SKIP' && /skipped by --quick/.test(q.by[id].reason))); assert.deepEqual(q.json.failFast, { enabled: false, triggered: false, by: [] });
+  const f = runFF('b2h', { 'ci-check': 'FAIL' }, ['--full']);
+  assert.equal(f.by['os-handoff-4x'].status, 'SKIP'); assert.equal(f.by['os-handoff-4x'].reason, 'not run: quick stage failed (ci-check)'); assert.ok(skippedBecause(f, ['ci-check']));
+});
+
+// ---- B1: the --base cache. A fake base worktree (a real git repo in the temp folder whose `npm run build` writes web/dist and counts itself), a fake os-bundle script that counts its calls,
+// and a private cache directory (VERIFY_HOLO_CACHE_DIR). The real verify-holo.mjs decides everything.
+const FAKE_BUNDLE = path.join(TMP, 'fake-bundle.mjs');
+fs.writeFileSync(FAKE_BUNDLE, [
+  "import fs from 'node:fs'; import path from 'node:path';",
+  "const a = process.argv.slice(2); const arg = (k) => a[a.indexOf(k) + 1]; const dist = arg('--dist');",
+  "fs.appendFileSync(path.join(process.env.FX_DIR, 'bundle-calls.log'), dist + String.fromCharCode(10));",
+  "if (process.env.FX_ECHO_BASE) console.log('measuring ' + dist + ' (' + dist.split(String.fromCharCode(92)).join('/') + ')');",
+  "fs.writeFileSync(arg('--json'), JSON.stringify({ entryGzip: dist.startsWith(process.env.FX_BASE_ROOT) ? Number(process.env.FX_BASE_ENTRY || 50) : 100 }));",
+  '',
+].join(String.fromCharCode(10)));
+const git = (cwd, ...args) => { const e = { ...process.env }; delete e.GIT_DIR; delete e.GIT_WORK_TREE; delete e.GIT_INDEX_FILE; const r = spawnSync('git', ['-c', 'user.name=selftest', '-c', 'user.email=selftest@example.invalid', ...args], { cwd, encoding: 'utf8', env: e }); assert.equal(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`); return r.stdout.trim(); };
+function mkScenario(name) {
+  const root = path.join(TMP, 'b1-' + name); const base = path.join(root, 'base'); const cache = path.join(root, 'cache'); const fx = path.join(root, 'fx');
+  for (const d of [base, path.join(base, 'backend'), fx]) fs.mkdirSync(d, { recursive: true });
+  const w = (f, t) => fs.writeFileSync(path.join(base, f), t);
+  w('package.json', JSON.stringify({ name: 'fake-base', version: '0.0.0', private: true, scripts: { build: 'node build.js' } }));
+  w('build.js', "const fs = require('fs'); fs.mkdirSync('web/dist', { recursive: true }); fs.writeFileSync('web/dist/index.html', 'built ' + (process.env.FX_TAG || '1')); fs.appendFileSync(process.env.FX_DIR + '/builds.log', 'b\\n');\n");
+  w('.gitignore', 'web/dist\nnode_modules\n'); w('package-lock.json', '{}\n'); w(path.join('backend', 'server.js'), '// fake\n');
+  git(base, 'init', '-q'); git(base, 'add', '-A'); git(base, 'commit', '-q', '-m', 'init');
+  return { root, base, cache, fx, n: 0 };
+}
+function goB1(sc, { args = [], env = {}, only = 'entry-delta-vs-base' } = {}) {
+  const o = path.join(sc.root, `out${++sc.n}`);
+  const r = spawnSync(process.execPath, [path.join(HERE, 'verify-holo.mjs'), '--only', only, '--base', sc.base, '--out', o, ...args], {
+    cwd: sc.root, encoding: 'utf8', env: childEnv({ VERIFY_HOLO_SELFTEST_BUNDLE: FAKE_BUNDLE, FX_DIR: sc.fx, FX_BASE_ROOT: sc.base, VERIFY_HOLO_CACHE_DIR: sc.cache, ...env }),
+  });
+  const jf = path.join(o, 'verify-holo.json');
+  const json = fs.existsSync(jf) ? JSON.parse(fs.readFileSync(jf, 'utf8')) : null;
+  return { r, out: o, json, it: json?.items.find((i) => i.id === only), builds: lines(path.join(sc.fx, 'builds.log')).length, baseMeasures: lines(path.join(sc.fx, 'bundle-calls.log')).filter((l) => l.startsWith(sc.base)).length, calls: lines(path.join(sc.fx, 'bundle-calls.log')).length };
+}
+const lines = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean) : []);
+const snap = (dir) => JSON.stringify(walkFiles(dir).sort().map((f) => [path.relative(dir, f), fs.readFileSync(f, 'utf8')]));
+const entryFile = (sc) => walkFiles(sc.cache).find((f) => /base-[0-9a-f]+\.json$/.test(f));
+
+ok('(b1-1) base side by commit: first run builds and measures base (cached false, entry written); the second run hits: no build, no base measurement, same number and time, cached true, key summary and "CACHED" in json and log; the branch side is measured every time', () => {
+  const sc = mkScenario('s1'); const head = git(sc.base, 'rev-parse', 'HEAD');
+  const a = goB1(sc); assert.equal(a.it.status, 'PASS', JSON.stringify(a.it)); assert.equal(a.it.value.cached, false); assert.equal(a.builds, 1); assert.equal(a.baseMeasures, 1); assert.equal(walkFiles(sc.cache).length, 1);
+  assert.equal(a.it.value.baseEntryGzip, 50); assert.equal(a.it.value.branchEntryGzip, 100); assert.equal(a.it.value.deltaBytes, 50); assert.equal(a.it.value.baseCache.buildCached, false);
+  const b = goB1(sc); assert.equal(b.it.status, 'PASS'); assert.equal(b.it.value.cached, true); assert.equal(b.builds, 1, 'no second build'); assert.equal(b.baseMeasures, 1, 'no second base measurement'); assert.equal(b.calls, 3, 'branch measured again');
+  assert.equal(b.it.value.baseEntryGzip, 50); assert.equal(b.it.value.measuredAt, a.it.value.measuredAt, 'the original measurement time is reported'); assert.equal(b.it.value.baseCache.buildCached, true); assert.equal(b.it.value.baseCache.entryCached, true);
+  const k = b.it.value.baseCache; assert.equal(k.mode, 'on'); assert.equal(k.key.baseHead, head.slice(0, 12)); assert.equal(k.key.node, process.version); assert.equal(k.key.lockHash.length, 12);
+  assert.deepEqual(Object.keys(k.key.scripts), ['bundle-graph.mjs', 'holo-baseline.json', 'os-bundle.mjs'], 'the verification scripts that decide the result are part of the key'); assert.equal(k.key.params, 'entry-gzip9-static-graph-v1');
+  assert.match(fs.readFileSync(path.join(b.out, 'logs', 'entry-delta-vs-base.log'), 'utf8'), /base build: CACHED/); assert.match(fs.readFileSync(path.join(b.out, 'logs', 'entry-delta-vs-base.log'), 'utf8'), /base entry size: CACHED 50 B/);
+  assert.equal(b.json.args.noCache, false);
+});
+ok('(b1-2) a different base HEAD does not hit (rebuild + re-measure, a second entry); the new commit then hits', () => {
+  const sc = mkScenario('s2'); goB1(sc); goB1(sc);
+  git(sc.base, 'commit', '-q', '--allow-empty', '-m', 'second');
+  const c = goB1(sc); assert.equal(c.it.value.cached, false); assert.equal(c.builds, 2); assert.equal(c.baseMeasures, 2); assert.equal(walkFiles(sc.cache).length, 2);
+  const d = goB1(sc); assert.equal(d.it.value.cached, true); assert.equal(d.builds, 2);
+});
+ok('(b1-3) a dirty base worktree is never cached: no read (always rebuilt and re-measured, cached false, mode off) and no write (cache folder bit-identical); clean again -> the earlier entry hits', () => {
+  const sc = mkScenario('s3'); goB1(sc); goB1(sc); const before = snap(sc.cache);
+  fs.writeFileSync(path.join(sc.base, 'junk.txt'), 'x');
+  const c = goB1(sc); assert.equal(c.it.value.cached, false); assert.equal(c.it.value.baseCache.mode, 'off'); assert.match(c.it.value.baseCache.reason, /not clean/); assert.equal(c.builds, 2); assert.equal(c.baseMeasures, 2); assert.equal(snap(sc.cache), before, 'a dirty run must not write the cache');
+  const d = goB1(sc); assert.equal(d.it.value.cached, false); assert.equal(d.builds, 3); assert.equal(snap(sc.cache), before);
+  fs.rmSync(path.join(sc.base, 'junk.txt'));
+  const e = goB1(sc); assert.equal(e.it.value.cached, true); assert.equal(e.builds, 3);
+  fs.writeFileSync(path.join(sc.base, 'package.json'), fs.readFileSync(path.join(sc.base, 'package.json'), 'utf8') + ' '); // a modified TRACKED file is dirty too
+  const f = goB1(sc); assert.equal(f.it.value.cached, false); assert.equal(f.it.value.baseCache.mode, 'off'); assert.equal(f.builds, 4);
+});
+ok('(b1-4) --no-cache neither reads nor writes: an existing cache is ignored and left bit-identical, a missing cache folder is not created; args.noCache true', () => {
+  const sc = mkScenario('s4'); goB1(sc); goB1(sc); const before = snap(sc.cache);
+  const c = goB1(sc, { args: ['--no-cache'] }); assert.equal(c.it.value.cached, false); assert.equal(c.it.value.baseCache.mode, 'off'); assert.match(c.it.value.baseCache.reason, /--no-cache/); assert.equal(c.builds, 2); assert.equal(c.baseMeasures, 2); assert.equal(snap(sc.cache), before); assert.equal(c.json.args.noCache, true);
+  const sc2 = mkScenario('s4b'); const d = goB1(sc2, { args: ['--no-cache'] }); assert.equal(d.it.status, 'PASS'); assert.equal(fs.existsSync(sc2.cache), false, '--no-cache must not even create the cache folder');
+});
+ok('(b1-5) a corrupt or malformed cache entry is a miss (rebuild, re-measure, entry rewritten), never a crash and never a hit; afterwards the rewritten entry hits', () => {
+  const sc = mkScenario('s5'); goB1(sc); const valid = JSON.parse(fs.readFileSync(entryFile(sc), 'utf8'));
+  const variants = {
+    garbage: 'not json{', empty: '', jsonNull: 'null', jsonArray: '[]', truncated: JSON.stringify(valid).slice(0, 40), otherDigest: JSON.stringify({ ...valid, digest: 'x' + valid.digest.slice(1) }), schema2: JSON.stringify({ ...valid, schema: 2 }),
+    gzipString: JSON.stringify({ ...valid, entryGzip: '50' }), gzipNegative: JSON.stringify({ ...valid, entryGzip: -5 }), gzipNaN: '{"schema":1,"entryGzip":NaN}', distShort: JSON.stringify({ ...valid, distHash: 'abc' }), keyAltered: JSON.stringify({ ...valid, key: { ...valid.key, baseHead: 'f'.repeat(40) } }),
+    badTime: JSON.stringify({ ...valid, measuredAt: 'yesterday' }), noBuiltAt: JSON.stringify({ ...valid, builtAt: undefined }),
+  };
+  let builds = 1;
+  for (const [k, text] of Object.entries(variants)) {
+    fs.writeFileSync(entryFile(sc), text);
+    const r = goB1(sc); builds++;
+    assert.ok(r.json, `${k}: no json (crash?) ${r.r.stderr.slice(0, 300)}`); assert.doesNotMatch(r.r.stderr, /Error|at .*\(/, `${k}: stderr ${r.r.stderr.slice(0, 300)}`);
+    assert.equal(r.it.status, 'PASS', `${k}: ${JSON.stringify(r.it)}`); assert.equal(r.it.value.cached, false, `${k}: must not be a hit`); assert.equal(r.builds, builds, `${k}: must rebuild`);
+    assert.doesNotThrow(() => JSON.parse(fs.readFileSync(entryFile(sc), 'utf8')), `${k}: entry rewritten as valid json`);
+  }
+  const last = goB1(sc); assert.equal(last.it.value.cached, true); assert.equal(last.builds, builds);
+  fs.rmSync(sc.cache, { recursive: true }); fs.writeFileSync(sc.cache, 'a file where the folder should be'); // unwritable cache location: still a normal (uncached) result
+  const w = goB1(sc); assert.equal(w.it.status, 'PASS'); assert.equal(w.it.value.cached, false); assert.match(fs.readFileSync(path.join(w.out, 'logs', 'entry-delta-vs-base.log'), 'utf8'), /could not write the entry/);
+});
+ok('(b1-6) the dist is part of the hit: a base web/dist that no longer matches the stored hash (edited, deleted) is rebuilt and RE-MEASURED, the stored number is not reused for different bytes', () => {
+  const sc = mkScenario('s6'); goB1(sc); goB1(sc);
+  fs.writeFileSync(path.join(sc.base, 'web', 'dist', 'index.html'), 'tampered');
+  const c = goB1(sc); assert.equal(c.it.value.cached, false); assert.equal(c.builds, 2); assert.equal(c.baseMeasures, 2); assert.equal(fs.readFileSync(path.join(sc.base, 'web', 'dist', 'index.html'), 'utf8'), 'built 1', 'rebuilt');
+  fs.rmSync(path.join(sc.base, 'web', 'dist'), { recursive: true });
+  const d = goB1(sc); assert.equal(d.it.value.cached, false); assert.equal(d.builds, 3);
+  const e = goB1(sc); assert.equal(e.it.value.cached, true); assert.equal(e.builds, 3);
+});
+ok('(b1-7) cache directory rules: VERIFY_HOLO_CACHE_DIR must be absolute, must not contain the real-data folder name, must not be inside this repo or the --base worktree -> refused (exit 2), nothing created', () => {
+  const sc = mkScenario('s7'); const repo = path.resolve(HERE, '..', '..');
+  const bad = { relative: 'rel-cache', realName: path.join(TMP, 'b1-s7', 'c-' + REAL), insideRepo: path.join(repo, 'verify-out', 'cache-x'), insideBase: path.join(sc.base, 'cache-x') };
+  for (const [k, dir] of Object.entries(bad)) {
+    const r = goB1(sc, { env: { VERIFY_HOLO_CACHE_DIR: dir } });
+    assert.equal(r.r.status, 2, `${k}: exit ${r.r.status}`); assert.match(r.r.stderr, /refusing the cache directory/); assert.equal(r.json, null, `${k}: nothing may be written`);
+    if (path.isAbsolute(dir)) assert.equal(fs.existsSync(dir), false, `${k}: the folder must not be created`);
+  }
+  assert.equal(fs.existsSync(path.join(sc.root, 'rel-cache')), false);
+});
+ok('(g7b) the base path is also scrubbed from child-process output in the logs (every spelling: as given, resolved, / or \\)', () => {
+  // an existing --base: its absolute path shows up in what os-bundle / npm print; the item log must show …/<name> instead
+  const sc = mkScenario('g7b'); const r = goB1(sc, { env: { FX_ECHO_BASE: '1' } });
+  const log = fs.readFileSync(path.join(r.out, 'logs', 'entry-delta-vs-base.log'), 'utf8');
+  assert.ok(log.includes('…/' + path.basename(sc.base))); for (const bad of [sc.base, sc.base.split(path.sep).join('/')]) assert.ok(!log.includes(bad), `log contains ${bad}`);
+});
+
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log(`verify-holo selftest: ${n} groups passed`);
