@@ -7,9 +7,9 @@
 
 | 項目 | 狀態 |
 |---|---|
-| 目前階段 | **H2-0（`npm run verify:holo`）已以 PR #67 合併（2026-11-18）**。H2-1 開工前置項目與兩項驗證加速已以 PR #68 合併（2026-11-19）。下一步是 H2-1+2 實作（見 §3），開工前先看 §5 的「H2-1+2 前置項目」 |
-| main | PR #68 的合併 commit（squash；H2-1 前置項目）。前一版 `bfd5c12` 是 PR #67（H2-0 verify:holo） |
-| 進行中分支 | 無。`feat/holo-h2-1-prereq` 合併後由 GitHub 刪除；worktree `pld-wt/h2-1` 可以移除。baseline worktree `pld-wt/h2-base`（main `bfd5c12`）留到 H2-1+2 開工時改指新 main。`.git/worktrees/` 底下的空殼（Permission denied）照慣例留著 |
+| 目前階段 | **H2-1+2（`isRecurringProblem`＋`useOpenRecordParam`）進行中，2026-11-19 handoff 時停在 L1 中途**（見「進行中分支」）。H2-0（#67）、H2-1 前置項目（#68）已合併 |
+| main | `c93d9c2`（PR #68，squash；H2-1 前置項目） |
+| 進行中分支 | `feat/holo-h2-12-records-core`（worktree `pld-wt/h2-12`，已推上遠端備份、未開 PR）：抽出 `web/src/features/records/core/recurring.ts` 與 `useOpenRecordParam.ts`，三輪修正後網頁入口相對 main +95 B（≤ 100）。L1（`--no-cache`）跑到 c1-os 被 handoff 中止：A／B 組全 PASS、lab-bundle 為設計師已接受的累計 FAIL、c1-web 因系統睡眠 INVALID、c1-os PASS。恢復順序：L1（`--no-cache`）重跑完整版 → 新的 L2 → 開 PR → 合併前回報設計師。baseline worktree `pld-wt/h2-base` = `c93d9c2` |
 | 伺服器 | 3114–3116 都已停止；沒有背景中的協調者或驗證者 |
 | H2-0 驗證結果 | 完整 L1（`c131c88`）17/19：os-handoff 兩項被「exit 與結果矛盾」檢查誤判（帶 `--allow-deviated` 時只有 DEVIATED 就是 exit 0），已在 `3f608ac` 修正（`buildHandoffArgs` 統一產生參數）。os-handoff 兩項重跑：coord9 的 4× 出現 1 筆真實 FAIL，已記為已知問題（見 §5）；l1-r8 的 1× 與 4× 都 PASS。後續 commit（`146e24e` 自測缺口、`14827b7` E1：holo-ime 的 exit 0 必須與 result.json 一致）跑過自測、check、test 的 L1，並各有一位新的 L2 複驗，都沒有找到真實會發生的錯誤 PASS。L2 共 l2i、l2h、l2j、l2k、l2m 五輪；證據放在開發主管的 scratchpad（不進版控） |
 | 停止條件（設計師 2026-11-18） | L2 只找到「不會造成錯誤 PASS」的缺口時，一律記成下一期的前置項目，不再回頭修；只有會讓結果變成錯誤 PASS 的缺陷才在本期修 |
