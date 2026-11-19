@@ -9,7 +9,7 @@ import { photoUrl } from "@/lib/api";
 import { notify, toastUndoable } from "@/lib/feedback";
 import type { DiaryRecord, Status } from "@/lib/types";
 import { STATUS_ORDER } from "@shared/aggregate";
-import { isRecurringProblem } from "./core/recurring";
+import { recurringCount, topProblemOf } from "./core/recurring";
 import { usePatchRecord, useSoftDeleteWithUndo } from "./useRecordMutations";
 
 interface RecordDetailSheetProps {
@@ -60,7 +60,8 @@ export function RecordDetailSheet({ record, sequence, records, onNavigate, onClo
   if (record) lastRecord.current = record;
   const r = record ?? lastRecord.current;
 
-  const repeatCount = React.useMemo(() => (r ? isRecurringProblem(records, r) : 0), [records, r]);
+  const top = React.useMemo(() => topProblemOf(records), [records]);
+  const repeatCount = r ? recurringCount(top, r) : 0;
 
   const idx = r ? sequence.findIndex((x) => x.id === r.id) : -1;
   const prev = idx > 0 ? sequence[idx - 1] : undefined;

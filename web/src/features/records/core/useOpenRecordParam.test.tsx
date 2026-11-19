@@ -114,4 +114,31 @@ describe("useOpenRecordParam", () => {
     row.setAttribute("data-record-id", "2");
     expect(result.current.h.getReturnFocus()).toBe(row);
   });
+
+  it("switchDetail 保留 detailPush：close 走 back（再上一頁會到 /prev，而不是停在 /records）", () => {
+    const { result } = setup("/records");
+    const btn = document.body.appendChild(document.createElement("button"));
+    act(() => result.current.h.openDetail(1, btn));
+    act(() => result.current.h.switchDetail(2));
+    act(() => result.current.h.closeDetail());
+    act(() => result.current.nav(-1));
+    expect(result.current.loc.pathname).toBe("/prev");
+  });
+
+  it("面板開著時那一筆被軟刪除（資料更新）→ 網址的 open 被拿掉", () => {
+    const { result, rerender } = setup("/records?open=2");
+    expect(open(result)).toBe("2");
+    rerender({ active: RECORDS.filter((r) => r.id !== 2), loaded: true });
+    expect(open(result)).toBeNull();
+    expect(result.current.h.openRecord).toBeNull();
+  });
+
+  it("載入前（loaded=false）不清除不存在的 id；載入完成後才清", () => {
+    const { result, rerender } = setup("/records?open=2", [], false);
+    expect(open(result)).toBe("2");
+    rerender({ active: [], loaded: false });
+    expect(open(result)).toBe("2");
+    rerender({ active: [], loaded: true });
+    expect(open(result)).toBeNull();
+  });
 });
