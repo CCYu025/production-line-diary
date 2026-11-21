@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ENV_ERROR_KINDS, HOLO_IME_ARGS, buildImeArgs, classifyEnvError, envKindOf, imeExitProblem, judgeRetry, summarizeAttempt, untilHalt } from './ime-env.mjs';
+import { ENV_ERROR_KINDS, HOLO_IME_ARGS, buildImeArgs, classifyEnvError, envKindOf, imeCdpModule, imeExitProblem, judgeRetry, summarizeAttempt, untilHalt } from './ime-env.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 let n = 0;
 const ok = (name, fn) => { fn(); n++; console.log(`PASS ${name}`); };
@@ -115,6 +115,7 @@ const FAKE_CDP = path.join(IME_TMP, 'fake-cdp.mjs');
 fs.writeFileSync(FAKE_CDP, [
   "import fs from 'node:fs';",
   'const count = process.env.FX_COUNT;',
+  "if (process.env.FX_LOADED) fs.appendFileSync(process.env.FX_LOADED, 'loaded' + String.fromCharCode(10)); // records that THIS module was imported (F5: proves the hook is or is not honoured, with no browser)",
   'export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));',
   'export const Browser = { async launch() { return {',
   "  async newPage() { fs.appendFileSync(count, 'page\\n'); return { async goto() { throw new Error('CDP timeout Page.navigate'); }, async eval() { return null; }, async close() {}, async send() {}, async waitFor() {} }; },",
@@ -141,13 +142,35 @@ ok('holo-ime.mjs (behaviour, fake cdp): two methods x two freeze settings still 
   const r = runIme('g5b', ['--methods', 'proj,css3d', '--freeze', '1,0']);
   assert.equal(r.pages, 1, `pages opened: ${r.pages}`); assert.equal(r.code, 2);
 });
-ok('holo-ime.mjs (behaviour, fake cdp): control - the hook is inert without VERIFY_HOLO_SELFTEST=1 (the real cdp.mjs would be used, never the fake)', () => {
-  const d = path.join(IME_TMP, 'g5c'); fs.mkdirSync(d, { recursive: true });
-  const count = path.join(d, 'pages.log'); const env = { ...process.env, HOLO_IME_SELFTEST_CDP: FAKE_CDP, FX_COUNT: count }; delete env.VERIFY_HOLO_SELFTEST;
+// F5: the hook, behaviour level. holo-ime.mjs imports its cdp module at the top (before it reads its arguments), so `--help` is enough to tell whether the fake module was loaded: the fake records its own import
+// in FX_LOADED. Every row of the matrix is a real child process. The fake must load ONLY with VERIFY_HOLO_SELFTEST exactly "1" and CI empty / unset; in every other row the real ./cdp.mjs is used (--help exits before it is launched).
+function hookLoaded(name, extra) {
+  const d = path.join(IME_TMP, name); fs.mkdirSync(d, { recursive: true });
+  const loaded = path.join(d, 'loaded.log'); const env = { ...process.env, HOLO_IME_SELFTEST_CDP: FAKE_CDP, FX_LOADED: loaded, FX_COUNT: path.join(d, 'pages.log'), ...extra };
+  for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
   const r = spawnSync(process.execPath, [path.join(HERE, 'holo-ime.mjs'), '--help'], { cwd: d, encoding: 'utf8', env });
-  assert.equal(r.status, 0); assert.ok(!fs.existsSync(count), 'the fake cdp module must not be loaded without the self-test switch');
+  assert.equal(r.status, 0, name + ': ' + r.stderr.slice(0, 300));
+  return fs.existsSync(loaded);
+}
+ok('holo-ime.mjs (behaviour): the fake cdp module is loaded with VERIFY_HOLO_SELFTEST=1 and CI unset or empty (positive control: the marker really fires)', () => {
+  assert.equal(hookLoaded('h-on', { VERIFY_HOLO_SELFTEST: '1', CI: undefined }), true);
+  assert.equal(hookLoaded('h-on-ci-empty', { VERIFY_HOLO_SELFTEST: '1', CI: '' }), true, 'an empty CI is "not set"');
+});
+ok('holo-ime.mjs (behaviour): with CI non-empty the fake is NEVER loaded, even with VERIFY_HOLO_SELFTEST=1 and HOLO_IME_SELFTEST_CDP set', () => {
+  for (const [i, ci] of ['true', '1', 'yes', ' '].entries()) assert.equal(hookLoaded('h-ci' + i, { VERIFY_HOLO_SELFTEST: '1', CI: ci }), false, 'CI=' + JSON.stringify(ci));
+});
+ok('holo-ime.mjs (behaviour): the fake is NEVER loaded unless VERIFY_HOLO_SELFTEST is exactly "1" (unset, "0", "true", "", " 1", "1 ", "11")', () => {
+  assert.equal(hookLoaded('h-unset', { VERIFY_HOLO_SELFTEST: undefined, CI: undefined }), false);
+  for (const [i, v] of ['0', 'true', '', ' 1', '1 ', '11', 'yes'].entries()) assert.equal(hookLoaded('h-sw' + i, { VERIFY_HOLO_SELFTEST: v, CI: undefined }), false, 'VERIFY_HOLO_SELFTEST=' + JSON.stringify(v));
+});
+ok('imeCdpModule (the one rule holo-ime.mjs and verify-holo --dump-hooks share): same matrix as a pure function; no hook value = the real ./cdp.mjs', () => {
+  assert.equal(imeCdpModule({ VERIFY_HOLO_SELFTEST: '1', HOLO_IME_SELFTEST_CDP: '/x/fake.mjs' }), '/x/fake.mjs');
+  assert.equal(imeCdpModule({ VERIFY_HOLO_SELFTEST: '1', CI: '', HOLO_IME_SELFTEST_CDP: '/x/fake.mjs' }), '/x/fake.mjs');
+  for (const e of [{ VERIFY_HOLO_SELFTEST: '1', CI: 'true', HOLO_IME_SELFTEST_CDP: '/x/f.mjs' }, { VERIFY_HOLO_SELFTEST: '0', HOLO_IME_SELFTEST_CDP: '/x/f.mjs' }, { HOLO_IME_SELFTEST_CDP: '/x/f.mjs' }, { VERIFY_HOLO_SELFTEST: '1' }, { VERIFY_HOLO_SELFTEST: '1', HOLO_IME_SELFTEST_CDP: '' }, {}]) assert.equal(imeCdpModule(e), './cdp.mjs', JSON.stringify(e));
+});
+ok('holo-ime.mjs loads its cdp module through imeCdpModule(process.env) and nothing else reads HOLO_IME_SELFTEST_CDP: the behaviour rows above and the pure function are one rule', () => {
   const src = fs.readFileSync(path.join(HERE, 'holo-ime.mjs'), 'utf8');
-  assert.match(src, /process\.env\.VERIFY_HOLO_SELFTEST === '1' && !process\.env\.CI && process\.env\.HOLO_IME_SELFTEST_CDP/);
+  assert.match(src, /imeCdpModule\(process\.env\)/); assert.doesNotMatch(src, /process\.env\.HOLO_IME_SELFTEST_CDP/);
 });
 fs.rmSync(IME_TMP, { recursive: true, force: true });
 console.log(`\n${n} passed`);

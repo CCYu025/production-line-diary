@@ -32,7 +32,9 @@ import { baseUnavailableDecision, classifyFails, buildHandoffArgs, handoffAllows
 import { buildImeArgs, envKindOf, imeExitProblem, judgeRetry, summarizeAttempt } from './ime-env.mjs';
 import { HEARTBEAT_MS, applySuspend, applyTimeout, classifySuspend, clock, findGaps } from './suspend.mjs';
 import { personalHit, profilePathHit, themeKeyLines } from './redline-rules.mjs';
-import { MEASURE_ID, buildKey, cacheDirProblem, hashDir, hashFile, readEntry, writeEntry } from './base-cache.mjs';
+import { MEASURE_ID, buildKey, cacheDirProblem, hashDir, hashEnvInputs, hashFile, readEntry, writeEntry } from './base-cache.mjs';
+import { scrubPathText, scrubTree } from './scrub.mjs';
+import { imeCdpModule } from './ime-env.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
@@ -52,8 +54,7 @@ const ITEM_DEFS = [
   ['lab-bundle', 'C'], ['c1-web', 'C', T], ['c1-os', 'C', T], ['os-e2e', 'C', T], ['os-handoff', 'C', T], ['os-handoff-4x', 'C', T],
   ['holo-ime', 'D', T], ['holo-still', 'D', T], ['holo-perf', 'D', T], ['holo-perf-20k', 'D', T],
 ];
-if (A.help) {
-  console.log(`npm run verify:holo -- [--base <main worktree>] [--quick] [--full] [--only a,b] [--out <dir>] [--allow-software] [--diff-base main] [--no-cache] [--no-fail-fast]
+const USAGE = `npm run verify:holo -- [--base <main worktree>] [--quick] [--full] [--only a,b] [--out <dir>] [--allow-software] [--diff-base main] [--no-cache] [--no-fail-fast]
   --base            main worktree for the c1 zero-diff items (3115) and entry-delta-vs-base. Without it those three are SKIP.
   --quick           only groups A and B (about 3 minutes, for the coordinator while developing). Delivery and L1 run the full version.
                     The full version runs A and B first (the quick stage); if any item there is FAIL or INVALID, C and D are SKIP ("not run: quick stage failed (ids)").
@@ -64,10 +65,12 @@ if (A.help) {
   --out <dir>       default verify-out/holo
   --allow-software  let D items run on a software WebGL renderer; their PASS is then downgraded to INVALID
   --diff-base       ref for the B group (git diff <ref>...HEAD), default main
-exit: 0 all PASS | 1 any FAIL | 2 SKIP / INVALID without FAIL`);
-  process.exit(0);
-}
-const only = A.only ? new Set(A.only.split(',').map((s) => s.trim()).filter(Boolean)) : null;
+exit: 0 all PASS | 1 any FAIL | 2 SKIP / INVALID without FAIL`;
+if (A.help) { console.log(USAGE); process.exit(0); }
+// F4: --only given but naming nothing ("", ",", " ", ", ,") is a usage error, not "run everything": it must not start a server, a build or create any folder (this check is before every mkdir)
+const only = A.only !== undefined ? new Set(A.only.split(',').map((s) => s.trim()).filter(Boolean)) : null;
+if (only && only.size === 0) { console.error(`verify-holo: --only needs at least one item id (got ${JSON.stringify(A.only)}); nothing was run
+${USAGE}`); process.exit(2); }
 if (only) for (const id of only) if (!ITEM_DEFS.some((d) => d[0] === id)) { console.error(`verify-holo: unknown id "${id}"; known: ${ITEM_DEFS.map((d) => d[0]).join(', ')}`); process.exit(2); }
 
 // Test hooks for verify-holo.selftest.mjs ONLY (all inert unless VERIFY_HOLO_SELFTEST=1): stub the build and the servers, swap the os-handoff / holo-ime scripts, shorten the command timer,
@@ -98,7 +101,9 @@ if (ST && process.env.VERIFY_HOLO_SELFTEST_FAKESTATUS) {
 if (A['dump-hooks']) {
   // prints and exits: writes nothing (no verify-holo.json, no --out folder, no scratch folder). verify-holo.selftest.mjs (g1) proves it.
   console.log(JSON.stringify({ st: ST, handoffScript: path.basename(HANDOFF_SCRIPT), imeScript: path.basename(IME_SCRIPT), imeStub: IME_STUB, timeoutMs: TIMEOUT_MS, baseFail: BASE_FAIL, fakePass: FAKE_PASS, baselineFile: path.basename(BASELINE_FILE),
-    bundleScript: path.basename(BUNDLE_SCRIPT), fakeStatus: FAKE_STATUS }));
+    bundleScript: path.basename(BUNDLE_SCRIPT), fakeStatus: FAKE_STATUS,
+    // holo-ime.mjs reads this hook itself (HOLO_IME_SELFTEST_CDP); the rule lives in ime-env.mjs imeCdpModule() so holo-ime and this table cannot drift apart. null = the real cdp.mjs is used.
+    imeCdpModule: (() => { const m = imeCdpModule(process.env); return m === './cdp.mjs' ? null : path.basename(m); })() }));
   process.exit(0);
 }
 
@@ -117,14 +122,10 @@ fs.mkdirSync(LOGS, { recursive: true });
 const rel = (p) => path.relative(OUT, p).split(path.sep).join('/');
 /** how a --base path is shown in logs / messages / json: never the absolute path (it can contain a user name), only the last folder */
 const shortBase = () => `…/${path.basename(path.resolve(A.base))}`;
-/** log text: every spelling of the absolute --base path (as given, resolved, with / or \) becomes shortBase(); the logs are the evidence people paste into reports */
-const scrubBase = (t) => {
-  if (!A.base) return t;
-  const abs = path.resolve(A.base);
-  let out = String(t);
-  for (const v of new Set([abs, abs.split(path.sep).join('/'), abs.split('/').join('\\'), A.base, A.base.split('\\').join('/')])) if (v.length > 3) out = out.split(v).join(shortBase());
-  return out;
-};
+/** text of any evidence file: every spelling of the absolute --base path (as given, resolved, / or \, JSON-escaped \, mixed slashes) becomes shortBase(); scrub.mjs. The same function scrubs the whole --out folder (scrubOut). */
+const scrubBase = (t) => (A.base ? scrubPathText(t, { given: A.base, resolved: path.resolve(A.base), shortName: shortBase() }) : String(t));
+/** F2: after every item (and at the end) rewrite every file under --out that still contains the --base path: logs, the sub-scripts' raw JSON (entry-delta-base.json `dist`, c1 / os-e2e results...), anything. */
+const scrubOut = () => { if (A.base) scrubTree(OUT, scrubBase); };
 const BL = JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8'));
 // The B group reads `git diff <diff-base>...HEAD` (commits only), while every other item judges the working tree. A dirty tree makes them judge different programs, so B is INVALID then.
 const DIRTY = (spawnSync('git', ['status', '--porcelain'], { cwd: REPO, encoding: 'utf8' }).stdout ?? '').split('\n').filter(Boolean);
@@ -200,6 +201,7 @@ function finish(why = null) {
   // test hooks active: never PASS, never exit 0. A FAIL keeps exit 1 (the more informative non-zero code; callers that test for "not 0" are safe either way), everything else is 2.
   const code = overallExit({ fail: s.fail, skip: s.skip, invalid: s.invalid, selftest: ST, incomplete: !!why });
   writeJson({ finishedAt: new Date().toISOString(), exitCode: code });
+  scrubOut();
   const parts = [`${s.pass}/${s.total} pass`];
   if (s.fail.length) parts.push(`${s.fail.length} fail (${s.fail.join(', ')})`);
   if (s.skip.length) parts.push(`${s.skip.length} skip (${s.skip.join(', ')})`);
@@ -382,14 +384,20 @@ function baseCacheInfo(root) {
   const status = gitOut(['status', '--porcelain'], root);
   if (!headFull || status === null) return { mode: 'off', reason: 'base worktree is not a readable git worktree' };
   if (status !== '') return { mode: 'off', reason: `base worktree is not clean (${status.split('\n').length} entries): a dirty worktree is never cached` };
+  // F1: build inputs that git does not see. (1) the installed tree: node_modules/.package-lock.json is what `npm install` really put on disk (package-lock.json only says what was asked for); without it the
+  // installed tree has no identity, so there is no key. (2) every .env* file Vite can read (vite root = web/, no envDir; the repo root too, to be strict) plus the VITE_* / NODE_ENV variables of this process.
+  const nodeModulesHash = hashFile(path.join(root, 'node_modules', '.package-lock.json'));
+  if (nodeModulesHash === 'missing') return { mode: 'off', reason: 'base node_modules/.package-lock.json is missing: the installed tree has no identity, so it is not cached' };
   const key = buildKey({
     baseHead: headFull, clean: true, lockHash: hashFile(path.join(root, 'package-lock.json')), node: process.version,
+    nodeModulesHash, envHash: hashEnvInputs({ dirs: [path.join(root, 'web'), root], env: process.env }),
     scripts: { 'os-bundle.mjs': hashFile(path.join(HERE, 'os-bundle.mjs')), 'bundle-graph.mjs': hashFile(path.join(HERE, 'bundle-graph.mjs')), 'holo-baseline.json': hashFile(BASELINE_FILE) }, params: MEASURE_ID,
   });
+  if (!key) return { mode: 'off', reason: 'no cache key could be built' };
   return { mode: 'on', key };
 }
 /** json-friendly record of what the cache did for the base side (verify-holo.json, item value.baseCache) */
-const cacheSummary = (b, extra = {}) => ({ mode: b.info.mode, ...(b.info.mode === 'off' ? { reason: b.info.reason } : { keyDigest: b.info.key.digest.slice(0, 16), key: { ...b.info.key.summary, baseHead: b.info.key.summary.baseHead.slice(0, 12), lockHash: b.info.key.summary.lockHash.slice(0, 12), scripts: Object.fromEntries(Object.entries(b.info.key.summary.scripts).map(([k, h]) => [k, h.slice(0, 12)])) } }), ...extra });
+const cacheSummary = (b, extra = {}) => ({ mode: b.info.mode, ...(b.info.mode === 'off' ? { reason: b.info.reason } : { keyDigest: b.info.key.digest.slice(0, 16), key: { ...b.info.key.summary, baseHead: b.info.key.summary.baseHead.slice(0, 12), lockHash: b.info.key.summary.lockHash.slice(0, 12), nodeModulesHash: b.info.key.summary.nodeModulesHash.slice(0, 12), envHash: b.info.key.summary.envHash.slice(0, 12), scripts: Object.fromEntries(Object.entries(b.info.key.summary.scripts).map(([k, h]) => [k, h.slice(0, 12)])) } }), ...extra });
 /** makes sure the --base worktree has a web/dist that is the build of its current commit (memoized; both the c1 server and entry-delta-vs-base call it).
  *  cache on: a stored dist hash must equal the hash of the dist that is there now, else it is rebuilt; no key (dirty / --no-cache): always rebuilt, nothing stored. */
 const ensureBaseBuild = (L) => once('basebuild', async () => {
@@ -536,8 +544,10 @@ async function labBundle(L) {
   const r = await L.node(path.join(HERE, 'os-bundle.mjs'), ['--dist', LAB_DIST, '--expect-holo', '--json', json]);
   const j = readJsonSafe(json);
   const core = j?.groups?.find((g) => g.id === 'holo-core');
-  const v = { exit: r.code, holoCoreGzip: core?.gzip ?? null, holoCoreLimit: core?.limit ?? null, fails: j?.fails ?? null };
-  const th = { exit: 0, holoCoreMaxBytes: BL.labBundle.holoCoreMaxBytes };
+  // designer ruling 2026-11-19: the lab build's entry delta vs bundle-baseline.json is RECORDED here (labEntryGzip / labEntryBaseline / labEntryDeltaBytes), never judged: os-bundle --expect-holo does not apply P4a.
+  // The shipped (default) build's entry delta is judged by ci-bundle, and A5-holo (no features/holo anywhere in the default build's dist) lives there too.
+  const v = { exit: r.code, holoCoreGzip: core?.gzip ?? null, holoCoreLimit: core?.limit ?? null, labEntryGzip: j?.entryGzip ?? null, labEntryBaseline: j?.baseline ?? null, labEntryDeltaBytes: j?.deltaBytes ?? null, fails: j?.fails ?? null };
+  const th = { exit: 0, holoCoreMaxBytes: BL.labBundle.holoCoreMaxBytes, labEntryDelta: 'recorded, not judged' };
   const bad = [];
   if (r.code !== 0) bad.push(`os-bundle --expect-holo exit ${r.code}`);
   if (core && core.gzip > th.holoCoreMaxBytes) bad.push(`holo-core ${core.gzip} > ${th.holoCoreMaxBytes}`);
@@ -751,6 +761,7 @@ async function main() {
     if (res.status === 'SKIP' || res.status === 'N/A') it.log = null;
     console.log(`${res.status.padEnd(7)} ${it.id.padEnd(16)} ${(it.durationMs / 1000).toFixed(0).padStart(4)}s  ${JSON.stringify(it.value)}${it.reason ? '  — ' + it.reason : ''}`);
     writeJson();
+    scrubOut(); // F2: the sub-scripts' own JSON outputs (os-bundle's `dist` field, c1 / os-e2e results...) are evidence too
   }
   finish(interrupted ? 'interrupted' : null);
 }

@@ -216,16 +216,16 @@ const runRaw = (name, args, env = {}) => {
 };
 const dumpHooks = (name, env) => JSON.parse(runRaw(name, ['--dump-hooks'], env).stdout);
 const HOOK_VARS = { VERIFY_HOLO_SELFTEST_HANDOFF: '/x/fake-handoff.mjs', VERIFY_HOLO_SELFTEST_IME: '/x/fake-ime.mjs', VERIFY_HOLO_SELFTEST_TIMEOUT_MS: '1234', VERIFY_HOLO_SELFTEST_BASE_FAIL: 'boom',
-  VERIFY_HOLO_SELFTEST_FAKEPASS: '1', VERIFY_HOLO_SELFTEST_BASELINE: '/x/other-baseline.json', VERIFY_HOLO_SELFTEST_BUNDLE: '/x/fake-bundle.mjs', VERIFY_HOLO_SELFTEST_FAKESTATUS: '{"ci-check":"FAIL"}' };
-const INERT = { st: false, handoffScript: 'os-handoff.mjs', imeScript: 'holo-ime.mjs', imeStub: false, timeoutMs: 40 * 60 * 1000, baseFail: null, fakePass: false, baselineFile: 'holo-baseline.json', bundleScript: 'os-bundle.mjs', fakeStatus: null };
+  VERIFY_HOLO_SELFTEST_FAKEPASS: '1', VERIFY_HOLO_SELFTEST_BASELINE: '/x/other-baseline.json', VERIFY_HOLO_SELFTEST_BUNDLE: '/x/fake-bundle.mjs', VERIFY_HOLO_SELFTEST_FAKESTATUS: '{"ci-check":"FAIL"}', HOLO_IME_SELFTEST_CDP: '/x/fake-cdp.mjs' };
+const INERT = { st: false, handoffScript: 'os-handoff.mjs', imeScript: 'holo-ime.mjs', imeStub: false, timeoutMs: 40 * 60 * 1000, baseFail: null, fakePass: false, baselineFile: 'holo-baseline.json', bundleScript: 'os-bundle.mjs', fakeStatus: null, imeCdpModule: null };
 
-ok('(h-1) every sub-hook (handoff script, holo-ime script, holo-ime url stub, timeout, base-fail, fake-pass, baseline file) is inert without VERIFY_HOLO_SELFTEST=1 (unset, "0", "true"), even with all their variables set; with "1" each one takes effect (control)', () => {
+ok('(h-1) every sub-hook (handoff script, holo-ime script, holo-ime url stub, holo-ime cdp module, timeout, base-fail, fake-pass, baseline file) is inert without VERIFY_HOLO_SELFTEST=1 (unset, "0", "true"), even with all their variables set; with "1" each one takes effect (control)', () => {
   for (const [i, v] of [undefined, '0', 'true'].entries()) {
     const d = dumpHooks(`hk${i}`, { ...HOOK_VARS, VERIFY_HOLO_SELFTEST: v });
     for (const k of Object.keys(INERT)) assert.deepEqual(d[k], INERT[k], `with VERIFY_HOLO_SELFTEST=${JSON.stringify(v)} the hook "${k}" must be inert (got ${JSON.stringify(d[k])})`);
   }
   const on = dumpHooks('hk-on', HOOK_VARS);
-  assert.deepEqual(on, { st: true, handoffScript: 'fake-handoff.mjs', imeScript: 'fake-ime.mjs', imeStub: true, timeoutMs: 1234, baseFail: 'boom', fakePass: true, baselineFile: 'other-baseline.json', bundleScript: 'fake-bundle.mjs', fakeStatus: { 'ci-check': 'FAIL' } });
+  assert.deepEqual(on, { st: true, handoffScript: 'fake-handoff.mjs', imeScript: 'fake-ime.mjs', imeStub: true, timeoutMs: 1234, baseFail: 'boom', fakePass: true, baselineFile: 'other-baseline.json', bundleScript: 'fake-bundle.mjs', fakeStatus: { 'ci-check': 'FAIL' }, imeCdpModule: 'fake-cdp.mjs' });
 });
 ok('(h-2) VERIFY_HOLO_SELFTEST=1 with every item a fake PASS (all items PASS) still never exits 0: exit 2, label SELFTEST (not PASS), json exitCode 2 and selftest:true', () => {
   const o = path.join(TMP, 'fp-out');
@@ -397,23 +397,27 @@ fs.writeFileSync(FAKE_BUNDLE, [
   "const a = process.argv.slice(2); const arg = (k) => a[a.indexOf(k) + 1]; const dist = arg('--dist');",
   "fs.appendFileSync(path.join(process.env.FX_DIR, 'bundle-calls.log'), dist + String.fromCharCode(10));",
   "if (process.env.FX_ECHO_BASE) console.log('measuring ' + dist + ' (' + dist.split(String.fromCharCode(92)).join('/') + ')');",
-  "fs.writeFileSync(arg('--json'), JSON.stringify({ entryGzip: dist.startsWith(process.env.FX_BASE_ROOT) ? Number(process.env.FX_BASE_ENTRY || 50) : 100 }));",
+  "const BS = String.fromCharCode(92); const mixed = dist.split(BS).join('/').replace('/', BS); // forward slashes with the first separator flipped: a mixed spelling",
+  "const spellings = [dist, dist.split(BS).join('/'), JSON.stringify(dist), JSON.stringify(JSON.stringify(dist)), mixed, mixed.split(BS).join(BS + BS)];",
+  "if (process.env.FX_SIDECAR) { fs.writeFileSync(arg('--json').replace(/[.]json$/, '') + '.raw.txt', spellings.join(String.fromCharCode(10))); fs.mkdirSync(path.join(path.dirname(arg('--json')), 'sub'), { recursive: true }); fs.writeFileSync(path.join(path.dirname(arg('--json')), 'sub', 'detail'), spellings.join(' ; ')); if (dist.startsWith(process.env.FX_BASE_ROOT)) fs.writeFileSync(path.join(process.env.FX_DIR, 'emitted.txt'), spellings.join(String.fromCharCode(10))); }",
+  "fs.writeFileSync(arg('--json'), JSON.stringify({ dist, entryGzip: dist.startsWith(process.env.FX_BASE_ROOT) ? Number(process.env.FX_BASE_ENTRY || 50) : 100 }, null, 2));",
   '',
 ].join(String.fromCharCode(10)));
 const git = (cwd, ...args) => { const e = { ...process.env }; delete e.GIT_DIR; delete e.GIT_WORK_TREE; delete e.GIT_INDEX_FILE; const r = spawnSync('git', ['-c', 'user.name=selftest', '-c', 'user.email=selftest@example.invalid', ...args], { cwd, encoding: 'utf8', env: e }); assert.equal(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`); return r.stdout.trim(); };
-function mkScenario(name) {
-  const root = path.join(TMP, 'b1-' + name); const base = path.join(root, 'base'); const cache = path.join(root, 'cache'); const fx = path.join(root, 'fx');
+function mkScenario(name, { under = null } = {}) {
+  const root = path.join(TMP, ...(under ? [under] : []), 'b1-' + name); const base = path.join(root, 'base'); const cache = path.join(root, 'cache'); const fx = path.join(root, 'fx');
   for (const d of [base, path.join(base, 'backend'), fx]) fs.mkdirSync(d, { recursive: true });
   const w = (f, t) => fs.writeFileSync(path.join(base, f), t);
   w('package.json', JSON.stringify({ name: 'fake-base', version: '0.0.0', private: true, scripts: { build: 'node build.js' } }));
   w('build.js', "const fs = require('fs'); fs.mkdirSync('web/dist', { recursive: true }); fs.writeFileSync('web/dist/index.html', 'built ' + (process.env.FX_TAG || '1')); fs.appendFileSync(process.env.FX_DIR + '/builds.log', 'b\\n');\n");
-  w('.gitignore', 'web/dist\nnode_modules\n'); w('package-lock.json', '{}\n'); w(path.join('backend', 'server.js'), '// fake\n');
+  w('.gitignore', 'web/dist\nnode_modules\n.env*\n'); w('package-lock.json', '{}\n'); w(path.join('backend', 'server.js'), '// fake\n');
   git(base, 'init', '-q'); git(base, 'add', '-A'); git(base, 'commit', '-q', '-m', 'init');
+  fs.mkdirSync(path.join(base, 'node_modules'), { recursive: true }); fs.writeFileSync(path.join(base, 'node_modules', '.package-lock.json'), '{"installed":1}\n'); // gitignored: git status stays clean
   return { root, base, cache, fx, n: 0 };
 }
-function goB1(sc, { args = [], env = {}, only = 'entry-delta-vs-base' } = {}) {
-  const o = path.join(sc.root, `out${++sc.n}`);
-  const r = spawnSync(process.execPath, [path.join(HERE, 'verify-holo.mjs'), '--only', only, '--base', sc.base, '--out', o, ...args], {
+function goB1(sc, { args = [], env = {}, only = 'entry-delta-vs-base', out = null, script = path.join(HERE, 'verify-holo.mjs') } = {}) {
+  const o = out ?? path.join(sc.root, `out${++sc.n}`);
+  const r = spawnSync(process.execPath, [script, '--only', only, '--base', sc.base, '--out', o, ...args], {
     cwd: sc.root, encoding: 'utf8', env: childEnv({ VERIFY_HOLO_SELFTEST_BUNDLE: FAKE_BUNDLE, FX_DIR: sc.fx, FX_BASE_ROOT: sc.base, VERIFY_HOLO_CACHE_DIR: sc.cache, ...env }),
   });
   const jf = path.join(o, 'verify-holo.json');
@@ -498,6 +502,86 @@ ok('(g7b) the base path is also scrubbed from child-process output in the logs (
   const sc = mkScenario('g7b'); const r = goB1(sc, { env: { FX_ECHO_BASE: '1' } });
   const log = fs.readFileSync(path.join(r.out, 'logs', 'entry-delta-vs-base.log'), 'utf8');
   assert.ok(log.includes('…/' + path.basename(sc.base))); for (const bad of [sc.base, sc.base.split(path.sep).join('/')]) assert.ok(!log.includes(bad), `log contains ${bad}`);
+});
+
+// ================================================================== verification-tool PR (F1-F5, lab-bundle P4): every case below has a mutation that makes it fail (the PR body lists them).
+const BS = String.fromCharCode(92);
+const flipFirst = (p) => p.split(BS).join('/').replace('/', BS);
+/** every spelling of a path that the sweep must remove (the same ones the fake bundle emits, plus the doubled-slash and lower-case forms) */
+const spellingsOf = (p) => [p, p.split(BS).join('/'), p.split('/').join(BS), JSON.stringify(p).slice(1, -1), JSON.stringify(JSON.stringify(p)).slice(1, -1), flipFirst(p), flipFirst(p).split(BS).join(BS + BS)];
+const filesText = (dir) => walkFiles(dir).map((f) => [path.relative(dir, f), fs.readFileSync(f, 'utf8')]);
+
+ok('(f1-1) F1: gitignored build inputs are part of the key. web/.env.local added, edited, removed; node_modules/.package-lock.json edited: each is a MISS (rebuild + re-measure) with web/dist untouched; unchanged again = hit', () => {
+  const sc = mkScenario('f1a'); const envFile = path.join(sc.base, 'web', '.env.local'); fs.mkdirSync(path.join(sc.base, 'web'), { recursive: true });
+  const a = goB1(sc); assert.equal(a.it.value.cached, false); assert.equal(a.builds, 1);
+  const b = goB1(sc); assert.equal(b.it.value.cached, true, 'premise: the unchanged base hits'); assert.equal(b.builds, 1);
+  assert.equal(git(sc.base, 'status', '--porcelain'), '', 'premise: the base worktree stays clean (the inputs are gitignored)');
+  fs.writeFileSync(envFile, 'VITE_FLAG=1'); assert.equal(git(sc.base, 'status', '--porcelain'), '', 'premise: .env.local is invisible to git');
+  const c = goB1(sc); assert.equal(c.it.value.cached, false, 'a new web/.env.local must not hit the old entry'); assert.equal(c.builds, 2); assert.equal(c.baseMeasures, 2); assert.equal(c.it.value.baseCache.mode, 'on'); assert.equal(walkFiles(sc.cache).length, 2);
+  const c2 = goB1(sc); assert.equal(c2.it.value.cached, true); assert.equal(c2.builds, 2);
+  fs.writeFileSync(envFile, 'VITE_FLAG=2');
+  const d = goB1(sc); assert.equal(d.it.value.cached, false, 'edited .env.local content'); assert.equal(d.builds, 3);
+  fs.rmSync(envFile);
+  const e = goB1(sc); assert.equal(e.it.value.cached, true, 'removed again = the original key: its entry hits'); assert.equal(e.builds, 3);
+  fs.writeFileSync(path.join(sc.base, 'node_modules', '.package-lock.json'), '{"installed":2}\n');
+  const f = goB1(sc); assert.equal(f.it.value.cached, false, 'a changed installed tree (node_modules/.package-lock.json)'); assert.equal(f.builds, 4); assert.equal(f.it.value.baseCache.mode, 'on');
+  const g = goB1(sc); assert.equal(g.it.value.cached, true); assert.equal(g.builds, 4);
+});
+ok('(f1-2) F1: node_modules/.package-lock.json missing = not cacheable: no read, no write (cache folder bit-identical), rebuilt every time, reason in baseCache; restoring it makes the earlier entry hit again', () => {
+  const sc = mkScenario('f1b'); const lock = path.join(sc.base, 'node_modules', '.package-lock.json'); const original = fs.readFileSync(lock, 'utf8');
+  goB1(sc); goB1(sc); const before = snap(sc.cache);
+  fs.rmSync(lock);
+  const a = goB1(sc); assert.equal(a.it.status, 'PASS'); assert.equal(a.it.value.cached, false); assert.equal(a.it.value.baseCache.mode, 'off'); assert.match(a.it.value.baseCache.reason, /package-lock\.json is missing/); assert.equal(a.builds, 2); assert.equal(snap(sc.cache), before, 'no write');
+  const b = goB1(sc); assert.equal(b.it.value.cached, false); assert.equal(b.builds, 3, 'and no read: rebuilt again although a valid entry for the same commit exists');
+  fs.writeFileSync(lock, original);
+  const c = goB1(sc); assert.equal(c.it.value.cached, true); assert.equal(c.builds, 3);
+  const sc2 = mkScenario('f1b2'); fs.rmSync(path.join(sc2.base, 'node_modules'), { recursive: true }); const d = goB1(sc2); assert.equal(d.it.value.baseCache.mode, 'off'); assert.equal(fs.existsSync(sc2.cache), false, 'a base with no node_modules at all never creates the cache folder');
+});
+ok('(f1-3) F1: the VITE_* variables of the run are part of the key (a build reads them); a variable vite does not expose is not', () => {
+  const sc = mkScenario('f1c'); goB1(sc, { env: { VITE_X: undefined } });
+  const a = goB1(sc, { env: { VITE_X: '1' } }); assert.equal(a.it.value.cached, false); assert.equal(a.builds, 2);
+  const b = goB1(sc, { env: { VITE_X: '1' } }); assert.equal(b.it.value.cached, true);
+  const c = goB1(sc, { env: { VITE_X: '2' } }); assert.equal(c.it.value.cached, false); assert.equal(c.builds, 3);
+  const d = goB1(sc, { env: { VITE_X: undefined, SOME_UNRELATED_VARIABLE: 'x' } }); assert.equal(d.it.value.cached, true, 'the original key (no VITE_X) hits; an unrelated variable changes nothing'); assert.equal(d.builds, 3);
+  assert.equal(a.it.value.baseCache.key.envHash.length, 12); assert.equal(a.it.value.baseCache.key.nodeModulesHash.length, 12);
+});
+ok('(f5-1) F5: the verification scripts that decide the number are part of the key by CONTENT, through the real verify-holo.mjs: a clone of scripts/verify whose bundle-graph.mjs, holo-baseline.json or os-bundle.mjs changes by one byte misses; unchanged = hit', () => {
+  const cloneRoot = path.join(TMP, 'f5-clone'); const cv = path.join(cloneRoot, 'scripts', 'verify'); fs.mkdirSync(cv, { recursive: true });
+  for (const f of fs.readdirSync(HERE)) if (/[.](?:mjs|json)$/.test(f) && f !== 'verify-holo.selftest.mjs') fs.copyFileSync(path.join(HERE, f), path.join(cv, f));
+  const sc = mkScenario('f5'); const script = path.join(cv, 'verify-holo.mjs'); const go = () => goB1(sc, { script });
+  const a = go(); assert.equal(a.it.status, 'PASS', JSON.stringify(a.it) + a.r.stderr.slice(0, 300)); assert.equal(a.it.value.cached, false); assert.equal(a.builds, 1);
+  const b = go(); assert.equal(b.it.value.cached, true, 'premise: the clone itself hits'); assert.equal(b.builds, 1);
+  const k0 = b.it.value.baseCache.keyDigest;
+  for (const [i, f] of ['bundle-graph.mjs', 'holo-baseline.json', 'os-bundle.mjs'].entries()) {
+    const p = path.join(cv, f); const orig = fs.readFileSync(p);
+    fs.writeFileSync(p, Buffer.concat([orig, Buffer.from(f.endsWith('.json') ? ' ' : '\n// changed\n')]));
+    const m = go(); assert.equal(m.it.value.cached, false, f + ' changed must miss'); assert.notEqual(m.it.value.baseCache.keyDigest, k0, f); assert.equal(m.builds, 2 + i);
+    fs.writeFileSync(p, orig);
+    const back = go(); assert.equal(back.it.value.cached, true, f + ' restored: the original entry hits'); assert.equal(back.it.value.baseCache.keyDigest, k0);
+  }
+});
+ok('(f2-1) F2: nothing under --out contains the --base path in ANY spelling (raw, forward, JSON-escaped, double-escaped, mixed, doubled) - not the logs, not verify-holo.json, not entry-delta-base.json "dist", not the sub-script sidecars (any extension, nested)', () => {
+  const sc = mkScenario('f2', { under: 'someone' }); const out = path.join(TMP, 'f2-out');
+  const r = goB1(sc, { out, env: { FX_ECHO_BASE: '1', FX_SIDECAR: '1' } });
+  assert.equal(r.it.status, 'PASS', JSON.stringify(r.it)); assert.ok(r.baseMeasures >= 1, 'premise: the base was measured');
+  const emitted = fs.readFileSync(path.join(sc.fx, 'emitted.txt'), 'utf8'); assert.ok(/someone/.test(emitted), 'premise: the sub-script really emitted base paths');
+  const files = filesText(out); const names = files.map(([n2]) => n2.split(path.sep).join('/'));
+  for (const must of ['entry-delta-base.json', 'entry-delta-base.raw.txt', 'sub/detail', 'verify-holo.json', 'logs/entry-delta-vs-base.log']) assert.ok(names.includes(must), 'premise: ' + must + ' exists: ' + names.join(','));
+  const bad = [...spellingsOf(sc.base), ...spellingsOf(path.join(sc.base, 'web', 'dist')), 'someone'];
+  for (const [name, text] of files) for (const b of bad) assert.ok(!text.toLowerCase().includes(b.toLowerCase()), name + ' contains ' + JSON.stringify(b));
+  const dj = JSON.parse(fs.readFileSync(path.join(out, 'entry-delta-base.json'), 'utf8')); assert.match(dj.dist, /^…\/base/, 'the dist field keeps the last folder: ' + dj.dist); assert.equal(dj.entryGzip, 50, 'the measurement itself is untouched');
+  assert.equal(r.it.value.baseEntryGzip, 50);
+});
+ok('(f4) F4: --only with nothing in it ("", ",", " ", ", ,", --only=) is a usage error: exit 2, usage printed, no item started, no server, no --out folder, no default verify-out, no scratch folder', () => {
+  for (const [i, args] of [['--only', ''], ['--only', ','], ['--only', ' '], ['--only', ', ,'], ['--only='], ['--only', ' , ']].entries()) {
+    const t = ownTmp('f4t' + i); const o = path.join(TMP, 'f4-out' + i);
+    const r = runRaw('f4c' + i, [...args, '--out', o], { TEMP: t.TEMP, TMP: t.TMP, TMPDIR: t.TMPDIR });
+    assert.equal(r.exit, 2, JSON.stringify(args) + ': exit ' + r.exit + ' ' + r.stderr.slice(0, 200)); assert.match(r.stderr, /--only needs at least one item id/); assert.match(r.stderr, /npm run verify:holo/, 'usage is printed');
+    assert.equal(fs.existsSync(o), false, JSON.stringify(args) + ': --out must not be created'); assert.deepEqual(fs.readdirSync(r.dir), [], 'the working directory (default verify-out) stays empty'); assert.deepEqual(fs.readdirSync(t.dir), [], 'no scratch folder');
+    assert.doesNotMatch(r.stdout, /^verify:holo /m, 'no run started');
+  }
+  const ctl = runRaw('f4ctl', ['--only', 'redline-grep', '--out', path.join(TMP, 'f4-ctl-out')]); assert.match(ctl.last, /^VERIFY:HOLO SELFTEST/, 'control: a real id still runs');
+  const ws = runRaw('f4ws', ['--only', ' redline-grep , ', '--out', path.join(TMP, 'f4-ws-out')]); assert.match(ws.last, /^VERIFY:HOLO SELFTEST/, 'control: ids are trimmed, an empty piece beside a real id is ignored');
 });
 
 fs.rmSync(TMP, { recursive: true, force: true });
