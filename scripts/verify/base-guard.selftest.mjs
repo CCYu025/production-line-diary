@@ -63,6 +63,8 @@ ok('entry kinds: a directory named .env / .env.local, a junction named .env, a j
   assert.ok(tryLink(t2, path.join(base, 'innocent'), 'junction')); try { refused('junction to a folder named .env.store'); } finally { fs.rmSync(path.join(base, 'innocent'), { recursive: true, force: true }); }
   const gone = path.join(TMP, 'someone', 'targets', 'gone'); fs.mkdirSync(gone, { recursive: true });
   assert.ok(tryLink(gone, path.join(base, '.env.local'), 'junction')); fs.rmdirSync(gone); try { refused('dangling junction named .env.local'); } finally { fs.rmSync(path.join(base, '.env.local'), { recursive: true, force: true }); }
+  const chainB = path.join(TMP, 'someone', 'targets', 'chain-b'); assert.ok(tryLink(t2, chainB, 'junction'));
+  assert.ok(tryLink(chainB, path.join(base, 'chain-a'), 'junction')); try { refused('a junction to a junction to a folder named .env.store (only the realpath name reveals it)'); } finally { fs.rmSync(path.join(base, 'chain-a'), { recursive: true, force: true }); fs.rmSync(chainB, { recursive: true, force: true }); }
   const gone2 = path.join(TMP, 'someone', 'targets', '.env.gone'); fs.mkdirSync(gone2, { recursive: true });
   assert.ok(tryLink(gone2, path.join(base, 'innocent2'), 'junction')); fs.rmdirSync(gone2); try { refused('a dangling junction with an innocent name whose TARGET is called .env.gone (only readlink reveals it)'); } finally { fs.rmSync(path.join(base, 'innocent2'), { recursive: true, force: true }); }
   const tf = path.join(TMP, 'someone', 'targets', '.env'); fs.writeFileSync(tf, SECRET);
