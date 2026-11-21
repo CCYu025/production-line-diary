@@ -34,6 +34,7 @@ import { HEARTBEAT_MS, applySuspend, applyTimeout, classifySuspend, clock, findG
 import { personalHit, profilePathHit, themeKeyLines } from './redline-rules.mjs';
 import { MEASURE_ID, buildKey, cacheDirProblem, hashDir, hashEnvInputs, hashFile, readEntry, writeEntry } from './base-cache.mjs';
 import { scrubPathText, scrubTree } from './scrub.mjs';
+import { checkBase } from './base-guard.mjs';
 import { imeCdpModule } from './ime-env.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -281,9 +282,13 @@ async function startServer(L, key, root, port, env = {}) {
   return p;
 }
 const mainServer = (L) => (ST ? Promise.resolve('http://localhost:0/') : startServer(L, 'branch', REPO, 3114));
+/** base guard (base-guard.mjs): --base must be a linked worktree whose .env* never point at real data. Checked BEFORE anything of the base is read (.env* for the cache key, the cache itself), built or served. null = fine, else a reason without any DATA_DIR value. */
+let baseGuardMemo;
+const baseGuardReason = () => (baseGuardMemo === undefined ? (baseGuardMemo = checkBase(path.resolve(A.base), { real: REAL })) : baseGuardMemo);
 const baseServer = async (L) => {
   const root = path.resolve(A.base);
   if (!fs.existsSync(path.join(root, 'backend', 'server.js'))) throw invalid(`--base ${shortBase()} has no backend/server.js`); // checked before the self-test stub too (self-test g7): the message shows the last folder only
+  { const g = baseGuardReason(); if (g) throw invalid(g); } // before the self-test stub too, and before the cache / build / server of the base
   if (ST) { if (BASE_FAIL) throw invalid(BASE_FAIL); return 'http://localhost:0/'; }
   if (!(await ensureBaseBuild(L)).ok) throw invalid('could not build the --base worktree');
   return startServer(L, 'base', root, 3115);
@@ -428,6 +433,7 @@ async function entryDeltaVsBase(L) {
   if (!(await defaultBuild(L))) throw invalid('default build failed');
   const root = path.resolve(A.base);
   if (!fs.existsSync(root)) return baseSideFail(invalid(`--base ${shortBase()} does not exist`), th);
+  { const g = baseGuardReason(); if (g) return baseSideFail(invalid(g), th); } // before the cache key (which reads the base .env* files) and before any build
   const b = await ensureBaseBuild(L);
   if (!b.ok) return baseSideFail(invalid('could not build the --base worktree'), th);
   // same measuring code for both sides (this worktree's os-bundle.mjs: gzip -9 of the entry static-graph JS)

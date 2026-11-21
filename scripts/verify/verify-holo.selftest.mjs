@@ -12,6 +12,17 @@ import { buildHandoffArgs, handoffAllowsDeviated, handoffExitProblem } from './k
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'pld-vhst-'));
+/** a main checkout and a LINKED worktree of it (what --base must be): returns {root, main, base}. Plain spawnSync: this runs before the later git() helper exists. */
+function mkLinkedBase(name) {
+  const root = path.join(TMP, name); const main = path.join(root, 'main'); const base = path.join(root, 'base');
+  fs.mkdirSync(path.join(main, 'backend'), { recursive: true });
+  fs.writeFileSync(path.join(main, 'backend', 'server.js'), '// fake\n'); fs.writeFileSync(path.join(main, '.gitignore'), 'web/dist\nnode_modules\n.env*\n'); fs.writeFileSync(path.join(main, 'package.json'), '{"name":"x","private":true}');
+  const g = (cwd, ...a) => { const e = { ...process.env }; delete e.GIT_DIR; delete e.GIT_WORK_TREE; delete e.GIT_INDEX_FILE; const r = spawnSync('git', ['-c', 'user.name=selftest', '-c', 'user.email=selftest@example.invalid', ...a], { cwd, encoding: 'utf8', env: e }); assert.equal(r.status, 0, 'git ' + a.join(' ') + ': ' + r.stderr); };
+  g(main, 'init', '-q'); g(main, 'add', '-A'); g(main, 'commit', '-q', '-m', 'init'); g(main, 'worktree', 'add', '-q', '-b', 'wt', base);
+  return { root, main, base };
+}
+let defaultBaseDir = null;
+const defaultBase = () => (defaultBaseDir ??= mkLinkedBase('default-base').base);
 const FAKE = path.join(TMP, 'fake-os-handoff.mjs');
 fs.writeFileSync(FAKE, [
   "import fs from 'node:fs'; import path from 'node:path';",
@@ -45,7 +56,7 @@ function childEnv(env) {
   return e;
 }
 const lastLine = (t) => t.trim().split(String.fromCharCode(10)).pop().trim();
-function run(name, specs, { env = {}, out = null, item = 'os-handoff-4x', base = path.resolve(HERE, '..', '..') } = {}) {
+function run(name, specs, { env = {}, out = null, item = 'os-handoff-4x', base = defaultBase() } = {}) {
   const d = path.join(TMP, name); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, 'branch.json'), JSON.stringify(specs.branch));
   if (specs.base) fs.writeFileSync(path.join(d, 'base.json'), JSON.stringify(specs.base));
@@ -245,7 +256,7 @@ ok('(h-3) the CI refusal leaves nothing behind: no pld-vh-* scratch folder in os
   assert.match(r2.last, /^VERIFY:HOLO SELFTEST/); assert.equal(countIn(b.dir), 0, 'a finished run removes its scratch folder');
 });
 ok('(h-4) entry-delta-vs-base: the --base worktree cannot be built -> FAIL (not INVALID), exit 1, value.baseUnavailable, says base (main) side / cannot be compared with main', () => {
-  const emptyBase = path.join(TMP, 'empty-base'); fs.mkdirSync(emptyBase, { recursive: true }); // no web/dist there: verify-holo tries to build it, the hook makes that fail
+  const emptyBase = mkLinkedBase('empty-base').base; // a linked worktree with no web/dist: verify-holo tries to build it, the hook makes that fail
   const r = run('eb', { branch: CLEAN }, { item: 'entry-delta-vs-base', base: emptyBase, env: { VERIFY_HOLO_SELFTEST_BASE_FAIL: 'could not build the --base worktree' } });
   assert.equal(r.it.status, 'FAIL', JSON.stringify(r.it)); assert.equal(r.exit, 1); assert.match(r.last, /^VERIFY:HOLO SELFTEST .*1 fail \(entry-delta-vs-base\)/);
   assert.equal(r.it.value.baseUnavailable, true); assert.match(r.it.reason, /base \(main\) side could not be started/); assert.match(r.it.reason, /could not build the --base worktree/); assert.match(r.it.reason, /cannot be compared with main/);
@@ -405,19 +416,19 @@ fs.writeFileSync(FAKE_BUNDLE, [
 ].join(String.fromCharCode(10)));
 const git = (cwd, ...args) => { const e = { ...process.env }; delete e.GIT_DIR; delete e.GIT_WORK_TREE; delete e.GIT_INDEX_FILE; const r = spawnSync('git', ['-c', 'user.name=selftest', '-c', 'user.email=selftest@example.invalid', ...args], { cwd, encoding: 'utf8', env: e }); assert.equal(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`); return r.stdout.trim(); };
 function mkScenario(name, { under = null } = {}) {
-  const root = path.join(TMP, ...(under ? [under] : []), 'b1-' + name); const base = path.join(root, 'base'); const cache = path.join(root, 'cache'); const fx = path.join(root, 'fx');
-  for (const d of [base, path.join(base, 'backend'), fx]) fs.mkdirSync(d, { recursive: true });
-  const w = (f, t) => fs.writeFileSync(path.join(base, f), t);
+  const root = path.join(TMP, ...(under ? [under] : []), 'b1-' + name); const main = path.join(root, 'main'); const base = path.join(root, 'base'); const cache = path.join(root, 'cache'); const fx = path.join(root, 'fx');
+  for (const d of [main, path.join(main, 'backend'), fx]) fs.mkdirSync(d, { recursive: true });
+  const w = (f, t) => fs.writeFileSync(path.join(main, f), t);
   w('package.json', JSON.stringify({ name: 'fake-base', version: '0.0.0', private: true, scripts: { build: 'node build.js' } }));
   w('build.js', "const fs = require('fs'); fs.mkdirSync('web/dist', { recursive: true }); fs.writeFileSync('web/dist/index.html', 'built ' + (process.env.FX_TAG || '1')); fs.appendFileSync(process.env.FX_DIR + '/builds.log', 'b\\n');\n");
   w('.gitignore', 'web/dist\nnode_modules\n.env*\n'); w('package-lock.json', '{}\n'); w(path.join('backend', 'server.js'), '// fake\n');
-  git(base, 'init', '-q'); git(base, 'add', '-A'); git(base, 'commit', '-q', '-m', 'init');
+  git(main, 'init', '-q'); git(main, 'add', '-A'); git(main, 'commit', '-q', '-m', 'init'); git(main, 'worktree', 'add', '-q', '-b', 'wt', base); // --base is a LINKED worktree, like pld-wt/h2-base
   fs.mkdirSync(path.join(base, 'node_modules'), { recursive: true }); fs.writeFileSync(path.join(base, 'node_modules', '.package-lock.json'), '{"installed":1}\n'); // gitignored: git status stays clean
-  return { root, base, cache, fx, n: 0 };
+  return { root, main, base, cache, fx, n: 0 };
 }
-function goB1(sc, { args = [], env = {}, only = 'entry-delta-vs-base', out = null, script = path.join(HERE, 'verify-holo.mjs') } = {}) {
+function goB1(sc, { args = [], env = {}, only = 'entry-delta-vs-base', out = null, script = path.join(HERE, 'verify-holo.mjs'), base = sc.base } = {}) {
   const o = out ?? path.join(sc.root, `out${++sc.n}`);
-  const r = spawnSync(process.execPath, [script, '--only', only, '--base', sc.base, '--out', o, ...args], {
+  const r = spawnSync(process.execPath, [script, '--only', only, '--base', base, '--out', o, ...args], {
     cwd: sc.root, encoding: 'utf8', env: childEnv({ VERIFY_HOLO_SELFTEST_BUNDLE: FAKE_BUNDLE, FX_DIR: sc.fx, FX_BASE_ROOT: sc.base, VERIFY_HOLO_CACHE_DIR: sc.cache, ...env }),
   });
   const jf = path.join(o, 'verify-holo.json');
@@ -585,5 +596,56 @@ ok('(f4) F4: --only with nothing in it ("", ",", " ", ", ,", --only=) is a usage
   const ws = runRaw('f4ws', ['--only', ' redline-grep , ', '--out', path.join(TMP, 'f4-ws-out')]); assert.match(ws.last, /^VERIFY:HOLO SELFTEST/, 'control: ids are trimmed, an empty piece beside a real id is ignored');
 });
 
+// ================================================================== base guard (base-guard.mjs) and "no .env content leaks" (designer additions to the verification-tool PR)
+const SENTINEL = 'SENTINEL_9f3a';
+const anyFileText = (...dirs) => dirs.flatMap((d) => filesText(d));
+const noLeak = (needle, blobs, what) => { if (needle.length < 4) return; for (const [name, text] of blobs) assert.ok(!String(text).includes(needle), what + ': ' + name + ' contains the secret'); };
+const GUARD_ITEMS = ['entry-delta-vs-base', 'c1-web', 'c1-os'];
+/** run one item against sc.base, with .env.local content; everything needing base must FAIL, and the cache folder must not be touched */
+function guarded(sc, item, extra = {}) { return goB1(sc, { only: item, ...extra }); }
+
+ok('(bg-1) a MAIN checkout as --base is refused: every item that needs base (entry-delta-vs-base, c1-web, c1-os) is FAIL (not SKIP / INVALID) with a base-guard message, exit 1; nothing of the base is built, measured or cached; the linked worktree of the same repo is accepted (control)', () => {
+  const sc = mkScenario('bg1');
+  for (const item of GUARD_ITEMS) {
+    const r = goB1(sc, { only: item, base: sc.main });
+    assert.equal(r.it.status, 'FAIL', item + ': ' + JSON.stringify(r.it)); assert.equal(r.r.status, 1, item + ' exit'); assert.match(r.it.reason, /base guard: --base is a main checkout/); assert.equal(r.it.value.baseUnavailable, true);
+    assert.equal(r.builds, 0, item + ': no base build'); assert.equal(r.baseMeasures, 0); assert.equal(fs.existsSync(sc.cache), false, item + ': the cache folder must not be created (no key was computed, nothing read or written)');
+  }
+  const ok1 = goB1(sc, { only: 'entry-delta-vs-base' }); assert.equal(ok1.it.status, 'PASS', JSON.stringify(ok1.it));
+});
+ok('(bg-2) --base whose .env* has DATA_DIR outside backend/data/example (or with the real-data folder name) is refused, and a DATA_DIR inside <base>/backend/data/example is accepted; the refusal comes BEFORE the cache is read: an existing valid cache entry is neither used nor changed', () => {
+  const sc = mkScenario('bg2'); const envFile = path.join(sc.base, 'web', '.env.local'); fs.mkdirSync(path.join(sc.base, 'web'), { recursive: true });
+  goB1(sc); const warm = goB1(sc); assert.equal(warm.it.value.cached, true, 'premise: a valid cache entry exists'); const before = snap(sc.cache); const builds = warm.builds;
+  const real = path.join(TMP, 'someone', 'x' + REAL); const other = path.join(TMP, 'someone', 'other');
+  for (const [k, line] of Object.entries({ real: 'DATA_DIR=' + real, other: 'DATA_DIR=' + other, relative: 'DATA_DIR=../elsewhere', empty: 'DATA_DIR=', exported: 'export DATA_DIR="' + other + '"', outsideBySibling: 'DATA_DIR=backend/data/example-copy', escape: 'DATA_DIR=backend/data/example/../../..' })) {
+    fs.writeFileSync(envFile, '# a comment\nVITE_OK=1\n' + line + '\n');
+    for (const item of GUARD_ITEMS) {
+      const r = goB1(sc, { only: item });
+      assert.equal(r.it.status, 'FAIL', k + '/' + item + ': ' + JSON.stringify(r.it)); assert.equal(r.r.status, 1); assert.match(r.it.reason, /base guard: DATA_DIR in \.env\.local of --base is not the example data/); assert.equal(r.it.value.baseUnavailable, true);
+      assert.equal(r.builds, builds, k + '/' + item + ': no base build'); assert.equal(snap(sc.cache), before, k + '/' + item + ': the cache was not read-then-written or changed');
+      noLeak(line.slice(line.indexOf('=') + 1).replace(/"/g, ''), [['stdout', r.r.stdout], ['stderr', r.r.stderr], ...filesText(r.out), ...filesText(sc.cache)], k + '/' + item + ' DATA_DIR value');
+    }
+  }
+  for (const line of ['DATA_DIR=backend/data/example', 'DATA_DIR=' + path.join(sc.base, 'backend', 'data', 'example'), 'DATA_DIR=' + path.join(sc.base, 'backend', 'data', 'example', 'copy-1'), 'OTHER=1']) {
+    fs.writeFileSync(envFile, line + '\n'); const r = goB1(sc, { only: 'entry-delta-vs-base' });
+    assert.equal(r.it.status, 'PASS', line.slice(0, 20) + ': ' + JSON.stringify(r.it));
+  }
+  fs.writeFileSync(path.join(sc.base, '.env'), 'DATA_DIR=' + other + '\n'); fs.rmSync(envFile);
+  const rootEnv = goB1(sc, { only: 'entry-delta-vs-base' }); assert.equal(rootEnv.it.status, 'FAIL', 'a repo-root .env counts too'); assert.match(rootEnv.it.reason, /DATA_DIR in \.env of --base/);
+});
+ok('(bg-3) the refusal also covers the known-on-main re-run (baseServer): a main-checkout --base turns os-handoff-4x\'s known I2 timeouts into FAIL with the base-guard message, never INVALID (the timeouts are not excused)', () => {
+  const sc = mkScenario('bg3');
+  const r = run('bg3r', { branch: BRANCH_2_OF_18, base: BASE_1_OF_60 }, { base: sc.main });
+  assert.equal(r.it.status, 'FAIL', JSON.stringify(r.it)); assert.equal(r.exit, 1); assert.match(r.it.reason, /base guard: --base is a main checkout/); assert.equal(r.it.value.baseUnavailable, true);
+});
+ok('(bg-4) no .env content leaks: a unique string in web/.env.local (and in a VITE_ variable of the run) appears in NO file of the cache folder, NO file under --out (logs, verify-holo.json, sub-script output), not in stdout / stderr; only hashes are stored', () => {
+  const sc = mkScenario('bg4'); fs.mkdirSync(path.join(sc.base, 'web'), { recursive: true });
+  fs.writeFileSync(path.join(sc.base, 'web', '.env.local'), 'VITE_SECRET=' + SENTINEL + '\nDATA_DIR=backend/data/example\n# ' + SENTINEL + ' comment\n'); fs.writeFileSync(path.join(sc.base, '.env'), 'EXTRA=' + SENTINEL + '2\n');
+  const a = goB1(sc, { env: { VITE_FROM_ENV: SENTINEL + '3', FX_ECHO_BASE: '1', FX_SIDECAR: '1' } }); const b = goB1(sc, { env: { VITE_FROM_ENV: SENTINEL + '3' } });
+  assert.equal(a.it.status, 'PASS', JSON.stringify(a.it)); assert.equal(b.it.value.cached, true, 'premise: the cache was written and used with these inputs');
+  assert.ok(walkFiles(sc.cache).length >= 1 && walkFiles(a.out).length >= 3, 'premise: there is something to scan');
+  for (const needle of [SENTINEL, SENTINEL + '2', SENTINEL + '3']) noLeak(needle, [['a.stdout', a.r.stdout], ['a.stderr', a.r.stderr], ['b.stdout', b.r.stdout], ['b.stderr', b.r.stderr], ...anyFileText(sc.cache, a.out, b.out)], 'env content');
+  const kv = a.it.value.baseCache.key; assert.match(kv.envHash, /^[0-9a-f]{12}$/); assert.match(JSON.parse(fs.readFileSync(walkFiles(sc.cache)[0], 'utf8')).key.envHash, /^[0-9a-f]{64}$/);
+});
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log(`verify-holo selftest: ${n} groups passed`);
