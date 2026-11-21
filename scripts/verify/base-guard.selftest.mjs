@@ -30,7 +30,13 @@ ok('DATA_DIR: outside backend/data/example, the real-data folder name, empty, re
   for (const line of bad) { fs.writeFileSync(envFile, line + '\n'); const r = checkBase(base, R); assert.ok(r && /DATA_DIR in \.env\.local/.test(r), JSON.stringify(line) + ' -> ' + r); }
   const good = ['DATA_DIR=backend/data/example', `DATA_DIR=${path.join(base, 'backend', 'data', 'example')}`, `DATA_DIR="${path.join(base, 'backend', 'data', 'example', 'copy')}"`, '# DATA_DIR=/elsewhere\nX=1', 'MY_DATA_DIR=/elsewhere', ''];
   for (const line of good) { fs.writeFileSync(envFile, line + '\n'); assert.equal(checkBase(base, R), null, JSON.stringify(line)); }
-  fs.rmSync(envFile); fs.writeFileSync(path.join(base, '.env'), `DATA_DIR=${o}\n`); assert.match(checkBase(base, R), /DATA_DIR in \.env of --base/, 'the repo-root .env counts'); fs.rmSync(path.join(base, '.env'));
+  fs.rmSync(envFile);
+  // tracked template files that nothing loads (the repo's own .env.example has a placeholder DATA_DIR on purpose) are not judged; the files that ARE loaded still are
+  for (const t of ['.env.example', '.env.sample', '.env.template']) fs.writeFileSync(path.join(base, t), `DATA_DIR=${o}\n`);
+  assert.equal(checkBase(base, R), null, 'template env files are not judged');
+  fs.writeFileSync(path.join(base, '.env.production'), `DATA_DIR=${o}\n`); assert.match(checkBase(base, R), /DATA_DIR in \.env\.production/, 'a mode file that vite loads is judged'); fs.rmSync(path.join(base, '.env.production'));
+  for (const t of ['.env.example', '.env.sample', '.env.template']) fs.rmSync(path.join(base, t));
+  fs.writeFileSync(path.join(base, '.env'),`DATA_DIR=${o}\n`); assert.match(checkBase(base, R), /DATA_DIR in \.env of --base/, 'the repo-root .env counts'); fs.rmSync(path.join(base, '.env'));
 });
 ok('the reason never contains a DATA_DIR value or any .env content', () => {
   const secret = path.join(TMP, 'someone', 'SENTINEL_9f3a'); fs.writeFileSync(envFile, `SECRET=SENTINEL_77\nDATA_DIR=${secret}\n`);

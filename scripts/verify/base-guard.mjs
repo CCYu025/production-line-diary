@@ -40,12 +40,16 @@ export function dataDirValues(text) {
 }
 
 /** @param {string} root the --base path @param {{real:string}} o real = the real-data folder name @returns {string|null} a reason (no values), or null when acceptable */
+/** tracked template files: nothing loads them (the app starts with --env-file-if-exists=.env, Vite reads .env, .env.local, .env.[mode], .env.[mode].local), and the repo's own .env.example has a placeholder DATA_DIR on purpose */
+export const TEMPLATE_ENV = /^.env.(?:example|sample|template)$/;
+
 export function checkBase(root, { real }) {
   const gitDir = gitPath(root, '--git-dir'), common = gitPath(root, '--git-common-dir');
   if (!gitDir || !common) return 'base guard: --base is not a readable git worktree (it must be a linked worktree such as pld-wt/h2-base)';
   if (norm(gitDir) === norm(common)) return 'base guard: --base is a main checkout, not a linked worktree (a main checkout can have a .env that points at real data)';
   const example = path.join(root, 'backend', 'data', 'example');
   for (const f of envFilesIn([path.join(root, 'web'), root])) {
+    if (TEMPLATE_ENV.test(path.basename(f))) continue;
     let text; try { text = fs.readFileSync(f, 'utf8'); } catch { return `base guard: cannot read ${path.basename(f)} in --base`; }
     for (const v of dataDirValues(text)) {
       if (!v || v.includes(real) || !inside(path.resolve(root, v), example)) return `base guard: DATA_DIR in ${path.basename(f)} of --base is not the example data (it must point inside backend/data/example)`;
