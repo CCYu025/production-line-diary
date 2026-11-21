@@ -1,15 +1,15 @@
 # 全像模式（HOLO）交接文件
 
 > 用途：任何新的 session（或新的人）接手全像模式開發時，**先讀這份**。
-> 維護規則：每次合併 PR、每完成一期、使用者說「handoff」（停機或離開）時都要更新。最後更新：2026-11-19。
+> 維護規則：每次合併 PR、每完成一期、使用者說「handoff」（停機或離開）時都要更新。最後更新：2026-11-21。
 
 ## 1. 一分鐘現況
 
 | 項目 | 狀態 |
 |---|---|
-| 目前階段 | **H2-1+2（`isRecurringProblem`＋`useOpenRecordParam`）進行中，2026-11-19 handoff 時停在 L1 中途**（見「進行中分支」）。H2-0（#67）、H2-1 前置項目（#68）已合併 |
-| main | `c93d9c2`（PR #68，squash；H2-1 前置項目） |
-| 進行中分支 | `feat/holo-h2-12-records-core`（worktree `pld-wt/h2-12`，已推上遠端備份、未開 PR）：抽出 `web/src/features/records/core/recurring.ts` 與 `useOpenRecordParam.ts`，三輪修正後網頁入口相對 main +95 B（≤ 100）。L1（`--no-cache`）跑到 c1-os 被 handoff 中止：A／B 組全 PASS、lab-bundle 為設計師已接受的累計 FAIL、c1-web 因系統睡眠 INVALID、c1-os PASS。恢復順序：L1（`--no-cache`）重跑完整版 → 新的 L2 → 開 PR → 合併前回報設計師。baseline worktree `pld-wt/h2-base` = `c93d9c2` |
+| 目前階段 | **H2-1+2（`isRecurringProblem`＋`useOpenRecordParam`）已以 PR #69 合併（2026-11-21）**。下一步是 §5 的驗證工具 PR（F1–F5，只改 `scripts/verify/`），之後 H2-3（見 §3） |
+| main | PR #69 的合併 commit（squash；H2-1+2）。前一版 `c93d9c2` 是 PR #68（H2-1 前置項目） |
+| 進行中分支 | 無。`feat/holo-h2-12-records-core` 合併後由 GitHub 刪除；worktree `pld-wt/h2-12`、`pld-wt/h2-12-l2a` 可以移除。baseline worktree `pld-wt/h2-base`（`c93d9c2`）下一期開工時改指新 main。`.git/worktrees/` 底下的空殼（Permission denied）照慣例留著 |
 | 伺服器 | 3114–3116 都已停止；沒有背景中的協調者或驗證者 |
 | H2-0 驗證結果 | 完整 L1（`c131c88`）17/19：os-handoff 兩項被「exit 與結果矛盾」檢查誤判（帶 `--allow-deviated` 時只有 DEVIATED 就是 exit 0），已在 `3f608ac` 修正（`buildHandoffArgs` 統一產生參數）。os-handoff 兩項重跑：coord9 的 4× 出現 1 筆真實 FAIL，已記為已知問題（見 §5）；l1-r8 的 1× 與 4× 都 PASS。後續 commit（`146e24e` 自測缺口、`14827b7` E1：holo-ime 的 exit 0 必須與 result.json 一致）跑過自測、check、test 的 L1，並各有一位新的 L2 複驗，都沒有找到真實會發生的錯誤 PASS。L2 共 l2i、l2h、l2j、l2k、l2m 五輪；證據放在開發主管的 scratchpad（不進版控） |
 | 停止條件（設計師 2026-11-18） | L2 只找到「不會造成錯誤 PASS」的缺口時，一律記成下一期的前置項目，不再回頭修；只有會讓結果變成錯誤 PASS 的缺陷才在本期修 |
@@ -32,10 +32,11 @@
 | 文件 | #66 | 2026-11-16 | 交接文件更新（H2-0 第二次 handoff） |
 | H2-0 | #67 | 2026-11-18 | 一鍵驗證指令 `npm run verify:holo`（19 項、機器可讀 JSON＋摘要行、exit 0／1／2）、`holo-baseline.json` 門檻、known-on-main 比率規則、待機偵測、SELFTEST 保護、holo-ime 補強與環境例外重試；產品程式碼沒有改 |
 | H2-1 前置 | #68 | 2026-11-19 | `verify:holo` 補 H2-0 L2 缺口（G1–G6、`--base` 路徑、E1）、main 的建置與 entry 量測依 commit 快取（`--no-cache`）、完整版先跑 A／B 組的兩階段 fail-fast（`--no-fail-fast`）；只改驗證工具 |
+| H2-1+2 | #69 | 2026-11-21 | 共用核心第一件：`web/src/features/records/core/recurring.ts`（`topProblemOf`／`recurringCount`／`isRecurringProblem`，「重複發生 ×N」判斷只剩一份）與 `useOpenRecordParam.ts`（`?open=` 協議）；網頁與 OS 2D 0 差異，網頁入口相對 main +95 B；既有測試 0 修改 |
 
 ## 3. 下一步（依序）
 
-1. H2 共用核心抽出（規格 §12，簡報已定稿，見 §1）：H2-0 已合併（#67）、H2-1 前置項目已合併（#68）；接著依序 H2-1+2（開工前先看 §5「H2-1+2 前置項目」） → H2-3 → H2-4 → H2-5 → H2-6 → H2-7。網頁與 OS 2D 行為零差異。
+1. H2 共用核心抽出（規格 §12，簡報已定稿，見 §1）：H2-0 已合併（#67）、H2-1 前置項目已合併（#68）、H2-1+2 已合併（#69）；接著做 §5 的驗證工具 PR（F1–F5），再依序 H2-3（開工前先看 §5「H2-3 前置項目」） → H2-3 → H2-4 → H2-5 → H2-6 → H2-7。網頁與 OS 2D 行為零差異。
 2. 之後依規格 §12：H3 引擎＋佈局框架 → H4 流場＋詳情 → H5 編輯新增 → H6 晶格＋儀器環 → H7 深層＋設定 → H8 轉場音效 → H9 星座（選配）→ H10 收尾。
 3. L1 詞彙設定（跨領域）：H4 展示後才開，需先修改紅線 1、3。L2 資料模型另立專案。
 
@@ -90,12 +91,22 @@
 - 診斷欄位：`result.json` 每次都有 `diag`，內容包括 slate 節點與三個欄位是否被換、`isConnected`、`__holoLab` 是否被換、`visibilityState`、`hasFocus`，以及選字開始與中段的 frames、frames 是否前進。失敗或例外時才另有 `diagFull`（最後 80 筆事件、longtask）。若診斷指向產品（輸入框被重掛、slate 或 `__holoLab` 被換），要先修好，並請使用者用真的注音輸入法實測。
 - 不自動重跑 holo-ime 來掩蓋。唯一的重試是環境例外的就地一次，而且一定記成 `retried 1x`；重試後 PASS 仍判 INVALID。
 
-**H2-1+2 前置項目（PR #68 的 L2 留下，2026-11-19）。H2-0 L2 的缺口（G1–G6、`--base` 路徑、E1）已在 #68 處理。以下都不會造成錯誤 PASS（相對於 #68 之前「`web/dist` 存在就直接信任」的行為沒有放寬），依設計師停止條件留到 H2-1+2 開工前處理：**
+**驗證工具 PR：F1–F5（PR #68 的 L2 留下，2026-11-19）。設計師裁定（2026-11-19）：H2-1+2 照常開工，F1–F5 另開一個只改 `scripts/verify/` 的小 PR，排在 H2-3 之前，不跟產品 PR 混；該 PR 的 L2 只複驗 F1–F5，停止條件照舊。F1 修好之前，每期期末開 PR 前的 L1，main 一側一律 `--no-cache`。同一個 PR 另外要做：lab-bundle 的 P4 累計（≤ 2048 B）改成只看預設建置（實驗室建置不出貨，HB1 是對網頁使用者的承諾），但保留「實驗室路由不會漏進預設建置」的檢查並附突變證明（H2-1+2 的 lab-bundle 累計 FAIL 實驗室 +2078／預設 +1910／相對 main +94，已依此裁定接受）。以下都不會造成錯誤 PASS（相對於 #68 之前「`web/dist` 存在就直接信任」的行為沒有放寬）：**
 - F1 快取鍵外的建置輸入：鍵不含 gitignored 的建置輸入（例如 `web/.env.local`）與 `node_modules` 內容；首次建置後這些改變、`web/dist` 沒動時會沿用舊 base 數字（靜態分析，未實跑）。
 - F2 `--out` 底下的副產物仍含絕對路徑：`entry-delta-base.json` 的 `dist` 欄位（os-bundle 原始輸出）；`scrubBase` 不處理 JSON 跳脫過的雙反斜線寫法。
 - F3 快取條目的防偽只靠目錄權限：同一使用者可寫 `os.tmpdir()/pld-vh-cache`，知道鍵摘要與 dist 雜湊就能偽造條目。建議條目加 HMAC，或至少在 README 註明。
 - F4 `--only ""`（空字串）等同沒帶，會跑全部項目（含啟動伺服器），易誤觸；應改成用法錯誤。
 - F5 自測偏弱：`bundle-graph.mjs`、`holo-baseline.json` 的雜湊在鍵中被固定成常數時自測抓不到（只檢查鍵名清單）；holo-ime 的 CDP 掛勾在 CI／未開 SELFTEST 時不生效只靠原始碼 regex；`--dump-hooks` 沒列出 `HOLO_IME_SELFTEST_CDP`；`scrubBase` 的混合斜線寫法沒有自測。
+**bundle 預算（設計師 2026-11-19）**：不加預算。預設建置累計上限維持 2048 B、每個 PR 相對 main ≤ +100 B；超過就在同一個 PR 瘦身抵銷（移除抽走後的重複程式、具名匯出讓 tree-shaking 生效）。H2-1+2 之後預設建置累計 +1911 B，只剩 137 B。H2-4 真的抵銷不了，帶前 5 名模組數字找設計師，不預先放寬。
+
+**H2-3 前置項目（H2-1+2 的 L2 留下，2026-11-21）。都是測試缺口，不改行為；依停止條件放到 H2-3 一起補新測試（既有測試不改）：**
+- T1：`closeDetail` 若放寬成「history state 有東西就 back」沒有測試抓到。路徑：直接用網址開面板 → 下一筆（`switchDetail` 寫入 `{}`）→ 關閉，正確是 replace 清掉 `open`，突變版會 `navigate(-1)` 離開頁面。
+- T2：詳情面板「重複發生 ×N」只測了「從有標籤換到沒標籤」；反方向（開在非最高頻 → 下一筆到最高頻）沒測，sheet 用 `useRef` 記住第一次次數的突變抓不到。
+- T3：topProblem 若改成依篩選後的列表（`rows`）計算沒有測試抓到（main 上本來就沒有）。應為全部紀錄。
+- T4（輕微）：比對若加 `trim()` 沒有測試抓到（`"A"` 與 `"A "` 是不同問題）。
+- 另：「網頁入口內的 `features/records/core/` 不得 import `features/os/**`」目前只有 A5（bundle）間接把關，沒有直接的 import 檢查。
+- 已接受：門檻 3→2 的突變只有新增的 `recurring.test.ts` 抓得到（既有測試依紅線不改）；「只算 active」是等價突變（`aggregate` 本來就排除已刪除）。
+
 - **觀察（未定性）**：#68 協調者第一次 `--quick` 時 `ModeShell.test.tsx`「OS 模式在工作站：palette exit → …」失敗一次（`expected '/os' to be '/records'`），同一份程式碼之後全過（含 L1 兩輪）。分支沒有改 `web/`。再出現就要查，不靠重跑掩蓋。
 
 ## 6. 安全規則（每個 session、每個代理都要遵守）
