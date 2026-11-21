@@ -25,7 +25,8 @@ ok('main checkout = refused; linked worktree = accepted; a plain folder / a miss
 });
 ok('DATA_DIR: outside backend/data/example, the real-data folder name, empty, relative escape, sibling folder, exported/quoted forms = refused; inside the example folder (relative, absolute, a copy below it) = accepted; other keys and comments ignored', () => {
   const o = path.join(TMP, 'someone', 'other');
-  const bad = [`DATA_DIR=${o}`, `DATA_DIR=${path.join(TMP, 'someone', 'x' + REAL)}`, 'DATA_DIR=', 'DATA_DIR=../x', 'DATA_DIR=backend/data/example/../../..', 'DATA_DIR=backend/data/example-copy', `export DATA_DIR="${o}"`, `  DATA_DIR = '${o}'  # c`, `OTHER=1\nDATA_DIR=${o}\n`, `DATA_DIR=backend/data/example\nDATA_DIR=${o}`];
+  const bad = [`DATA_DIR=${o}`, `DATA_DIR=${path.join(TMP, 'someone', 'x' + REAL)}`, 'DATA_DIR=', 'DATA_DIR=../x', 'DATA_DIR=backend/data/example/../../..', 'DATA_DIR=backend/data/example-copy', 'DATA_DIR=backend/data/example/' + REAL, // inside the example folder but with the real-data folder name: still refused
+     `export DATA_DIR="${o}"`, `  DATA_DIR = '${o}'  # c`, `OTHER=1\nDATA_DIR=${o}\n`, `DATA_DIR=backend/data/example\nDATA_DIR=${o}`];
   for (const line of bad) { fs.writeFileSync(envFile, line + '\n'); const r = checkBase(base, R); assert.ok(r && /DATA_DIR in \.env\.local/.test(r), JSON.stringify(line) + ' -> ' + r); }
   const good = ['DATA_DIR=backend/data/example', `DATA_DIR=${path.join(base, 'backend', 'data', 'example')}`, `DATA_DIR="${path.join(base, 'backend', 'data', 'example', 'copy')}"`, '# DATA_DIR=/elsewhere\nX=1', 'MY_DATA_DIR=/elsewhere', ''];
   for (const line of good) { fs.writeFileSync(envFile, line + '\n'); assert.equal(checkBase(base, R), null, JSON.stringify(line)); }
