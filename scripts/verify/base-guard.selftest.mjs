@@ -63,6 +63,8 @@ ok('entry kinds: a directory named .env / .env.local, a junction named .env, a j
   assert.ok(tryLink(t2, path.join(base, 'innocent'), 'junction')); try { refused('junction to a folder named .env.store'); } finally { fs.rmSync(path.join(base, 'innocent'), { recursive: true, force: true }); }
   const gone = path.join(TMP, 'someone', 'targets', 'gone'); fs.mkdirSync(gone, { recursive: true });
   assert.ok(tryLink(gone, path.join(base, '.env.local'), 'junction')); fs.rmdirSync(gone); try { refused('dangling junction named .env.local'); } finally { fs.rmSync(path.join(base, '.env.local'), { recursive: true, force: true }); }
+  const gone2 = path.join(TMP, 'someone', 'targets', '.env.gone'); fs.mkdirSync(gone2, { recursive: true });
+  assert.ok(tryLink(gone2, path.join(base, 'innocent2'), 'junction')); fs.rmdirSync(gone2); try { refused('a dangling junction with an innocent name whose TARGET is called .env.gone (only readlink reveals it)'); } finally { fs.rmSync(path.join(base, 'innocent2'), { recursive: true, force: true }); }
   const tf = path.join(TMP, 'someone', 'targets', '.env'); fs.writeFileSync(tf, SECRET);
   if (!tryLink(tf, path.join(base, 'plain-name'), 'file')) { console.log('  (skip) file symlinks cannot be created on this machine: the file-symlink cases are not exercised here'); return; }
   try { refused('file symlink to a file called .env'); } finally { fs.rmSync(path.join(base, 'plain-name'), { force: true }); }
