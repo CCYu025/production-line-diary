@@ -575,7 +575,8 @@ ok('(f2-1) F2: nothing under --out contains the --base path in ANY spelling (raw
 ok('(f4) F4: --only with nothing in it ("", ",", " ", ", ,", --only=) is a usage error: exit 2, usage printed, no item started, no server, no --out folder, no default verify-out, no scratch folder', () => {
   for (const [i, args] of [['--only', ''], ['--only', ','], ['--only', ' '], ['--only', ', ,'], ['--only='], ['--only', ' , ']].entries()) {
     const t = ownTmp('f4t' + i); const o = path.join(TMP, 'f4-out' + i);
-    const r = runRaw('f4c' + i, [...args, '--out', o], { TEMP: t.TEMP, TMP: t.TMP, TMPDIR: t.TMPDIR });
+    // FAKEPASS: if the check were missing the run would fall through to "all items"; every item is a harmless fake PASS then (no npm, no server, no browser), so a regression fails the assertions instead of starting real work
+    const r = runRaw('f4c' + i, [...args, '--out', o], { TEMP: t.TEMP, TMP: t.TMP, TMPDIR: t.TMPDIR, VERIFY_HOLO_SELFTEST_FAKEPASS: '1' });
     assert.equal(r.exit, 2, JSON.stringify(args) + ': exit ' + r.exit + ' ' + r.stderr.slice(0, 200)); assert.match(r.stderr, /--only needs at least one item id/); assert.match(r.stderr, /npm run verify:holo/, 'usage is printed');
     assert.equal(fs.existsSync(o), false, JSON.stringify(args) + ': --out must not be created'); assert.deepEqual(fs.readdirSync(r.dir), [], 'the working directory (default verify-out) stays empty'); assert.deepEqual(fs.readdirSync(t.dir), [], 'no scratch folder');
     assert.doesNotMatch(r.stdout, /^verify:holo /m, 'no run started');
