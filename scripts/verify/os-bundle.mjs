@@ -1,7 +1,7 @@
 // A5 + P4 + HB4: bundle checks on a built web/dist, grouped (docs/holo-mode-spec.md section 10.2).
 //   A5: the entry's STATIC import graph must contain no three/r3f/OS chunk, and no holo code.
 //   A5-holo: default build only - the WHOLE dist (manifest sources + every JS/CSS file) has no features/holo code.
-//   P4: entry (static graph) JS gzip must not exceed baseline + 2048 B.
+//   P4: entry (static graph) JS gzip must not exceed baseline + 2048 B. DEFAULT build only: with --expect-holo (lab build, never shipped) the delta is printed and put in the json, not judged.
 //   HB4 groups, each with its own gzip limit (JS only, KiB = 1024 B):
 //     os 300 KiB (unchanged definition)  |  holo-core 220 KiB  |  holo-ch01 .. holo-ch07 60 KiB each.
 //     A chunk is counted once, in the first group that reaches it (os first), so three shared with OS is not counted twice.
@@ -9,7 +9,7 @@
 //     holo-core, src/features/holo/(channels/)ch0N/** is holo-chN; each group = those chunks + their static imports that are
 //     not already in the entry graph or an earlier group.
 //     A group with no chunks prints SKIP (not built yet) and never fails.
-//   --expect-holo: the dist is the lab build (VITE_HOLO_LAB=1); holo-core must exist (and is measured), A5-holo is not applied.
+//   --expect-holo: the dist is the lab build (VITE_HOLO_LAB=1); holo-core must exist (and is measured), A5-holo is not applied, P4a (entry delta) is recorded but not judged.
 // node scripts/verify/os-bundle.mjs [--dist web/dist] [--baseline <bytes>] [--write-baseline] [--expect-holo] [--json out.json]
 import fs from 'node:fs';
 import path from 'node:path';
@@ -156,7 +156,13 @@ let baseline = null;
 if (A.baseline != null) baseline = Number(A.baseline);
 else if (fs.existsSync(A['baseline-file'])) { try { baseline = JSON.parse(fs.readFileSync(A['baseline-file'], 'utf8')).entryGzipBytes; } catch (e) { console.warn('WARN: cannot parse baseline file: ' + e.message); } }
 if (baseline == null || !Number.isFinite(baseline)) console.log(`  P4a SKIP (no baseline: pass --baseline <bytes> or create ${path.relative(REPO, A['baseline-file'])} via --write-baseline)`);
-else {
+else if (A['expect-holo']) {
+  // designer ruling 2026-11-19: the lab build is never shipped, and HB1 (entry +2048 B) is a promise to web users, so the cumulative P4 is judged on the DEFAULT build only (ci-bundle).
+  // The lab build's entry carries the lab route, so its delta is recorded here and never judged. Everything else (A5, P4b, HB4 groups, holo-core present) still applies to the lab build,
+  // and A5-holo (no features/holo in the default build) lives in the default-build run, which this branch does not touch.
+  const delta = entryGzip - baseline;
+  console.log(`  P4a INFO delta ${delta >= 0 ? '+' : ''}${delta} B (lab build: recorded, NOT judged; the default build is judged by ci-bundle)`);
+} else {
   const delta = entryGzip - baseline;
   if (delta > DELTA_LIMIT) { fails.push(`P4: entry gzip ${entryGzip} - baseline ${baseline} = +${delta} B > ${DELTA_LIMIT} B`); console.log(`  P4a FAIL delta ${delta >= 0 ? '+' : ''}${delta} B (limit +${DELTA_LIMIT})`); }
   else console.log(`  P4a PASS delta ${delta >= 0 ? '+' : ''}${delta} B (limit +${DELTA_LIMIT})`);
@@ -175,7 +181,7 @@ for (const g of groups.slice(1)) {
 if (A.json) fs.writeFileSync(A.json, JSON.stringify({
   dist, expectHolo: A['expect-holo'], manifest: !!manifest, entryChunks: entryJs.map(rel), lazyChunks: lazyJs.map(rel), osLazy: osFiles.map(rel),
   groups: groups.map((g) => ({ id: g.id, limit: g.limit, skipped: !g.files.length, gzip: g.gzip, chunks: g.files.map(rel) })),
-  entryGzip, cssGzip, osLazyGzip: osGroup.gzip, baseline, violations, holoLeaks, fails,
+  entryGzip, cssGzip, osLazyGzip: osGroup.gzip, baseline, deltaBytes: baseline != null && Number.isFinite(baseline) ? entryGzip - baseline : null, p4Judged: !A['expect-holo'], violations, holoLeaks, fails,
 }, null, 2));
 console.log(fails.length ? `\nRESULT: FAIL\n  - ${fails.join('\n  - ')}` : '\nRESULT: PASS');
 process.exit(fails.length ? 1 : 0);

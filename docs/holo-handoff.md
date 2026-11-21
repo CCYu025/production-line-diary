@@ -7,9 +7,9 @@
 
 | 項目 | 狀態 |
 |---|---|
-| 目前階段 | **H2-1+2（`isRecurringProblem`＋`useOpenRecordParam`）已以 PR #69 合併（2026-11-21）**。下一步是 §5 的驗證工具 PR（F1–F5，只改 `scripts/verify/`），之後 H2-3（見 §3） |
-| main | PR #69 的合併 commit（squash；H2-1+2）。前一版 `c93d9c2` 是 PR #68（H2-1 前置項目） |
-| 進行中分支 | 無。`feat/holo-h2-12-records-core` 合併後由 GitHub 刪除；worktree `pld-wt/h2-12`、`pld-wt/h2-12-l2a` 可以移除。baseline worktree `pld-wt/h2-base`（`c93d9c2`）下一期開工時改指新 main。`.git/worktrees/` 底下的空殼（Permission denied）照慣例留著 |
+| 目前階段 | **驗證工具 PR（F1–F5、lab-bundle P4、base 防呆）已以 PR #70 合併（2026-11-21）**。下一步是 H2-3（見 §3），開工前先補 §5 的「H2-3 前置項目」測試缺口 |
+| main | PR #70 的合併 commit（squash；驗證工具）。前一版 `2019b16` 是 PR #69（H2-1+2） |
+| 進行中分支 | 無。`fix/holo-verify-f1-f5` 合併後由 GitHub 刪除；worktree `pld-wt/h2-vf`、`pld-wt/h2-vf-l2a` 可以移除。baseline worktree `pld-wt/h2-base`（`2019b16`）下一期開工時改指新 main。`.git/worktrees/` 底下的空殼（Permission denied）照慣例留著 |
 | 伺服器 | 3114–3116 都已停止；沒有背景中的協調者或驗證者 |
 | H2-0 驗證結果 | 完整 L1（`c131c88`）17/19：os-handoff 兩項被「exit 與結果矛盾」檢查誤判（帶 `--allow-deviated` 時只有 DEVIATED 就是 exit 0），已在 `3f608ac` 修正（`buildHandoffArgs` 統一產生參數）。os-handoff 兩項重跑：coord9 的 4× 出現 1 筆真實 FAIL，已記為已知問題（見 §5）；l1-r8 的 1× 與 4× 都 PASS。後續 commit（`146e24e` 自測缺口、`14827b7` E1：holo-ime 的 exit 0 必須與 result.json 一致）跑過自測、check、test 的 L1，並各有一位新的 L2 複驗，都沒有找到真實會發生的錯誤 PASS。L2 共 l2i、l2h、l2j、l2k、l2m 五輪；證據放在開發主管的 scratchpad（不進版控） |
 | 停止條件（設計師 2026-11-18） | L2 只找到「不會造成錯誤 PASS」的缺口時，一律記成下一期的前置項目，不再回頭修；只有會讓結果變成錯誤 PASS 的缺陷才在本期修 |
@@ -33,10 +33,11 @@
 | H2-0 | #67 | 2026-11-18 | 一鍵驗證指令 `npm run verify:holo`（19 項、機器可讀 JSON＋摘要行、exit 0／1／2）、`holo-baseline.json` 門檻、known-on-main 比率規則、待機偵測、SELFTEST 保護、holo-ime 補強與環境例外重試；產品程式碼沒有改 |
 | H2-1 前置 | #68 | 2026-11-19 | `verify:holo` 補 H2-0 L2 缺口（G1–G6、`--base` 路徑、E1）、main 的建置與 entry 量測依 commit 快取（`--no-cache`）、完整版先跑 A／B 組的兩階段 fail-fast（`--no-fail-fast`）；只改驗證工具 |
 | H2-1+2 | #69 | 2026-11-21 | 共用核心第一件：`web/src/features/records/core/recurring.ts`（`topProblemOf`／`recurringCount`／`isRecurringProblem`，「重複發生 ×N」判斷只剩一份）與 `useOpenRecordParam.ts`（`?open=` 協議）；網頁與 OS 2D 0 差異，網頁入口相對 main +95 B；既有測試 0 修改 |
+| 驗證工具 | #70 | 2026-11-21 | `verify:holo`：F1 快取鍵加入 `.env*` 與 `node_modules/.package-lock.json` 雜湊；F2 整個 `--out` 洗掉 base 絕對路徑；F3 README 寫明快取威脅模型；F4 `--only` 空值為用法錯誤；F5 自測補強；lab-bundle 不再判 P4 累計（只記錄，`ci-bundle` 照判 P4 與 A5-holo）；**base 防呆**：`--base` 必須是 linked worktree、`GIT_*` 環境變數有值即拒絕、base 內除了被追蹤且與 HEAD 相同的範本檔外有任何 `.env*`（不分大小寫，含目錄與連結）即 FAIL；只改 `scripts/verify/` |
 
 ## 3. 下一步（依序）
 
-1. H2 共用核心抽出（規格 §12，簡報已定稿，見 §1）：H2-0 已合併（#67）、H2-1 前置項目已合併（#68）、H2-1+2 已合併（#69）；接著做 §5 的驗證工具 PR（F1–F5），再依序 H2-3（開工前先看 §5「H2-3 前置項目」） → H2-4 → H2-5 → H2-6 → H2-7。網頁與 OS 2D 行為零差異。
+1. H2 共用核心抽出（規格 §12，簡報已定稿，見 §1）：H2-0 已合併（#67）、H2-1 前置項目已合併（#68）、H2-1+2 已合併（#69）、驗證工具 PR 已合併（#70）；接著 H2-3（開工前先看 §5「H2-3 前置項目」） → H2-4 → H2-5 → H2-6 → H2-7。網頁與 OS 2D 行為零差異。
 2. 之後依規格 §12：H3 引擎＋佈局框架 → H4 流場＋詳情 → H5 編輯新增 → H6 晶格＋儀器環 → H7 深層＋設定 → H8 轉場音效 → H9 星座（選配）→ H10 收尾。
 3. L1 詞彙設定（跨領域）：H4 展示後才開，需先修改紅線 1、3。L2 資料模型另立專案。
 
@@ -91,12 +92,15 @@
 - 診斷欄位：`result.json` 每次都有 `diag`，內容包括 slate 節點與三個欄位是否被換、`isConnected`、`__holoLab` 是否被換、`visibilityState`、`hasFocus`，以及選字開始與中段的 frames、frames 是否前進。失敗或例外時才另有 `diagFull`（最後 80 筆事件、longtask）。若診斷指向產品（輸入框被重掛、slate 或 `__holoLab` 被換），要先修好，並請使用者用真的注音輸入法實測。
 - 不自動重跑 holo-ime 來掩蓋。唯一的重試是環境例外的就地一次，而且一定記成 `retried 1x`；重試後 PASS 仍判 INVALID。
 
-**驗證工具 PR：F1–F5（PR #68 的 L2 留下，2026-11-19）。設計師裁定（2026-11-19）：H2-1+2 照常開工，F1–F5 另開一個只改 `scripts/verify/` 的小 PR，排在 H2-3 之前，不跟產品 PR 混；該 PR 的 L2 只複驗 F1–F5，停止條件照舊。F1 修好之前，每期期末開 PR 前的 L1，main 一側一律 `--no-cache`。同一個 PR 另外要做：lab-bundle 的 P4 累計（≤ 2048 B）改成只看預設建置（實驗室建置不出貨，HB1 是對網頁使用者的承諾），但保留「實驗室路由不會漏進預設建置」的檢查並附突變證明（H2-1+2 的 lab-bundle 累計 FAIL 實驗室 +2078／預設 +1910／相對 main +94，已依此裁定接受）。以下都不會造成錯誤 PASS（相對於 #68 之前「`web/dist` 存在就直接信任」的行為沒有放寬）：**
-- F1 快取鍵外的建置輸入：鍵不含 gitignored 的建置輸入（例如 `web/.env.local`）與 `node_modules` 內容；首次建置後這些改變、`web/dist` 沒動時會沿用舊 base 數字（靜態分析，未實跑）。
-- F2 `--out` 底下的副產物仍含絕對路徑：`entry-delta-base.json` 的 `dist` 欄位（os-bundle 原始輸出）；`scrubBase` 不處理 JSON 跳脫過的雙反斜線寫法。
-- F3 快取條目的防偽只靠目錄權限：同一使用者可寫 `os.tmpdir()/pld-vh-cache`，知道鍵摘要與 dist 雜湊就能偽造條目。建議條目加 HMAC，或至少在 README 註明。
-- F4 `--only ""`（空字串）等同沒帶，會跑全部項目（含啟動伺服器），易誤觸；應改成用法錯誤。
-- F5 自測偏弱：`bundle-graph.mjs`、`holo-baseline.json` 的雜湊在鍵中被固定成常數時自測抓不到（只檢查鍵名清單）；holo-ime 的 CDP 掛勾在 CI／未開 SELFTEST 時不生效只靠原始碼 regex；`--dump-hooks` 沒列出 `HOLO_IME_SELFTEST_CDP`；`scrubBase` 的混合斜線寫法沒有自測。
+**驗證工具（#70）的處理結果與留下的項目（2026-11-21）**
+- F1–F5、lab-bundle P4 已在 #70 處理。設計師的「F1 修好之前，期末 L1 的 main 一側一律 `--no-cache`」條件已滿足；但快取條目仍可被同一使用者偽造（F3，README 有寫），期末 L1 是否繼續 `--no-cache` 由設計師決定，未決定前照舊加 `--no-cache`。
+- **base 防呆（設計師 2026-11-21 裁定）**：不解析 `.env` 內容，改白名單——base worktree 內（排除 `.git`、`node_modules`、`web/node_modules`、`web/dist`）除了「一般檔案、被 git 追蹤、與 HEAD 相同」的 `.env.example`／`.env.sample`／`.env.template` 之外，有任何名稱符合 `.env*`（不分大小寫；原名、realpath 名、連結目標名任一符合；檔案、目錄、symlink、junction、壞連結都算）就 FAIL。理由：base 是自建 worktree，`serve.mjs` 啟動時自己設 `DATA_DIR`，本來就不需要 `.env`。保留：主 checkout 判斷（realpath 比 git-dir／common-dir）、`GIT_DIR`／`GIT_WORK_TREE`／`GIT_COMMON_DIR`／`GIT_INDEX_FILE` 有值即拒絕。base 裡若出現 `.env`，驗證會 FAIL，要手動移除。
+- **下一期（H2-3 一起）的驗證工具前置項目**（都不會讓 base 讀到真實資料）：
+  - `ci-bundle` 指令沒有測試釘住「不含 `--expect-holo`」；A5-holo 只掃 js／mjs／css／manifest；終端輸出（`it.reason`、`console.error`）沒經過 scrub；尾端 `--only` 無值時 exit 1 不是 2；scrub 讀寫失敗靜默略過；scrub 的大檔與「最後一次 scrub」沒有測試。
+  - `serve.mjs` 的 `--data-from`（預設 `<base>/backend/data/example`）用 `fs.cpSync` 複製，資料夾內若有 junction 會把目標內容複製進暫存資料夾；建議拒絕含連結的 data-from。
+  - base 防呆自測缺案例（行為正確，只是突變抓不到）：範本白名單誤加 `.env.local`、拿掉空 HEAD 檢查、範本可以是連結、改成跟隨連結。
+- 規則（設計師 2026-11-21）：**驗證者清理時只能刪除自己這次建立、記下路徑的暫存檔**，不得用萬用字元刪別人的（曾有 L2 一次刪掉全部 `pld-bgst-*`）。
+
 **bundle 預算（設計師 2026-11-19）**：不加預算。預設建置累計上限維持 2048 B、每個 PR 相對 main ≤ +100 B；超過就在同一個 PR 瘦身抵銷（移除抽走後的重複程式、具名匯出讓 tree-shaking 生效）。H2-1+2 之後預設建置累計 +1911 B，只剩 137 B。H2-4 真的抵銷不了，帶前 5 名模組數字找設計師，不預先放寬。
 
 **H2-3 前置項目（H2-1+2 的 L2 留下，2026-11-21）。都是測試缺口，不改行為；依停止條件放到 H2-3 一起補新測試（既有測試不改）：**
@@ -117,6 +121,8 @@
 - **worktree**：放在 repo 外的固定 worktree 資料夾（路徑記在記憶裡）。
 - **其他**：
   - 新增套件或下載任何東西前，要先問使用者。
+  - 驗證者清理時只能刪除自己這次建立、並記下路徑的暫存檔，不得用萬用字元刪除別人的。
+  - `--base` 用的 worktree 裡不放 `.env*`（被追蹤且未改的範本除外），否則 `verify:holo` 的 base 防呆會判 FAIL。
   - 提交的檔案裡不得出現個人絕對路徑。
   - commit 結尾加 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`；PR 本文結尾加 `🤖 Generated with [Claude Code](https://claude.com/claude-code)`。
 - **全像模式紅線**：

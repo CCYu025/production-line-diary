@@ -74,3 +74,10 @@ export function imeExitProblem(exit, j) {
   if (j.envErrorSeen != null) return `holo-ime exited 0 but result.json has an envErrorSeen (${j.envErrorSeen?.kind ?? '?'})`;
   return null;
 }
+
+/** F5: the one rule for the holo-ime self-test hook HOLO_IME_SELFTEST_CDP (a fake cdp module so the loop wiring runs without a browser): honoured ONLY when VERIFY_HOLO_SELFTEST is exactly "1"
+ *  and CI is empty / unset; otherwise the real ./cdp.mjs. holo-ime.mjs loads its module through this, and `verify-holo --dump-hooks` prints the same answer (imeCdpModule), so they cannot drift apart.
+ *  Behaviour is pinned in ime-env.selftest.mjs (a fake module that records its own load, run with CI set / the switch off / the switch not exactly "1"). */
+export function imeCdpModule(env) {
+  return env.VERIFY_HOLO_SELFTEST === '1' && !env.CI && env.HOLO_IME_SELFTEST_CDP ? env.HOLO_IME_SELFTEST_CDP : './cdp.mjs';
+}

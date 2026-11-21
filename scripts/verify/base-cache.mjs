@@ -7,7 +7,8 @@
 //
 // Cache key (all of them, any difference = no hit): base `git rev-parse HEAD` (full), base worktree clean (`git status --porcelain` empty; a dirty or unreadable worktree has NO key:
 // it neither reads nor writes the cache), sha256 of the base package-lock.json, node version, sha256 of the verification scripts that decide the result (os-bundle.mjs, bundle-graph.mjs,
-// holo-baseline.json), and the measurement parameters (MEASURE_ID). The entry file also stores the whole key summary and the lookup compares it, not just the file name.
+// holo-baseline.json), and the measurement parameters (MEASURE_ID). F1 adds the build inputs git does not see: nodeModulesHash (sha256 of base node_modules/.package-lock.json, the installed tree;
+// missing = no key) and envHash (every .env* file Vite can read + the VITE_* / NODE_ENV variables, see hashEnvInputs). The entry file also stores the whole key summary and the lookup compares it, not just the file name.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,13 +32,34 @@ export function hashDir(dir) {
   return h.digest('hex');
 }
 
+/** the names that can feed an env: .env and .env.* in ANY letter case (Windows does not tell .ENV from .env), whatever kind of entry (a link, a junction or a directory is a value too: hashFile gives 'missing' for what cannot be read) */
+export const ENV_NAME = /^\.env(?:\..*)?$/i;
+const isHash = (v) => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
 /**
- * @param {{baseHead:string|null, clean:boolean, lockHash:string, node:string, scripts:Record<string,string>, params?:string}} p
- * @returns {{digest:string, summary:object}|null} null = this worktree state has no key (dirty / unknown head): do not use the cache at all
+ * F1: one hash over the build inputs that are gitignored (so a clean `git status` says nothing about them): every file called `.env` or `.env.*` directly inside each of `dirs` (sorted by dir order, then name;
+ * a directory without any is a value too), plus the `VITE_*` variables and `NODE_ENV` of `env` (a build reads them). Adding, removing, renaming or editing any of these changes the hash.
  */
-export function buildKey({ baseHead, clean, lockHash, node, scripts, params = MEASURE_ID }) {
+export function hashEnvInputs({ dirs, env = {} }) {
+  const h = crypto.createHash('sha256');
+  dirs.forEach((dir, i) => {
+    let names = [];
+    try { names = fs.readdirSync(dir).filter((n) => ENV_NAME.test(n)).sort(); } catch { /* no such directory = no env files */ }
+    h.update(`dir#${i}\0`);
+    for (const n of names) { h.update(n); h.update('\0'); h.update(hashFile(path.join(dir, n))); h.update('\0'); }
+  });
+  h.update('process-env\0');
+  for (const k of Object.keys(env).filter((x) => x.startsWith('VITE_') || x === 'NODE_ENV').sort()) { h.update(k); h.update('='); h.update(String(env[k])); h.update('\0'); }
+  return h.digest('hex');
+}
+
+/**
+ * @param {{baseHead:string|null, clean:boolean, lockHash:string, node:string, nodeModulesHash:string, envHash:string, scripts:Record<string,string>, params?:string}} p
+ * @returns {{digest:string, summary:object}|null} null = this worktree state has no key (dirty / unknown head / no installed-tree identity / no env hash): do not use the cache at all
+ */
+export function buildKey({ baseHead, clean, lockHash, node, nodeModulesHash, envHash, scripts, params = MEASURE_ID }) {
   if (!clean || !baseHead) return null;
-  const summary = { schema: CACHE_SCHEMA, baseHead, lockHash, node, scripts: Object.fromEntries(Object.entries(scripts).sort(([a], [b]) => (a < b ? -1 : 1))), params };
+  if (!isHash(nodeModulesHash) || !isHash(envHash)) return null; // fail closed: 'missing' / undefined is not an identity
+  const summary = { schema: CACHE_SCHEMA, baseHead, lockHash, node, nodeModulesHash, envHash, scripts: Object.fromEntries(Object.entries(scripts).sort(([a], [b]) => (a < b ? -1 : 1))), params };
   return { digest: sha256(JSON.stringify(summary)), summary };
 }
 

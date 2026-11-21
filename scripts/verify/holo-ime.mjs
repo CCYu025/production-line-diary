@@ -15,9 +15,9 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 // Self-test hook (ime-env.selftest.mjs): swap the CDP module for a fake so the loop wiring (halt after the first exception) can be run without a browser.
 // Honoured only with VERIFY_HOLO_SELFTEST=1 and CI unset (same rule as verify-holo.mjs's hooks); otherwise the real cdp.mjs is always used.
-const CDP_MODULE = process.env.VERIFY_HOLO_SELFTEST === '1' && !process.env.CI && process.env.HOLO_IME_SELFTEST_CDP ? process.env.HOLO_IME_SELFTEST_CDP : './cdp.mjs';
+import { classifyEnvError, imeCdpModule, untilHalt } from './ime-env.mjs';
+const CDP_MODULE = imeCdpModule(process.env); // the rule lives in ime-env.mjs (verify-holo --dump-hooks prints the same answer)
 const { Browser, sleep } = await import(CDP_MODULE.startsWith('.') ? CDP_MODULE : pathToFileURL(CDP_MODULE).href);
-import { classifyEnvError, untilHalt } from './ime-env.mjs';
 
 const { values: A } = parseArgs({
   options: {
