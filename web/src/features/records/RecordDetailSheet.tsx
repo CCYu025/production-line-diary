@@ -9,20 +9,16 @@ import { photoUrl } from "@/lib/api";
 import { notify, toastUndoable } from "@/lib/feedback";
 import type { DiaryRecord, Status } from "@/lib/types";
 import { STATUS_ORDER } from "@shared/aggregate";
+import { recurringCount, type TopProblem } from "./core/recurring";
 import { usePatchRecord, useSoftDeleteWithUndo } from "./useRecordMutations";
-
-export interface RepeatInfo {
-  label: string;
-  count: number;
-}
 
 interface RecordDetailSheetProps {
   /** 要顯示的紀錄；null = 關閉 */
   record: DiaryRecord | null;
   /** 全部「有效」紀錄的時間順序（上一筆／下一筆走這個，不跟列表的篩選或排序） */
   sequence: readonly DiaryRecord[];
-  /** 全部紀錄中出現最多次的問題；這筆就是它且次數 ≥ 3 才顯示「重複發生 ×N」 */
-  topProblem: RepeatInfo | null;
+  /** 全部紀錄中出現最多次的問題（`topProblemOf`）；這筆就是它且次數 ≥ 3 才顯示「重複發生 ×N」 */
+  topProblem: TopProblem | null;
   /** 切到另一筆（用 replace，所以瀏覽器「上一頁」一次就能關掉面板） */
   onNavigate: (id: number) => void;
   onClose: () => void;
@@ -64,6 +60,8 @@ export function RecordDetailSheet({ record, sequence, topProblem, onNavigate, on
   if (record) lastRecord.current = record;
   const r = record ?? lastRecord.current;
 
+  const repeatCount = r ? recurringCount(topProblem, r) : 0;
+
   const idx = r ? sequence.findIndex((x) => x.id === r.id) : -1;
   const prev = idx > 0 ? sequence[idx - 1] : undefined;
   const next = idx >= 0 ? sequence[idx + 1] : undefined;
@@ -86,7 +84,7 @@ export function RecordDetailSheet({ record, sequence, topProblem, onNavigate, on
             key={r.id}
             r={r}
             position={idx >= 0 ? `${idx + 1} / ${sequence.length}` : ""}
-            repeatCount={topProblem && topProblem.count >= 3 && topProblem.label === r.problem ? topProblem.count : 0}
+            repeatCount={repeatCount}
             hasPrev={!!prev}
             hasNext={!!next}
             navFocus={navFocus}
