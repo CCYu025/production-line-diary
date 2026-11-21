@@ -1,7 +1,11 @@
-// Guard for the --base worktree of verify:holo: it must be a LINKED worktree (like pld-wt/h2-base) whose .env* files never point at real data.
-// The main checkout has a .env whose DATA_DIR is the real data folder; building or serving it from here would put that folder in reach of a verification run.
-// Principle: FAIL CLOSED. This file does not try to reproduce how node / dotenv parse a .env file; anything it cannot judge with certainty is a refusal.
-// checkBase() returns null (acceptable) or a short reason. The reason NEVER contains a DATA_DIR value or any .env content (it ends up in logs and json).
+// Guard for the --base worktree of verify:holo. A whitelist, no parsing:
+//  (1) --base must be a LINKED worktree (like pld-wt/h2-base), never the main checkout (whose .env points at the real data);
+//  (2) the base worktree must contain NO entry called .env or .env.* (any letter case, anywhere in the tree) except a template file (.env.example / .env.sample / .env.template) that git tracks
+//      and whose content equals HEAD. Files, directories, symlinks, junctions and broken links all count; file CONTENT IS NEVER READ OR PARSED.
+// Why: the base is a worktree we create ourselves and serve.mjs sets DATA_DIR for it, so it never needs a .env; refusing every .env is simpler and safer than judging what is inside one
+// (dotenv / node parsing quirks, links, case-insensitive file systems all made a content check a way to be fooled).
+// Excluded from the scan (never loaded by the app or by Vite, and build output): .git, <base>/node_modules, <base>/web/node_modules, <base>/web/dist.
+// checkBase() returns null (acceptable) or a short reason (it may name a relative path of an offending entry, never any content).
 // Self-test: node scripts/verify/base-guard.selftest.mjs ; integration: verify-holo.selftest.mjs (bg-*).
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -14,52 +18,14 @@ export const GIT_REDIRECT_VARS = ['GIT_DIR', 'GIT_COMMON_DIR', 'GIT_WORK_TREE', 
 export function gitEnv(env = process.env) { const e = { ...env }; for (const k of GIT_REDIRECT_VARS) delete e[k]; return e; }
 const git = (root, ...a) => spawnSync('git', ['-C', root, ...a], { encoding: 'utf8', env: gitEnv() });
 
-/** realpath of p, or of its nearest existing ancestor plus the missing rest. A dangling link, or any failure other than "does not exist", throws (callers fail closed). */
-function realish(p) {
-  let cur = path.resolve(p); const rest = [];
-  for (;;) {
-    try { return path.join(fs.realpathSync(cur), ...rest.reverse()); } catch (e) {
-      if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') throw e;
-      let exists = true; try { fs.lstatSync(cur); } catch { exists = false; }
-      if (exists) throw e; // there is an entry (a dangling link) but it resolves to nothing
-      const parent = path.dirname(cur); if (parent === cur) throw e;
-      rest.push(path.basename(cur)); cur = parent;
-    }
-  }
-}
 const gitPath = (root, arg) => {
   const r = git(root, 'rev-parse', arg);
   if (r.status !== 0) return null;
   try { return fs.realpathSync(path.resolve(root, r.stdout.trim())); } catch { return null; } // realpath failure = not readable = refused
 };
 const norm = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
-const inside = (child, parent) => { const r = path.relative(norm(parent), norm(child)); return r === '' || (!r.startsWith('..') && !path.isAbsolute(r)); };
 
-/** every entry called .env or .env.* (any letter case, any entry type: files, links, junctions, directories) directly inside each dir; the caller judges what each one is */
-export function envFilesIn(dirs) {
-  const out = [];
-  for (const d of dirs) {
-    let names = [];
-    try { names = fs.readdirSync(d).filter((n) => ENV_NAME.test(n)).sort(); } catch { /* no such dir */ }
-    for (const n of names) out.push(path.join(d, n));
-  }
-  return out;
-}
-/** raw DATA_DIR assignments in .env text, exactly as written after the first "=" (trimmed): every `DATA_DIR=value` / `export DATA_DIR = value` line. No unquoting, no comment stripping: see dataDirAmbiguous. */
-export function dataDirValues(text) {
-  const vals = [];
-  for (const line of String(text).split(/\r?\n/)) {
-    const m = /^\s*(?:export\s+)?DATA_DIR\s*=\s*(.*?)\s*$/.exec(line);
-    if (m) vals.push(m[1]);
-  }
-  return vals;
-}
-/** true when the value is anything but a plain path: quotes of any kind, #, $, another "=", an escape sequence (a backslash before n t r b f v 0 or another backslash, or a trailing backslash; backslashes as Windows separators are fine), or a ".." segment */
-export function dataDirAmbiguous(v) {
-  return /["'`#$=]/.test(v) || /\\[ntrbfv0\\]/.test(v) || v.endsWith('\\') || v.split(/[\\/]+/).includes('..');
-}
-
-/** tracked template files: nothing loads them (the app starts with --env-file-if-exists=.env, Vite reads .env, .env.local, .env.[mode], .env.[mode].local), and the repo's own .env.example has a placeholder DATA_DIR on purpose */
+/** tracked template files: nothing loads them (the app starts with --env-file-if-exists=.env, Vite reads .env, .env.local, .env.[mode], .env.[mode].local) */
 export const TEMPLATE_ENV = /^\.env\.(?:example|sample|template)$/i;
 
 /** a template is skipped only when git TRACKS it (in the index) AND its working-tree content is identical to HEAD (same blob; a staged or unstaged edit, or a file not in HEAD, is not). Any git failure = false (fail closed: the file is judged). */
@@ -70,37 +36,46 @@ export function isPristineTracked(root, file) {
   return head.status === 0 && work.status === 0 && head.stdout.trim() !== '' && head.stdout.trim() === work.stdout.trim();
 }
 
-/** @param {string} root the --base path @param {{real:string, env?:object}} o real = the real-data folder name @returns {string|null} a reason (no values), or null when acceptable */
-export function checkBase(root, { real, env = process.env }) {
+/** true when ANY of the names an entry goes by looks like an env file: its own name, the name its realpath ends in, and (for a link) the name its target ends in */
+function envLike(full, dirent) {
+  if (ENV_NAME.test(dirent.name)) return true;
+  try { if (ENV_NAME.test(path.basename(fs.realpathSync(full)))) return true; } catch { /* broken link: realpath fails, the other names still count */ }
+  if (dirent.isSymbolicLink()) { try { if (ENV_NAME.test(path.basename(fs.readlinkSync(full)))) return true; } catch { /* unreadable link: its own name was already checked */ } }
+  return false;
+}
+
+/** every offending entry (relative path, forward slashes) under root, skipping the excluded folders; a folder that cannot be listed is reported as an offence too (fail closed) */
+export function envOffenders(root) {
+  const skip = new Set([norm(path.join(root, '.git')), norm(path.join(root, 'node_modules')), norm(path.join(root, 'web', 'node_modules')), norm(path.join(root, 'web', 'dist'))]);
+  const found = [];
+  const rel = (p) => path.relative(root, p).split(path.sep).join('/');
+  const walk = (dir) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { found.push(`${rel(dir) || '.'} (cannot be listed)`); return; }
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (skip.has(norm(full))) continue;
+      if (envLike(full, e)) {
+        const plainFile = e.isFile() && !e.isSymbolicLink();
+        if (plainFile && TEMPLATE_ENV.test(e.name) && isPristineTracked(root, full)) continue; // the only exception: an untouched, tracked template
+        found.push(rel(full));
+        continue;
+      }
+      if (e.isDirectory() && !e.isSymbolicLink()) walk(full); // links and junctions are never followed
+    }
+  };
+  walk(root);
+  return found;
+}
+
+/** @param {string} root the --base path @param {{env?:object}} o env = the environment to look for GIT_* variables in @returns {string|null} a reason (no content), or null when acceptable */
+export function checkBase(root, { env = process.env } = {}) {
   const set = GIT_REDIRECT_VARS.filter((k) => env[k]);
   if (set.length) return `base guard: the environment variable ${set.join(', ')} is set; git would answer for another repository, so the base cannot be judged (unset it)`;
   const gitDir = gitPath(root, '--git-dir'), common = gitPath(root, '--git-common-dir');
   if (!gitDir || !common) return 'base guard: --base is not a readable git worktree (it must be a linked worktree such as pld-wt/h2-base)';
   if (norm(gitDir) === norm(common)) return 'base guard: --base is a main checkout, not a linked worktree (a main checkout can have a .env that points at real data)';
-  let example;
-  try {
-    const realRoot = realish(root);
-    example = realish(path.join(root, 'backend', 'data', 'example'));
-    if (!inside(example, realRoot)) return 'base guard: backend/data/example of --base resolves outside the base worktree (a link)';
-  } catch { return 'base guard: backend/data/example of --base cannot be resolved'; }
-  for (const f of envFilesIn([path.join(root, 'web'), root])) {
-    const name = path.basename(f);
-    if (TEMPLATE_ENV.test(name) && isPristineTracked(root, f)) continue; // only an untouched, tracked template is skipped; anything else is judged
-    let text;
-    try {
-      if (!fs.statSync(f).isFile()) return `base guard: ${name} in --base is not a regular file (directory or link to one)`; // statSync follows links
-      text = fs.readFileSync(f, 'utf8');
-    } catch { return `base guard: cannot read ${name} in --base (unreadable or a broken link)`; }
-    const vals = dataDirValues(text);
-    if (new Set(vals).size > 1) return `base guard: DATA_DIR in ${name} of --base is defined more than once with different values`;
-    for (const v of vals) {
-      if (!v) return `base guard: DATA_DIR in ${name} of --base is empty`;
-      if (v.includes(real)) return `base guard: DATA_DIR in ${name} of --base is not the example data (it must point inside backend/data/example)`;
-      if (dataDirAmbiguous(v)) return `base guard: DATA_DIR in ${name} of --base is ambiguous (quotes, #, $, =, escape sequences or ..); it must be a plain path inside backend/data/example`;
-      let where;
-      try { where = realish(path.resolve(root, v)); } catch { return `base guard: DATA_DIR in ${name} of --base cannot be resolved (broken link)`; }
-      if (!inside(where, example)) return `base guard: DATA_DIR in ${name} of --base is not the example data (it must point inside backend/data/example)`;
-    }
-  }
+  const bad = envOffenders(root);
+  if (bad.length) return `base guard: --base contains ${bad.slice(0, 3).join(', ')}${bad.length > 3 ? ` and ${bad.length - 3} more` : ''} (an .env* entry that is not an untouched, tracked template); a base worktree needs no .env, remove it`;
   return null;
 }

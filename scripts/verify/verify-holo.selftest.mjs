@@ -421,7 +421,7 @@ function mkScenario(name, { under = null } = {}) {
   const w = (f, t) => fs.writeFileSync(path.join(main, f), t);
   w('package.json', JSON.stringify({ name: 'fake-base', version: '0.0.0', private: true, scripts: { build: 'node build.js' } }));
   w('build.js', "const fs = require('fs'); fs.mkdirSync('web/dist', { recursive: true }); fs.writeFileSync('web/dist/index.html', 'built ' + (process.env.FX_TAG || '1')); fs.appendFileSync(process.env.FX_DIR + '/builds.log', 'b\\n');\n");
-  w('.gitignore', 'web/dist\nnode_modules\n.env*\n'); w('package-lock.json', '{}\n'); w(path.join('backend', 'server.js'), '// fake\n');
+  w('.gitignore', 'web/dist\nnode_modules\n.env*\n!.env.example\n'); w('.env.example', 'DATA_DIR=/placeholder/path\n'); w('package-lock.json', '{}\n'); w(path.join('backend', 'server.js'), '// fake\n');
   git(main, 'init', '-q'); git(main, 'add', '-A'); git(main, 'commit', '-q', '-m', 'init'); git(main, 'worktree', 'add', '-q', '-b', 'wt', base); // --base is a LINKED worktree, like pld-wt/h2-base
   fs.mkdirSync(path.join(base, 'node_modules'), { recursive: true }); fs.writeFileSync(path.join(base, 'node_modules', '.package-lock.json'), '{"installed":1}\n'); // gitignored: git status stays clean
   return { root, main, base, cache, fx, n: 0 };
@@ -522,21 +522,14 @@ const flipFirst = (p) => p.split(BS).join('/').replace('/', BS);
 const spellingsOf = (p) => [p, p.split(BS).join('/'), p.split('/').join(BS), JSON.stringify(p).slice(1, -1), JSON.stringify(JSON.stringify(p)).slice(1, -1), flipFirst(p), flipFirst(p).split(BS).join(BS + BS)];
 const filesText = (dir) => walkFiles(dir).map((f) => [path.relative(dir, f), fs.readFileSync(f, 'utf8')]);
 
-ok('(f1-1) F1: gitignored build inputs are part of the key. web/.env.local added, edited, removed; node_modules/.package-lock.json edited: each is a MISS (rebuild + re-measure) with web/dist untouched; unchanged again = hit', () => {
-  const sc = mkScenario('f1a'); const envFile = path.join(sc.base, 'web', '.env.local'); fs.mkdirSync(path.join(sc.base, 'web'), { recursive: true });
+ok('(f1-1) F1: the installed tree is part of the key: editing node_modules/.package-lock.json is a MISS (rebuild + re-measure) with web/dist untouched, unchanged again = hit. (The .env* part of the key is unit-tested in base-cache.selftest and the VITE_ part in f1-3; a base that HAS an .env* entry is refused by the guard, bg-2.)', () => {
+  const sc = mkScenario('f1a');
   const a = goB1(sc); assert.equal(a.it.value.cached, false); assert.equal(a.builds, 1);
   const b = goB1(sc); assert.equal(b.it.value.cached, true, 'premise: the unchanged base hits'); assert.equal(b.builds, 1);
-  assert.equal(git(sc.base, 'status', '--porcelain'), '', 'premise: the base worktree stays clean (the inputs are gitignored)');
-  fs.writeFileSync(envFile, 'VITE_FLAG=1'); assert.equal(git(sc.base, 'status', '--porcelain'), '', 'premise: .env.local is invisible to git');
-  const c = goB1(sc); assert.equal(c.it.value.cached, false, 'a new web/.env.local must not hit the old entry'); assert.equal(c.builds, 2); assert.equal(c.baseMeasures, 2); assert.equal(c.it.value.baseCache.mode, 'on'); assert.equal(walkFiles(sc.cache).length, 2);
-  const c2 = goB1(sc); assert.equal(c2.it.value.cached, true); assert.equal(c2.builds, 2);
-  fs.writeFileSync(envFile, 'VITE_FLAG=2');
-  const d = goB1(sc); assert.equal(d.it.value.cached, false, 'edited .env.local content'); assert.equal(d.builds, 3);
-  fs.rmSync(envFile);
-  const e = goB1(sc); assert.equal(e.it.value.cached, true, 'removed again = the original key: its entry hits'); assert.equal(e.builds, 3);
+  assert.equal(git(sc.base, 'status', '--porcelain'), '', 'premise: the base worktree stays clean (node_modules is gitignored)');
   fs.writeFileSync(path.join(sc.base, 'node_modules', '.package-lock.json'), '{"installed":2}\n');
-  const f = goB1(sc); assert.equal(f.it.value.cached, false, 'a changed installed tree (node_modules/.package-lock.json)'); assert.equal(f.builds, 4); assert.equal(f.it.value.baseCache.mode, 'on');
-  const g = goB1(sc); assert.equal(g.it.value.cached, true); assert.equal(g.builds, 4);
+  const f = goB1(sc); assert.equal(f.it.value.cached, false, 'a changed installed tree (node_modules/.package-lock.json)'); assert.equal(f.builds, 2); assert.equal(f.it.value.baseCache.mode, 'on'); assert.equal(walkFiles(sc.cache).length, 2);
+  const g = goB1(sc); assert.equal(g.it.value.cached, true); assert.equal(g.builds, 2);
 });
 ok('(f1-2) F1: node_modules/.package-lock.json missing = not cacheable: no read, no write (cache folder bit-identical), rebuilt every time, reason in baseCache; restoring it makes the earlier entry hit again', () => {
   const sc = mkScenario('f1b'); const lock = path.join(sc.base, 'node_modules', '.package-lock.json'); const original = fs.readFileSync(lock, 'utf8');
@@ -613,39 +606,51 @@ ok('(bg-1) a MAIN checkout as --base is refused: every item that needs base (ent
   }
   const ok1 = goB1(sc, { only: 'entry-delta-vs-base' }); assert.equal(ok1.it.status, 'PASS', JSON.stringify(ok1.it));
 });
-ok('(bg-2) --base whose .env* has DATA_DIR outside backend/data/example (or with the real-data folder name) is refused, and a DATA_DIR inside <base>/backend/data/example is accepted; the refusal comes BEFORE the cache is read: an existing valid cache entry is neither used nor changed', () => {
-  const sc = mkScenario('bg2'); const envFile = path.join(sc.base, 'web', '.env.local'); fs.mkdirSync(path.join(sc.base, 'web'), { recursive: true });
-  goB1(sc); const warm = goB1(sc); assert.equal(warm.it.value.cached, true, 'premise: a valid cache entry exists'); const before = snap(sc.cache); const builds = warm.builds;
-  const real = path.join(TMP, 'someone', 'x' + REAL); const other = path.join(TMP, 'someone', 'other');
-  for (const [k, line] of Object.entries({ real: 'DATA_DIR=' + real, other: 'DATA_DIR=' + other, relative: 'DATA_DIR=../elsewhere', empty: 'DATA_DIR=', exported: 'export DATA_DIR="' + other + '"', outsideBySibling: 'DATA_DIR=backend/data/example-copy', escape: 'DATA_DIR=backend/data/example/../../..' })) {
-    fs.writeFileSync(envFile, '# a comment\nVITE_OK=1\n' + line + '\n');
-    for (const item of GUARD_ITEMS) {
-      const r = goB1(sc, { only: item });
-      assert.equal(r.it.status, 'FAIL', k + '/' + item + ': ' + JSON.stringify(r.it)); assert.equal(r.r.status, 1); assert.match(r.it.reason, /base guard: DATA_DIR in \.env\.local of --base/); assert.equal(r.it.value.baseUnavailable, true);
-      assert.equal(r.builds, builds, k + '/' + item + ': no base build'); assert.equal(snap(sc.cache), before, k + '/' + item + ': the cache was not read-then-written or changed');
-      noLeak(line.slice(line.indexOf('=') + 1).replace(/"/g, ''), [['stdout', r.r.stdout], ['stderr', r.r.stderr], ...filesText(r.out), ...filesText(sc.cache)], k + '/' + item + ' DATA_DIR value');
-    }
+ok('(bg-2) the whitelist: ANY .env* entry in the base (any letter case, any depth, files / directories / junctions / links, names that only the link target or realpath reveal) is refused before the cache is read, content is never read; only a TRACKED, UNCHANGED template (.env.example) is let through', () => {
+  const sc = mkScenario('bg2'); const B = sc.base;
+  assert.equal(fs.existsSync(path.join(B, '.env.example')), true, 'premise: the base has a tracked, unchanged .env.example');
+  goB1(sc); const warm = goB1(sc); assert.equal(warm.it.value.cached, true, 'premise: a valid cache entry exists (and the pristine template did not block)'); const before = snap(sc.cache); const builds = warm.builds;
+  const mk = (rel, text = SENTINEL + ' DATA_DIR=backend/data/example\n') => { const f = path.join(B, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); return () => fs.rmSync(f, { force: true }); };
+  const mkDir = (rel) => { const d = path.join(B, rel); fs.mkdirSync(d, { recursive: true }); return () => fs.rmSync(d, { recursive: true, force: true }); };
+  const linkDirs = []; const mkJunction = (rel, targetName) => { const t = path.join(sc.root, 'targets', targetName); fs.mkdirSync(t, { recursive: true }); const l = path.join(B, rel); fs.mkdirSync(path.dirname(l), { recursive: true }); fs.symlinkSync(t, l, 'junction'); return () => { fs.rmSync(l, { recursive: true, force: true }); }; };
+  const cases = {
+    root: () => mk('.env'), upper: () => mk('.ENV'), webLocal: () => mk('web/.env.local'), mixed: () => mk('web/.Env.Production.Local'), backend: () => mk('backend/.env'), deep: () => mk('a/b/c/.env.development'),
+    directory: () => mkDir('.env'), subDirectory: () => mkDir('web/.env.local'), junctionNamedEnv: () => mkJunction('.env', 'somewhere'), junctionToEnvName: () => mkJunction('innocent', '.env.store'),
+    untrackedSample: () => mk('.env.sample', 'DATA_DIR=/placeholder/path\n'), untrackedExampleInWeb: () => mk('web/.env.example', 'DATA_DIR=/placeholder/path\n'),
+    modifiedExample: () => { const f = path.join(B, '.env.example'); const old = fs.readFileSync(f); fs.writeFileSync(f, SENTINEL + '\n'); return () => fs.writeFileSync(f, old); },
+    stagedModifiedExample: () => { const f = path.join(B, '.env.example'); const old = fs.readFileSync(f); fs.writeFileSync(f, SENTINEL + '\n'); git(B, 'add', '--', '.env.example'); return () => { git(B, 'checkout', 'HEAD', '--', '.env.example'); }; },
+    untrackedAfterRm: () => { git(B, 'rm', '-q', '--cached', '--', '.env.example'); return () => { git(B, 'reset', '-q', 'HEAD', '--', '.env.example'); }; },
+  };
+  for (const [k, setup] of Object.entries(cases)) {
+    const undo = setup();
+    try {
+      for (const item of GUARD_ITEMS) {
+        const r = goB1(sc, { only: item });
+        assert.equal(r.it.status, 'FAIL', k + '/' + item + ': ' + JSON.stringify(r.it)); assert.equal(r.r.status, 1); assert.match(r.it.reason, /base guard: --base contains /); assert.equal(r.it.value.baseUnavailable, true);
+        assert.equal(r.builds, builds, k + '/' + item + ': no base build'); assert.equal(snap(sc.cache), before, k + '/' + item + ': the cache was not read-then-written or changed');
+        noLeak(SENTINEL, [['stdout', r.r.stdout], ['stderr', r.r.stderr], ...filesText(r.out), ...filesText(sc.cache)], k + '/' + item + ' file content');
+      }
+    } finally { undo(); }
+    const back = goB1(sc, { only: 'entry-delta-vs-base' }); assert.equal(back.it.status, 'PASS', k + ' removed again -> accepted: ' + JSON.stringify(back.it)); assert.equal(back.it.value.cached, true, k + ': and the original cache entry still hits');
   }
-  for (const line of ['DATA_DIR=backend/data/example', 'DATA_DIR=' + path.join(sc.base, 'backend', 'data', 'example').split(path.sep).join('/'), 'DATA_DIR=' + path.join(sc.base, 'backend', 'data', 'example', 'copy-1').split(path.sep).join('/'), 'OTHER=1']) {
-    fs.writeFileSync(envFile, line + '\n'); const r = goB1(sc, { only: 'entry-delta-vs-base' });
-    assert.equal(r.it.status, 'PASS', line.slice(0, 20) + ': ' + JSON.stringify(r.it));
-  }
-  fs.writeFileSync(path.join(sc.base, '.env'), 'DATA_DIR=' + other + '\n'); fs.rmSync(envFile);
-  const rootEnv = goB1(sc, { only: 'entry-delta-vs-base' }); assert.equal(rootEnv.it.status, 'FAIL', 'a repo-root .env counts too'); assert.match(rootEnv.it.reason, /DATA_DIR in \.env of --base/);
+  // excluded folders are not scanned (never loaded, build output): node_modules and web/dist may hold anything
+  const ex1 = mk('node_modules/pkg/.env'), ex2 = mk('web/dist/.env'), ex3 = mk('web/node_modules/x/.env');
+  const okRun = goB1(sc, { only: 'entry-delta-vs-base' }); assert.equal(okRun.it.status, 'PASS', 'node_modules and web/dist are excluded: ' + JSON.stringify(okRun.it)); ex1(); ex2(); ex3();
 });
 ok('(bg-3) the refusal also covers the known-on-main re-run (baseServer): a main-checkout --base turns os-handoff-4x\'s known I2 timeouts into FAIL with the base-guard message, never INVALID (the timeouts are not excused)', () => {
   const sc = mkScenario('bg3');
   const r = run('bg3r', { branch: BRANCH_2_OF_18, base: BASE_1_OF_60 }, { base: sc.main });
   assert.equal(r.it.status, 'FAIL', JSON.stringify(r.it)); assert.equal(r.exit, 1); assert.match(r.it.reason, /base guard: --base is a main checkout/); assert.equal(r.it.value.baseUnavailable, true);
 });
-ok('(bg-4) no .env content leaks: a unique string in web/.env.local (and in a VITE_ variable of the run) appears in NO file of the cache folder, NO file under --out (logs, verify-holo.json, sub-script output), not in stdout / stderr; only hashes are stored', () => {
-  const sc = mkScenario('bg4'); fs.mkdirSync(path.join(sc.base, 'web'), { recursive: true });
-  fs.writeFileSync(path.join(sc.base, 'web', '.env.local'), 'VITE_SECRET=' + SENTINEL + '\nDATA_DIR=backend/data/example\n# ' + SENTINEL + ' comment\n'); fs.writeFileSync(path.join(sc.base, '.env'), 'EXTRA=' + SENTINEL + '2\n');
+ok('(bg-4) no .env content leaks: a unique string inside a refused .env.local, and in a VITE_ variable of a normal run, appears in NO file of the cache folder, NO file under --out (logs, verify-holo.json, sub-script output), not in stdout / stderr; the cache key only has hashes', () => {
+  const sc = mkScenario('bg4');
   const a = goB1(sc, { env: { VITE_FROM_ENV: SENTINEL + '3', FX_ECHO_BASE: '1', FX_SIDECAR: '1' } }); const b = goB1(sc, { env: { VITE_FROM_ENV: SENTINEL + '3' } });
-  assert.equal(a.it.status, 'PASS', JSON.stringify(a.it)); assert.equal(b.it.value.cached, true, 'premise: the cache was written and used with these inputs');
+  assert.equal(a.it.status, 'PASS', JSON.stringify(a.it)); assert.equal(b.it.value.cached, true, 'premise: the cache was written and used');
+  fs.mkdirSync(path.join(sc.base, 'web'), { recursive: true }); fs.writeFileSync(path.join(sc.base, 'web', '.env.local'), 'VITE_SECRET=' + SENTINEL + '\n# ' + SENTINEL + ' comment\n');
+  const c = goB1(sc, { env: { VITE_FROM_ENV: SENTINEL + '3' } }); assert.equal(c.it.status, 'FAIL', 'premise: the base with a .env.local is refused');
   assert.ok(walkFiles(sc.cache).length >= 1 && walkFiles(a.out).length >= 3, 'premise: there is something to scan');
-  for (const needle of [SENTINEL, SENTINEL + '2', SENTINEL + '3']) noLeak(needle, [['a.stdout', a.r.stdout], ['a.stderr', a.r.stderr], ['b.stdout', b.r.stdout], ['b.stderr', b.r.stderr], ...anyFileText(sc.cache, a.out, b.out)], 'env content');
-  const kv = a.it.value.baseCache.key; assert.match(kv.envHash, /^[0-9a-f]{12}$/); assert.match(JSON.parse(fs.readFileSync(walkFiles(sc.cache)[0], 'utf8')).key.envHash, /^[0-9a-f]{64}$/);
+  for (const needle of [SENTINEL, SENTINEL + '3']) noLeak(needle, [['a.stdout', a.r.stdout], ['a.stderr', a.r.stderr], ['b.stdout', b.r.stdout], ['c.stdout', c.r.stdout], ['c.stderr', c.r.stderr], ...anyFileText(sc.cache, a.out, b.out, c.out)], 'env content');
+  assert.match(a.it.value.baseCache.key.envHash, /^[0-9a-f]{12}$/); assert.match(JSON.parse(fs.readFileSync(walkFiles(sc.cache)[0], 'utf8')).key.envHash, /^[0-9a-f]{64}$/);
 });
 ok('(bg-5, n21) one run with several items that need base (entry-delta-vs-base, c1-web, c1-os): all of them FAIL, none is SKIP or INVALID, exit 1; a git redirect variable (GIT_DIR / GIT_WORK_TREE / GIT_COMMON_DIR / GIT_INDEX_FILE) in the environment makes the guard refuse even a good linked worktree, naming the variable and nothing else', () => {
   const sc = mkScenario('bg5');

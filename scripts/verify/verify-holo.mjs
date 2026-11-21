@@ -284,7 +284,7 @@ async function startServer(L, key, root, port, env = {}) {
 const mainServer = (L) => (ST ? Promise.resolve('http://localhost:0/') : startServer(L, 'branch', REPO, 3114));
 /** base guard (base-guard.mjs): --base must be a linked worktree whose .env* never point at real data. Checked BEFORE anything of the base is read (.env* for the cache key, the cache itself), built or served. null = fine, else a reason without any DATA_DIR value. */
 let baseGuardMemo;
-const baseGuardReason = () => (baseGuardMemo === undefined ? (baseGuardMemo = checkBase(path.resolve(A.base), { real: REAL })) : baseGuardMemo);
+const baseGuardReason = () => (baseGuardMemo === undefined ? (baseGuardMemo = checkBase(path.resolve(A.base))) : baseGuardMemo);
 const baseServer = async (L) => {
   const root = path.resolve(A.base);
   if (!fs.existsSync(path.join(root, 'backend', 'server.js'))) throw invalid(`--base ${shortBase()} has no backend/server.js`); // checked before the self-test stub too (self-test g7): the message shows the last folder only
