@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { checkBase, dataDirValues, envFilesIn } from './base-guard.mjs';
+import { checkBase, dataDirValues, envFilesIn, isPristineTracked } from './base-guard.mjs';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'pld-bgst-'));
 let n = 0;
@@ -12,7 +12,10 @@ const ok = (name, fn) => { fn(); n++; console.log(`PASS ${name}`); };
 const REAL = '工作' + '日誌';
 const git = (cwd, ...a) => { const e = { ...process.env }; delete e.GIT_DIR; delete e.GIT_WORK_TREE; delete e.GIT_INDEX_FILE; const r = spawnSync('git', ['-c', 'user.name=selftest', '-c', 'user.email=selftest@example.invalid', ...a], { cwd, encoding: 'utf8', env: e }); assert.equal(r.status, 0, `git ${a.join(' ')}: ${r.stderr}`); };
 const main = path.join(TMP, 'someone', 'main'); const base = path.join(TMP, 'someone', 'base');
-fs.mkdirSync(main, { recursive: true }); fs.writeFileSync(path.join(main, 'a.txt'), 'x');
+fs.mkdirSync(path.join(main, 'web'), { recursive: true }); fs.writeFileSync(path.join(main, 'a.txt'), 'x');
+// tracked template files with a PLACEHOLDER DATA_DIR, like the repo's own .env.example
+const TEMPLATES = ['.env.example', '.env.sample', path.join('web', '.env.template')];
+for (const t of TEMPLATES) fs.writeFileSync(path.join(main, t), 'DATA_DIR=/placeholder/path\n');
 git(main, 'init', '-q'); git(main, 'add', '-A'); git(main, 'commit', '-q', '-m', 'init'); git(main, 'worktree', 'add', '-q', '-b', 'wt', base);
 const R = { real: REAL };
 const envFile = path.join(base, 'web', '.env.local'); fs.mkdirSync(path.join(base, 'web'), { recursive: true });
@@ -31,11 +34,26 @@ ok('DATA_DIR: outside backend/data/example, the real-data folder name, empty, re
   const good = ['DATA_DIR=backend/data/example', `DATA_DIR=${path.join(base, 'backend', 'data', 'example')}`, `DATA_DIR="${path.join(base, 'backend', 'data', 'example', 'copy')}"`, '# DATA_DIR=/elsewhere\nX=1', 'MY_DATA_DIR=/elsewhere', ''];
   for (const line of good) { fs.writeFileSync(envFile, line + '\n'); assert.equal(checkBase(base, R), null, JSON.stringify(line)); }
   fs.rmSync(envFile);
-  // tracked template files that nothing loads (the repo's own .env.example has a placeholder DATA_DIR on purpose) are not judged; the files that ARE loaded still are
-  for (const t of ['.env.example', '.env.sample', '.env.template']) fs.writeFileSync(path.join(base, t), `DATA_DIR=${o}\n`);
-  assert.equal(checkBase(base, R), null, 'template env files are not judged');
-  fs.writeFileSync(path.join(base, '.env.production'), `DATA_DIR=${o}\n`); assert.match(checkBase(base, R), /DATA_DIR in \.env\.production/, 'a mode file that vite loads is judged'); fs.rmSync(path.join(base, '.env.production'));
-  for (const t of ['.env.example', '.env.sample', '.env.template']) fs.rmSync(path.join(base, t));
+  // templates: skipped ONLY when git tracks them and the working tree equals HEAD; the files that ARE loaded (.env, .env.local, .env.production...) are always judged
+  const T = TEMPLATES.map((t) => path.join(base, t)); const gitB = (...x) => git(base, ...x);
+  assert.equal(checkBase(base, R), null, '(1) tracked and untouched templates with a placeholder DATA_DIR are not judged');
+  for (const [i, f] of T.entries()) {
+    const rel = TEMPLATES[i].split(path.sep).join('/'); const name = path.basename(f);
+    fs.writeFileSync(f, `DATA_DIR=${o}
+`); assert.match(checkBase(base, R), new RegExp('DATA_DIR in ' + name.replace(/[.]/g, '[.]')), '(2) tracked but edited (unstaged) -> judged: ' + rel);
+    gitB('add', '--', rel); assert.match(checkBase(base, R), /DATA_DIR in/, '(2b) edited and staged -> judged: ' + rel);
+    gitB('checkout', 'HEAD', '--', rel); assert.equal(checkBase(base, R), null, 'restored to HEAD -> not judged again: ' + rel);
+  }
+  const untracked = path.join(base, 'web', '.env.example'); fs.writeFileSync(untracked, `DATA_DIR=${o}
+`);
+  assert.match(checkBase(base, R), /DATA_DIR in .env.example/, '(3) an untracked .env.example (new, in web/) -> judged'); fs.rmSync(untracked);
+  fs.writeFileSync(path.join(base, '.env.sample'), 'DATA_DIR=/placeholder/path\n'); // same bytes as HEAD: still pristine
+  assert.equal(checkBase(base, R), null, 'rewritten with identical bytes = pristine');
+  const staged = path.join(base, 'web', '.env.sample'); fs.writeFileSync(staged, `DATA_DIR=${o}
+`); gitB('add', '--', 'web/.env.sample'); assert.match(checkBase(base, R), /DATA_DIR in .env.sample/, 'new file staged but not in HEAD -> judged'); gitB('rm', '-q', '-f', '--', 'web/.env.sample');
+  assert.equal(isPristineTracked(base, path.join(base, '.env.example')), true); assert.equal(isPristineTracked(path.join(TMP, 'someone', 'nope'), path.join(TMP, 'someone', 'nope', '.env.example')), false, 'no git information = not pristine (fail closed)');
+  fs.writeFileSync(path.join(base, '.env.production'), `DATA_DIR=${o}
+`); assert.match(checkBase(base, R), /DATA_DIR in .env.production/, 'a mode file that vite loads is judged'); fs.rmSync(path.join(base, '.env.production'));
   fs.writeFileSync(path.join(base, '.env'),`DATA_DIR=${o}\n`); assert.match(checkBase(base, R), /DATA_DIR in \.env of --base/, 'the repo-root .env counts'); fs.rmSync(path.join(base, '.env'));
 });
 ok('the reason never contains a DATA_DIR value or any .env content', () => {
@@ -46,7 +64,7 @@ ok('the reason never contains a DATA_DIR value or any .env content', () => {
 ok('dataDirValues / envFilesIn: parsing details', () => {
   assert.deepEqual(dataDirValues('A=1\r\nDATA_DIR="a b"\r\nexport DATA_DIR=c # x\nXDATA_DIR=z'), ['a b', 'c']);
   fs.writeFileSync(envFile, ''); fs.writeFileSync(path.join(base, 'web', 'env.txt'), ''); fs.writeFileSync(path.join(base, 'web', '.envrc'), '');
-  assert.deepEqual(envFilesIn([path.join(base, 'web'), path.join(TMP, 'nope')]).map((f) => path.basename(f)), ['.env.local']);
+  assert.deepEqual(envFilesIn([path.join(base, 'web'), path.join(TMP, 'nope')]).map((f) => path.basename(f)), ['.env.local', '.env.template']);
 });
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log(`\n${n} passed`);
