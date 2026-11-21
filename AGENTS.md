@@ -420,7 +420,7 @@ npm run dev:web         # 開發介面：Vite 熱更新（見下方）
 npm run check      # 後端 node --check 語法檢查
 npm test           # 後端 node:test（test/**/*.test.js），目前 206 個測試（沒有 symlink 權限的機器上有 3 個會顯示略過）
 npm run typecheck  # 前端 tsc --noEmit（strict）
-npm run test:web   # 前端 Vitest（jsdom + Testing Library），目前 1801 個測試（100 個檔案）
+npm run test:web   # 前端 Vitest（jsdom + Testing Library），目前 1828 個測試（103 個檔案）
 npm run build      # 前端 vite build → web/dist
 npm run verify:os-bundle  # A5：OS 模式延遲載入與大小檢查（需先 build）
 npm run verify:holo -- --base <main 的 worktree> --out <資料夾>  # 全像模式一鍵驗證（H2-0）：CI 六步＋紅線＋c1 零差異＋OS 回歸＋全像腳本；--quick 只跑 A、B 兩組、--full 加跑 os-handoff 4×；完整版先跑 A、B 組，有 FAIL／INVALID 就不跑 C、D（--no-fail-fast 跑全部）；main 一側的建置與 entry 量測依 commit 快取（--no-cache 強制重算）；結束碼 0／1／2（2 不算通過）
