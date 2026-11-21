@@ -32,6 +32,8 @@ export function hashDir(dir) {
   return h.digest('hex');
 }
 
+/** the names that can feed an env: .env and .env.* in ANY letter case (Windows does not tell .ENV from .env), whatever kind of entry (a link, a junction or a directory is a value too: hashFile gives 'missing' for what cannot be read) */
+export const ENV_NAME = /^\.env(?:\..*)?$/i;
 const isHash = (v) => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
 /**
  * F1: one hash over the build inputs that are gitignored (so a clean `git status` says nothing about them): every file called `.env` or `.env.*` directly inside each of `dirs` (sorted by dir order, then name;
@@ -41,7 +43,7 @@ export function hashEnvInputs({ dirs, env = {} }) {
   const h = crypto.createHash('sha256');
   dirs.forEach((dir, i) => {
     let names = [];
-    try { names = fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && /^\.env(?:\..*)?$/.test(e.name)).map((e) => e.name).sort(); } catch { /* no such directory = no env files */ }
+    try { names = fs.readdirSync(dir).filter((n) => ENV_NAME.test(n)).sort(); } catch { /* no such directory = no env files */ }
     h.update(`dir#${i}\0`);
     for (const n of names) { h.update(n); h.update('\0'); h.update(hashFile(path.join(dir, n))); h.update('\0'); }
   });

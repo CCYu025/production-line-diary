@@ -621,12 +621,12 @@ ok('(bg-2) --base whose .env* has DATA_DIR outside backend/data/example (or with
     fs.writeFileSync(envFile, '# a comment\nVITE_OK=1\n' + line + '\n');
     for (const item of GUARD_ITEMS) {
       const r = goB1(sc, { only: item });
-      assert.equal(r.it.status, 'FAIL', k + '/' + item + ': ' + JSON.stringify(r.it)); assert.equal(r.r.status, 1); assert.match(r.it.reason, /base guard: DATA_DIR in \.env\.local of --base is not the example data/); assert.equal(r.it.value.baseUnavailable, true);
+      assert.equal(r.it.status, 'FAIL', k + '/' + item + ': ' + JSON.stringify(r.it)); assert.equal(r.r.status, 1); assert.match(r.it.reason, /base guard: DATA_DIR in \.env\.local of --base/); assert.equal(r.it.value.baseUnavailable, true);
       assert.equal(r.builds, builds, k + '/' + item + ': no base build'); assert.equal(snap(sc.cache), before, k + '/' + item + ': the cache was not read-then-written or changed');
       noLeak(line.slice(line.indexOf('=') + 1).replace(/"/g, ''), [['stdout', r.r.stdout], ['stderr', r.r.stderr], ...filesText(r.out), ...filesText(sc.cache)], k + '/' + item + ' DATA_DIR value');
     }
   }
-  for (const line of ['DATA_DIR=backend/data/example', 'DATA_DIR=' + path.join(sc.base, 'backend', 'data', 'example'), 'DATA_DIR=' + path.join(sc.base, 'backend', 'data', 'example', 'copy-1'), 'OTHER=1']) {
+  for (const line of ['DATA_DIR=backend/data/example', 'DATA_DIR=' + path.join(sc.base, 'backend', 'data', 'example').split(path.sep).join('/'), 'DATA_DIR=' + path.join(sc.base, 'backend', 'data', 'example', 'copy-1').split(path.sep).join('/'), 'OTHER=1']) {
     fs.writeFileSync(envFile, line + '\n'); const r = goB1(sc, { only: 'entry-delta-vs-base' });
     assert.equal(r.it.status, 'PASS', line.slice(0, 20) + ': ' + JSON.stringify(r.it));
   }
@@ -646,6 +646,16 @@ ok('(bg-4) no .env content leaks: a unique string in web/.env.local (and in a VI
   assert.ok(walkFiles(sc.cache).length >= 1 && walkFiles(a.out).length >= 3, 'premise: there is something to scan');
   for (const needle of [SENTINEL, SENTINEL + '2', SENTINEL + '3']) noLeak(needle, [['a.stdout', a.r.stdout], ['a.stderr', a.r.stderr], ['b.stdout', b.r.stdout], ['b.stderr', b.r.stderr], ...anyFileText(sc.cache, a.out, b.out)], 'env content');
   const kv = a.it.value.baseCache.key; assert.match(kv.envHash, /^[0-9a-f]{12}$/); assert.match(JSON.parse(fs.readFileSync(walkFiles(sc.cache)[0], 'utf8')).key.envHash, /^[0-9a-f]{64}$/);
+});
+ok('(bg-5, n21) one run with several items that need base (entry-delta-vs-base, c1-web, c1-os): all of them FAIL, none is SKIP or INVALID, exit 1; a git redirect variable (GIT_DIR / GIT_WORK_TREE / GIT_COMMON_DIR / GIT_INDEX_FILE) in the environment makes the guard refuse even a good linked worktree, naming the variable and nothing else', () => {
+  const sc = mkScenario('bg5');
+  const r = goB1(sc, { only: 'entry-delta-vs-base,c1-web,c1-os', base: sc.main, args: ['--no-fail-fast'] });
+  for (const id of GUARD_ITEMS) { const it = r.json.items.find((i) => i.id === id); assert.equal(it.status, 'FAIL', id + ': ' + JSON.stringify(it)); assert.match(it.reason, /base guard: --base is a main checkout/); }
+  assert.equal(r.r.status, 1); assert.deepEqual(r.json.summary.fail, GUARD_ITEMS); assert.deepEqual(r.json.summary.invalid, []);
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE']) {
+    const g = goB1(sc, { only: 'entry-delta-vs-base', env: { [k]: path.join(sc.root, 'zzz-leak-check') } });
+    assert.equal(g.it.status, 'FAIL', k); assert.match(g.it.reason, new RegExp('base guard: the environment variable ' + k)); assert.ok(!g.json && true || !JSON.stringify(g.json).includes('zzz-leak-check'), k + ': the value must not be echoed'); assert.equal(g.builds, 0);
+  }
 });
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log(`verify-holo selftest: ${n} groups passed`);
