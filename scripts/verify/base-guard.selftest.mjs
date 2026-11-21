@@ -47,6 +47,7 @@ ok('DATA_DIR: outside backend/data/example, the real-data folder name, empty, re
   const untracked = path.join(base, 'web', '.env.example'); fs.writeFileSync(untracked, `DATA_DIR=${o}
 `);
   assert.match(checkBase(base, R), /DATA_DIR in .env.example/, '(3) an untracked .env.example (new, in web/) -> judged'); fs.rmSync(untracked);
+  gitB('rm', '-q', '--cached', '--', '.env.example'); assert.match(checkBase(base, R), /DATA_DIR in \.env\.example/, 'in HEAD with identical bytes but NOT tracked any more (removed from the index) -> judged'); gitB('reset', '-q', 'HEAD', '--', '.env.example'); assert.equal(checkBase(base, R), null, 'tracked again -> not judged');
   fs.writeFileSync(path.join(base, '.env.sample'), 'DATA_DIR=/placeholder/path\n'); // same bytes as HEAD: still pristine
   assert.equal(checkBase(base, R), null, 'rewritten with identical bytes = pristine');
   const staged = path.join(base, 'web', '.env.sample'); fs.writeFileSync(staged, `DATA_DIR=${o}
